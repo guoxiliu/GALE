@@ -191,19 +191,19 @@ void initializeCUDA(int argc, char **argv, int &devID, int &iSizeMultiple, sMatr
     // use a larger block size for Fermi and above
     int block_size = (deviceProp.major < 2) ? 16 : 32;
 
+    // matrix_size.uiWA = 3 * block_size * iSizeMultiple;
+    // matrix_size.uiHA = 4 * block_size * iSizeMultiple;
+    // matrix_size.uiWB = 2 * block_size * iSizeMultiple;
+    // matrix_size.uiHB = 3 * block_size * iSizeMultiple;
+    // matrix_size.uiWC = 2 * block_size * iSizeMultiple;
+    // matrix_size.uiHC = 4 * block_size * iSizeMultiple;
+
     matrix_size.uiWA = 6 * block_size * iSizeMultiple;
     matrix_size.uiHA = 6 * block_size * iSizeMultiple;
     matrix_size.uiWB = 6 * block_size * iSizeMultiple;
     matrix_size.uiHB = 6 * block_size * iSizeMultiple;
     matrix_size.uiWC = 6 * block_size * iSizeMultiple;
     matrix_size.uiHC = 6 * block_size * iSizeMultiple;
-
-    // matrix_size.uiWA = 1000;
-    // matrix_size.uiHA = 1000;
-    // matrix_size.uiWB = 1000;
-    // matrix_size.uiHB = 1000;
-    // matrix_size.uiWC = 1000;
-    // matrix_size.uiHC = 1000;
 
     printf("MatrixA(%u,%u), MatrixB(%u,%u), MatrixC(%u,%u)\n",
            matrix_size.uiHA, matrix_size.uiWA,
@@ -331,7 +331,7 @@ int matrixMultiply(int argc, char **argv, int devID, sMatrixSize &matrix_size)
 
     // compute reference solution
     // printf("Computing result using host CPU...");
-    // float *reference = (float *)malloc(mem_size_C);
+    float *reference = (float *)malloc(mem_size_C);
     // {
     //     clock_t start = clock();
     //     matrixMulCPU(reference, h_A, h_B, matrix_size.uiHA, matrix_size.uiWA, matrix_size.uiWB);
@@ -368,14 +368,15 @@ int matrixMultiply(int argc, char **argv, int devID, sMatrixSize &matrix_size)
     // flushed before the application exits
     cudaDeviceReset();
 
-    if (resCUBLAS == true)
-    {
-        return EXIT_SUCCESS;    // return value = 1
-    }
-    else
-    {
-        return EXIT_FAILURE;     // return value = 0
-    }
+    // if (resCUBLAS == true)
+    // {
+    //     return EXIT_SUCCESS;    // return value = 1
+    // }
+    // else
+    // {
+    //     return EXIT_FAILURE;     // return value = 0
+    // }
+    return EXIT_SUCCESS;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

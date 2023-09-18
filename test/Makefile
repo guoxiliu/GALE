@@ -34,7 +34,8 @@
 ################################################################################
 
 # Location of the CUDA Toolkit
-CUDA_PATH ?= /software/spackages/linux-rocky8-x86_64/gcc-9.5.0/cuda-11.1.1-gvdep34zxhk3vvzcg3dti7ytgmuf5547
+# CUDA_PATH ?= /software/spackages/linux-rocky8-x86_64/gcc-9.5.0/cuda-11.1.1-gvdep34zxhk3vvzcg3dti7ytgmuf5547
+CUDA_PATH ?= "/usr/local/cuda-11.3"
 
 # architecture
 HOST_ARCH   := $(shell uname -m)
@@ -64,7 +65,8 @@ ALL_LDFLAGS += $(ALL_CCFLAGS)
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 
-INCLUDES  := -I${HOME}/Downloads/cuda-samples/Common
+# INCLUDES  := -I${HOME}/Downloads/cuda-samples/Common
+INCLUDES  := -I$(CUDA_PATH)/samples/common/inc
 LIBRARIES :=
 
 ################################################################################
