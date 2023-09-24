@@ -20,6 +20,9 @@
 *.mod
 *.smod
 
+# IDE files
+*.kdev4
+
 # Compiled Static libraries
 *.lai
 *.la
@@ -32,7 +35,9 @@
 *.app
 
 # Build folder
-build/
+build*/
 
-# VS Code folder
+# Development tools folder
 .vscode/
+.kdev4/
+.eclipse/
