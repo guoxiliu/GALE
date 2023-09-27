@@ -11,8 +11,8 @@ def matrixMultiply(m_size):
         matrixC = np.matmul(matrixA, matrixB)
     end = time.time()
     diff = end - start
-    print("matrix size:", m_size)
-    print("done, time = %.6f seconds" % (diff/nIter))
+    print("Matrix size:", m_size)
+    print("Done, time = %.6f seconds" % (diff/nIter))
 
 if __name__ == '__main__':
     test_size = 1920

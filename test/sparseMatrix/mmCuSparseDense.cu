@@ -11,7 +11,7 @@ int rows = 1024, cols = 1024;
  * elements are zero and the matrix is sparse.
 */
 int generateRandomDenseMatrix(float **outA) {
-    double rMax = (double) RAND_MAX;
+    // double rMax = (double) RAND_MAX;
     float *A = (float *) malloc(sizeof(float) * rows * cols);
     int totalNnz = 0;
 
@@ -23,10 +23,12 @@ int generateRandomDenseMatrix(float **outA) {
                 *curr = 0.0f;
             }
             else {
-                double dr = (double) r;
-                *curr = (dr / rMax) * 100.0;
+                // double dr = (double) r;
+                // *curr = (dr / rMax) * 100.0;
+                *curr = 1.0f;
+                totalNnz++;
             }
-            if (*curr != 0.0f) totalNnz++;
+            // if (*curr != 0.0f) totalNnz++;
         }
     }
     *outA = A;
@@ -35,13 +37,21 @@ int generateRandomDenseMatrix(float **outA) {
 
 void printPartialMatrix(float *M, int nrows, int ncols, int maxRow, int maxCol) {
     int row, col;
+    printf("[");
     for (row = 0; row < maxRow; ++row) {
+        printf("[");
         for (col = 0; col < maxCol; ++col) {
-            printf("%2.2f ", M[row * ncols + col]);
+            if (col == maxCol - 1) {
+                if (row == maxRow - 1) 
+                    printf("%g]]\n", M[row * ncols + col]);
+                else
+                    printf("%g],\n", M[row * ncols + col]);
+            }
+            else {
+                printf("%g, ", M[row * ncols + col]);
+            }
         }
-        printf("...\n");
     }
-    printf("...\n");
 }
 
 int main(int argc, char **argv) {
@@ -88,7 +98,7 @@ int main(int argc, char **argv) {
                                     CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F));
 
     // allocate an external buffer if needed
-    void* dBufferA    = NULL;
+    void* dBufferA = NULL;
     size_t bufferSizeA = 0;
     CHECK_CUSPARSE(cusparseDenseToSparse_bufferSize(handle, matA, Adescr,
                                         CUSPARSE_DENSETOSPARSE_ALG_DEFAULT, &bufferSizeA));

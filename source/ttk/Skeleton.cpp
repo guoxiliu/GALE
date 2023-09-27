@@ -729,7 +729,7 @@ int Skeleton::buildTriangleLinksTwoSkeleton(
 
   triangleLinks.setData(std::move(links), std::move(offsets));
 
-  std::cout << "Built " << triangleNumber + " triangle links " << tm.getElapsedTime() << std::endl;
+  std::cout << "Built " << triangleNumber << " triangle links " << tm.getElapsedTime() << std::endl;
 
   return 0;
 }
