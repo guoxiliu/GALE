@@ -35,6 +35,7 @@
 *.app
 
 # Build folder
+.cache/
 build*/
 
 # Development tools folder
