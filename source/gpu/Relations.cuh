@@ -222,7 +222,7 @@ __global__ void computeVertexCells(int *vertexCellSize, const vtkIdType *connect
 }
 
 
-__global__ void getVertexEdgesSize(int *vertexEdgeSizes, const int baseCluster,
+__global__ void getVertexEdgesSize(int *vertexEdgeMatrix, int *vertexEdgeSizes, const int baseCluster,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
             const int *indexArray, const int *vertexIntervals, const int * cellIntervals, 
             const int *externalCells, const int *externalCellOffsets, const int dimension) {
@@ -241,45 +241,35 @@ __global__ void getVertexEdgesSize(int *vertexEdgeSizes, const int baseCluster,
     // printf("localVertexNum: %d\n", localVertexNum);
     // printf("vertexEdgeSizes[0]: %p\n", vertexEdgeSizes[0]);
     
-    int *vertexEdgeMatrix = new int[localVertexNum * columns];
-    if (vertexEdgeMatrix == NULL) {
-        printf("Cannot allocate memory!\n");
-        return;
-    }
-
-    // // allocate 2D matrix
-    // int **vertexEdgeMatrix = new int*[localVertexNum];
-    // for (int i = 0; i < localVertexNum; ++i) {
-    //     vertexEdgeMatrix[i] = new int[columns];
-    //     if (vertexEdgeMatrix[i] == NULL) {
-    //         printf("Cannot allocate memory!");
-    //         return;
-    //     }
+    // int *vertexEdgeMatrix = new int[localVertexNum * columns];
+    // if (vertexEdgeMatrix == NULL) {
+    //     printf("Cannot allocate memory!\n");
+    //     return;
     // }
-    // for (int i = 0; i < matrixSize; ++i) vertexEdgeMatrix[i] = false;
+
     for (int i = 0; i < localVertexNum; ++i) vertexEdgeSizes[vertexIntervals[tid-1] - vertexIntervals[baseCluster-1] + i] = 0;
 
     // loop through the internal cell list
     for (int cid = startCellId; cid < cellIntervals[tid]; ++cid) {
         for (int vi = 0; vi < dimension; ++vi) {
             int viId = connectivity[offsets[cid] + vi];
-            int localViId = viId - vertexIntervals[tid-1];
+            // int localViId = viId - vertexIntervals[tid-1];
             for (int vj = vi+1; vj <= dimension; ++vj) {
                 int vjId = connectivity[offsets[cid] + vj];
-                int localVjId = vjId - vertexIntervals[tid-1];
+                // int localVjId = vjId - vertexIntervals[tid-1];
                 if (indexArray[viId] == tid) {
                     int relativeViId = viId - vertexIntervals[baseCluster-1];
-                    int pos = binarySearch(vertexEdgeMatrix + columns * localViId, vertexEdgeSizes[relativeViId], vjId);
+                    int pos = binarySearch(vertexEdgeMatrix + columns * relativeViId, vertexEdgeSizes[relativeViId], vjId);
                     if (pos < 0) {
-                        insertElement(vertexEdgeMatrix + columns * localViId, vertexEdgeSizes[relativeViId], -pos-1, vjId);
+                        insertElement(vertexEdgeMatrix + columns * relativeViId, vertexEdgeSizes[relativeViId], -pos-1, vjId);
                         atomicAdd(&vertexEdgeSizes[relativeViId], 1);
                     }
                 } 
                 if (indexArray[vjId] == tid) {
                     int relativeVjId = vjId - vertexIntervals[baseCluster-1];
-                    int pos = binarySearch(vertexEdgeMatrix + columns * localVjId, vertexEdgeSizes[relativeVjId], viId);
+                    int pos = binarySearch(vertexEdgeMatrix + columns * relativeVjId, vertexEdgeSizes[relativeVjId], viId);
                     if (pos < 0) {
-                        insertElement(vertexEdgeMatrix + columns * localVjId, vertexEdgeSizes[relativeVjId], -pos-1, viId);
+                        insertElement(vertexEdgeMatrix + columns * relativeVjId, vertexEdgeSizes[relativeVjId], -pos-1, viId);
                         atomicAdd(&vertexEdgeSizes[relativeVjId], 1);
                     }
                 }
@@ -292,32 +282,29 @@ __global__ void getVertexEdgesSize(int *vertexEdgeSizes, const int baseCluster,
         int cellId = offsets[externalCells[i]];
         for (int vi = 0; vi < dimension; ++vi) {
             int viId = connectivity[cellId + vi];
-            int localViId = viId - vertexIntervals[tid-1];
+            // int localViId = viId - vertexIntervals[tid-1];
             for (int vj = vi + 1; vj <= dimension; ++vj) {
                 int vjId = connectivity[cellId + vj];
-                int localVjId = vjId - vertexIntervals[tid-1];
+                // int localVjId = vjId - vertexIntervals[tid-1];
                 if (indexArray[viId] == tid) {
                     int relativeViId = viId - vertexIntervals[baseCluster-1];
-                    int pos = binarySearch(vertexEdgeMatrix + columns * localViId, vertexEdgeSizes[relativeViId], vjId);
+                    int pos = binarySearch(vertexEdgeMatrix + columns * relativeViId, vertexEdgeSizes[relativeViId], vjId);
                     if (pos < 0) {
-                        insertElement(vertexEdgeMatrix + columns * localViId, vertexEdgeSizes[relativeViId], -pos-1, vjId);
+                        insertElement(vertexEdgeMatrix + columns * relativeViId, vertexEdgeSizes[relativeViId], -pos-1, vjId);
                         atomicAdd(&vertexEdgeSizes[relativeViId], 1);
                     }
                 } 
                 if (indexArray[vjId] == tid) {
                     int relativeVjId = vjId - vertexIntervals[baseCluster-1];
-                    int pos = binarySearch(vertexEdgeMatrix + columns * localVjId, vertexEdgeSizes[relativeVjId], viId);
+                    int pos = binarySearch(vertexEdgeMatrix + columns * relativeVjId, vertexEdgeSizes[relativeVjId], viId);
                     if (pos < 0) {
-                        insertElement(vertexEdgeMatrix + columns * localVjId, vertexEdgeSizes[relativeVjId], -pos-1, viId);
+                        insertElement(vertexEdgeMatrix + columns * relativeVjId, vertexEdgeSizes[relativeVjId], -pos-1, viId);
                         atomicAdd(&vertexEdgeSizes[relativeVjId], 1);
                     }
                 }
             }
         }
     }
-
-    // free up the memory usage
-    delete[] vertexEdgeMatrix;
 
     // int testVertexId = 3873;
     // if (indexArray[testVertexId] == tid) {
@@ -326,41 +313,5 @@ __global__ void getVertexEdgesSize(int *vertexEdgeSizes, const int baseCluster,
     //         printf("%d ", vertexEdgeMatrix[testVertexId - vertexIntervals[tid-1]][i]);
     //     }
     // }
-
-    // for (int i = 0; i < 5; ++i) {
-    //     printf("vertexEdgeSizes %d: %d\n", i, vertexEdgeSizes[i]);
-    // }
-
-    // // fill up the vertex edge array
-    // for (int vid = startVertexId; vid < vertexIntervals[tid]; ++vid) {
-    //     int localVid = vid - startVertexId;
-    //     localVertexEdges[tid][localVid] = new int[vertexEdgeSizes[localVid]];
-    //     int k = 0;
-    //     for (int i = 0; i < vertexRange; ++i) {
-    //         if (vertexEdgeMatrix[localVid][i])
-    //             localVertexEdges[tid][localVid][k++] = (i + minVertexId);
-    //     }
-    // }
-
-    /**
-     * divide the job by vertices
-    int vertexId = startVertexId + tid;
-    int minVertexId = connectivity[offsets[externalCells[0]]];
-    int maxVertexId = 0; 
-    vertexEdgeSizes[tid] = 0;
-    // get the maximum vertex id
-    int startCellId = (tid == 0 ? 0 : cellIntervals[tid-1]);
-    for (int cid = startCellId; cid < cellIntervals[tid]; ++cid) {
-        int lastVertexId = connectivity[offsets[cid] + dimension];
-        if (lastVertexId > maxVertexId) maxVertexId = lastVertexId;
-    }
-
-    // loop through the internal cell list
-    int vertexVec[maxVertexId - minimumVid + 1];
-    for (int cid = startCellId; cid < cellIntervals[tid]; ++cid) {
-        int v0 = connectivity[offsets[cid]];
-        if (v0 == )
-    }
-    */
-
+    
 }

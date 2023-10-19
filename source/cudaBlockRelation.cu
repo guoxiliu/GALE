@@ -262,22 +262,39 @@ int main(int argc, char const *argv[]) {
 
 
     int blockSize = 32;
-    int numBlock = 4;
-    int baseCluster = 200;
+    int numBlock = 115;
+    int baseCluster = 1;
+    const int columns = 30;
     int numThreads = numBlock * blockSize;
     const int localVertexNum = hVertexIntervals[baseCluster+numThreads-1] - hVertexIntervals[baseCluster-1];
 
 
-    // int *dVertexEdgeMatrix;
-    // CHECK(cudaMalloc((void **)&dVertexEdgeMatrix, sizeof(int) * localVertexNum * 30));
-
+    int *dVertexEdgeMatrix;
     int *dVertexEdgeSize;
+    std::vector<int> hVertexEdgeSize(localVertexNum);
+    std::vector<int> hVertexEdgeMatrix(localVertexNum * columns);
+
+    // clock_t t = clock();
+    cudaEventRecord(start, 0);
+    CHECK(cudaMalloc((void **)&dVertexEdgeMatrix, sizeof(int) * localVertexNum * columns));
     CHECK(cudaMalloc((void **) &dVertexEdgeSize, sizeof(int) * localVertexNum));
 
-    getVertexEdgesSize<<<numBlock, blockSize>>>(dVertexEdgeSize, baseCluster, dConnectitity, dOffsets, dIndexArray, 
+    getVertexEdgesSize<<<numBlock, blockSize>>>(dVertexEdgeMatrix, dVertexEdgeSize, baseCluster, dConnectitity, dOffsets, dIndexArray, 
                                 dVertexIntervals, dCellIntervals, dExternalCells, dExternalCellOffsets, 3);
 
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
+    CHECK(cudaMemcpy(hVertexEdgeSize.data(), dVertexEdgeSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(hVertexEdgeMatrix.data(), dVertexEdgeMatrix, sizeof(int) * localVertexNum * columns, cudaMemcpyDeviceToHost));
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+    // t = clock() - t;
+    // printf("Total time measured for computation: %.5f s\n", ((double) t / CLOCKS_PER_SEC));
+
+
+    float computeTime;
+    cudaEventElapsedTime(&computeTime, start, stop);
+    printf("Time measured for computation: %f s\n", computeTime / 1000);
+    
     cudaError_t status = cudaGetLastError();
     if (status != cudaSuccess) {
         fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
@@ -285,8 +302,6 @@ int main(int argc, char const *argv[]) {
     }
 
     // check the number of vertex edges for the first cluster
-    int hVertexEdgeSize[localVertexNum];
-    CHECK(cudaMemcpy(hVertexEdgeSize, dVertexEdgeSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
     for (int i = 0; i < localVertexNum; ++i) {
         std::cout << "vertex " << i + hVertexIntervals[baseCluster-1] << ": " << hVertexEdgeSize[i] << std::endl;
     }
@@ -302,6 +317,7 @@ int main(int argc, char const *argv[]) {
     cudaFree(dEdgeIntervals);
     cudaFree(dExternalCells);
     cudaFree(dExternalCellOffsets);
+    cudaFree(dVertexEdgeMatrix);
 
 
     return 0;
