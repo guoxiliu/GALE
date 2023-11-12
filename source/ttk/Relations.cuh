@@ -469,7 +469,7 @@ __global__ void precomputeVertexStars(int *vertexStarMatrix, int *vertexStarSize
     * divide the job by clusters
     */
     // determine the range of vertices
-    const int startVertexId = vertexIntervals[baseCluster-1];
+    const int startVertexId = vertexIntervals[tid-1];
     const int startCellId = cellIntervals[tid-1];
     const int localVertexNum = vertexIntervals[tid]-startVertexId;
     
@@ -478,7 +478,7 @@ __global__ void precomputeVertexStars(int *vertexStarMatrix, int *vertexStarSize
 
     // loop through the internal cell list
     for (int cid = startCellId; cid < cellIntervals[tid]; ++cid) {
-        for (int vi = 0; vi < dimension; ++vi) {
+        for (int vi = 0; vi <= dimension; ++vi) {
             int viId = connectivity[offsets[cid] + vi];
             if (indexArray[viId] == tid) {
                 int relativeViId = viId - vertexIntervals[baseCluster-1];
@@ -495,7 +495,7 @@ __global__ void precomputeVertexStars(int *vertexStarMatrix, int *vertexStarSize
     // loop through the external cell list
     for (int i = externalCellOffsets[tid-1]; i < externalCellOffsets[tid]; ++i) {
         int cellId = offsets[externalCells[i]];
-        for (int vi = 0; vi < dimension; ++vi) {
+        for (int vi = 0; vi <= dimension; ++vi) {
             int viId = connectivity[cellId + vi];
                 // int localVjId = vjId - vertexIntervals[tid-1];
             if (indexArray[viId] == tid) {

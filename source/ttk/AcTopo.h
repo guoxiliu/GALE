@@ -115,7 +115,6 @@ class AcTopo final : public AbstractTriangulation {
 
         inline SimplexId TTK_TRIANGULATION_INTERNAL(getVertexStarNumber)(
             const SimplexId &vertexId) const override {
-                return 0;
             
             if (vertexStars_[vertexId].empty()) {
                 waiting_ = true;
@@ -136,10 +135,17 @@ class AcTopo final : public AbstractTriangulation {
 
 
     private:
+        /* Compute the interval array for cells */
         void computeCellIntervals();
+
+        /* Compute the interval array for vertices */
         void computeVertexIntervals();
+
+        /* Assisting function used by the producer thread */
         void assistProcedure();
-        void computeRelation(const SimplexId clusterId, const RelationType relation);
+
+        /* Compute the array for the given topological relation */
+        void computeRelation(const SimplexId clusterId, const RelationType relation, bool signal);
 
         int cellDimension_;
         int clusterNumber_;
