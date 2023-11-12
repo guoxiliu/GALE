@@ -1,3 +1,5 @@
+#include "ttk/AcTopo.h"
+#include "ttk/ExplicitTriangulation.h"
 #include "ttk/TestTopoRelations.h"
 #include <vtkSmartPointer.h>
 #include <vtkXMLUnstructuredGridReader.h>
@@ -21,12 +23,19 @@ int main(int argc, char const *argv[])
     reader->SetFileName(fileName.c_str());
     reader->Update();
 
-    ttk::ExplicitTriangulation explicitTriangulation;
-    explicitTriangulation.createExplicitTriangulation(reader->GetOutput());
+    // ttk::ExplicitTriangulation explicitTriangulation;
+    // explicitTriangulation.createExplicitTriangulation(reader->GetOutput());
+
+    // ttk::TestTopoRelations testPlugin;
+    // testPlugin.preconditionTriangulation(&explicitTriangulation);
+    // testPlugin.execute(&explicitTriangulation);
+
+    ttk::AcTopo actopo;
+    actopo.initialize(reader->GetOutput());
 
     ttk::TestTopoRelations testPlugin;
-    testPlugin.preconditionTriangulation(&explicitTriangulation);
-    testPlugin.execute(&explicitTriangulation);
+    testPlugin.preconditionTriangulation(&actopo);
+    testPlugin.execute(&actopo);
 
     return 0;
 }

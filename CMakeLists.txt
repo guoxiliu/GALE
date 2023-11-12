@@ -21,5 +21,8 @@ message(STATUS "VTK_VERSION: ${VTK_VERSION}")
 message("VTK_INCLUDE_DIRS: ${VTK_INCLUDE_DIRS}")
 message("VTK_LIBRARIES: ${VTK_LIBRARIES}")
 
+set(CMAKE_CUDA_ARCHITECTURES 52 60 61 75)
+set(CMAKE_CXX_STANDARD 14)
+
 # add_subdirectory("test")
 add_subdirectory("source")

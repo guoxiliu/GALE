@@ -39,4 +39,37 @@ namespace ttk {
   /// number of different critical types
   const int CriticalTypeNumber = 6;
 
+
+  /// relation names for TopoClsuter
+  enum class RelationType {
+    BlankRelation, // Empty -- 0
+    VVRelation, // vertexNeighbor -- 1
+    VTRelation, // vertexStar -- 2
+    EVRelation, // edgeVertex -- 3
+    ETRelation, // edgeStar -- 4
+    FVRelation, // triangleVertex -- 5
+    FTRelation, // triangleStar -- 6
+    TVRelation, // cellVertex -- 7
+    TTRelation, // cellNeighbor -- 8
+    // external maps computation
+    IEMapComp, // internalEdgeMap -- 9
+    IFMapComp, // internalTriangleMap -- 10
+    IEFMapComp, // intenralEdgeMap and internalTriangleMap -- 11
+    IFBMapComp, // internalTriangleMap and boundaryCell -- 12
+    // require external maps
+    VERelation, // vertexEdge -- 13
+    VFRelation, // vertexTriangle -- 14
+    EFRelation, // edgeTriangle -- 15
+    FERelation, // triangleEdge -- 16
+    TERelation, // cellEdge -- 17
+    TFRelation, // cellTriangle -- 18
+    VLRelation, // vertexLink -- 19
+    ELRelation, // edgeLink -- 20
+    FLRelation, // triangleLink -- 21
+    BVRelation, // boundaryVertex -- 22
+    BERelation, // boundaryEdge -- 23
+    BFRelation, // boundaryTriangle -- 24
+    RelationNum // total number of relations
+  };
+
 }
