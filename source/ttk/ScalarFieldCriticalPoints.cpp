@@ -245,20 +245,33 @@ void ttk::ScalarFieldCriticalPoints::displayStats() {
       }
     }
 
-    {
-      std::vector<std::vector<std::string>> stats;
-      stats.push_back({"  #Minima", std::to_string(minimumNumber)});
-      if(dimension_ == 3) {
-        stats.push_back({"  #1-saddles", std::to_string(oneSaddleNumber)});
-        stats.push_back({"  #2-saddles", std::to_string(twoSaddleNumber)});
-      }
-      if(dimension_ == 2) {
-        stats.push_back({"  #Saddles", std::to_string(saddleNumber)});
-      }
-      stats.push_back({"  #Multi-saddles", std::to_string(monkeySaddleNumber)});
-      stats.push_back({"  #Maxima", std::to_string(maximumNumber)});
+    // {
+    //   std::vector<std::vector<std::string>> stats;
+    //   stats.push_back({"  #Minima", std::to_string(minimumNumber)});
+    //   if(dimension_ == 3) {
+    //     stats.push_back({"  #1-saddles", std::to_string(oneSaddleNumber)});
+    //     stats.push_back({"  #2-saddles", std::to_string(twoSaddleNumber)});
+    //   }
+    //   if(dimension_ == 2) {
+    //     stats.push_back({"  #Saddles", std::to_string(saddleNumber)});
+    //   }
+    //   stats.push_back({"  #Multi-saddles", std::to_string(monkeySaddleNumber)});
+    //   stats.push_back({"  #Maxima", std::to_string(maximumNumber)});
 
-      // printMsg(stats);
+    //   printMsg(stats);
+    // }
+
+    std::cout << "  #Minima\t\t" << minimumNumber << std::endl;
+    if (dimension_ == 3) {
+      std::cout << "  #1-saddles\t\t" << oneSaddleNumber << std::endl;
+      std::cout << "  #2-saddles\t\t" << twoSaddleNumber << std::endl;
     }
+    else if (dimension_ == 2) {
+      std::cout << "  #Saddles\t\t" << saddleNumber << std::endl;
+    }
+
+    std::cout << "  #Multi-saddles\t" << monkeySaddleNumber << std::endl;
+    std::cout << "  #Maxima\t\t" << maximumNumber << std::endl;
+
   // }
 }

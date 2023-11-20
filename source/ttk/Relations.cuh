@@ -470,6 +470,7 @@ __global__ void precomputeVertexStars(int *vertexStarMatrix, int *vertexStarSize
     */
     // determine the range of vertices
     const int startVertexId = vertexIntervals[tid-1];
+    const int endVertexId = vertexIntervals[tid];
     const int startCellId = cellIntervals[tid-1];
     const int localVertexNum = vertexIntervals[tid]-startVertexId;
     
@@ -478,16 +479,13 @@ __global__ void precomputeVertexStars(int *vertexStarMatrix, int *vertexStarSize
 
     // loop through the internal cell list
     for (int cid = startCellId; cid < cellIntervals[tid]; ++cid) {
+        // the first vertex belongs to the cluster
         for (int vi = 0; vi <= dimension; ++vi) {
             int viId = connectivity[offsets[cid] + vi];
-            if (indexArray[viId] == tid) {
+            if (viId < endVertexId) {
                 int relativeViId = viId - vertexIntervals[baseCluster-1];
-                // int localViId = viId - vertexIntervals[tid-1];
-                int pos = binarySearch(vertexStarMatrix + matrixColumns * relativeViId, vertexStarSizes[relativeViId], cid);
-                if (pos < 0) {
-                    insertElement(vertexStarMatrix + matrixColumns * relativeViId, vertexStarSizes[relativeViId], -pos-1, cid);
-                    atomicAdd(&vertexStarSizes[relativeViId], 1);
-                }
+                vertexStarMatrix[matrixColumns * relativeViId + vertexStarSizes[relativeViId]] = cid;
+                atomicAdd(&vertexStarSizes[relativeViId], 1);
             }
         }
     }
@@ -495,16 +493,13 @@ __global__ void precomputeVertexStars(int *vertexStarMatrix, int *vertexStarSize
     // loop through the external cell list
     for (int i = externalCellOffsets[tid-1]; i < externalCellOffsets[tid]; ++i) {
         int cellId = offsets[externalCells[i]];
-        for (int vi = 0; vi <= dimension; ++vi) {
+        for (int vi = 1; vi <= dimension; ++vi) {
             int viId = connectivity[cellId + vi];
                 // int localVjId = vjId - vertexIntervals[tid-1];
-            if (indexArray[viId] == tid) {
+            if (viId >= startVertexId && viId < endVertexId) {
                 int relativeViId = viId - vertexIntervals[baseCluster-1];
-                int pos = binarySearch(vertexStarMatrix + matrixColumns * relativeViId, vertexStarSizes[relativeViId], externalCells[i]);
-                if (pos < 0) {
-                    insertElement(vertexStarMatrix + matrixColumns * relativeViId, vertexStarSizes[relativeViId], -pos-1, externalCells[i]);
-                    atomicAdd(&vertexStarSizes[relativeViId], 1);
-                }
+                vertexStarMatrix[matrixColumns * relativeViId + vertexStarSizes[relativeViId]] = externalCells[i];
+                atomicAdd(&vertexStarSizes[relativeViId], 1);
             }
         }
     }

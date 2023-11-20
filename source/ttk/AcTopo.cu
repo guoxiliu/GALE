@@ -30,11 +30,11 @@ AcTopo::AcTopo() {
     dVertexStarMatrix_ = nullptr;
 
     waiting_ = false;
-    baseCluster_ = 1;
     currCluster_ = 0, currRelation_ = RelationType::BlankRelation;
+    waitingCount_ = 0;
 
     // GPU parameters
-    numBlocks_ = 100, blockSize_ = 32;
+    numBlocks_ = 30, blockSize_ = 32;
 }
 
 
@@ -44,6 +44,8 @@ AcTopo::~AcTopo() {
         waiting_ = true;
         producer_.join();
     }
+
+    std::cout << "waiting count: " << waitingCount_ << std::endl;
     // host memory deallocation
     if (hCellIntervals_ != nullptr) free(hCellIntervals_);
     if (hTriangleIntervals_ != nullptr) free(hTriangleIntervals_);
@@ -109,7 +111,7 @@ void AcTopo::computeRelation(const SimplexId clusterId,
                 if (!vertexNeighbors_[vid].empty()) continue;
                 vertexNeighbors_[vid] = std::vector<int>(hVertexNeighborMatrix_ + i * matrixColumns, hVertexNeighborMatrix_ + i * matrixColumns + hVertexNeighborSizes_[i]);
             }
-            baseCluster_ = clusterId;
+            baseClusters_[static_cast<int>(RelationType::VVRelation)] = clusterId;
             lck.unlock();
             if (signal) sem_post(&VVSem_);
 
@@ -159,7 +161,7 @@ void AcTopo::computeRelation(const SimplexId clusterId,
                 if (!vertexStars_[vid].empty()) continue;
                 vertexStars_[vid] = std::vector<int>(hVertexStarMatrix_ + i * matrixColumns, hVertexStarMatrix_ + i * matrixColumns + hVertexStarSizes_[i]);
             }
-            baseCluster_ = clusterId;
+            baseClusters_[static_cast<int>(RelationType::VTRelation)] = clusterId;
             lck.unlock();
             if (signal) sem_post(&VTSem_);
 
@@ -182,27 +184,25 @@ void AcTopo::assistProcedure() {
     RelationType leaderFunc = RelationType::BlankRelation;
 
     while (true) {
-        if (currCluster_ != leaderCluster || currRelation_ != leaderFunc) {
-            if (currCluster_ == -1) return;
-
-            if (waiting_) {
-                leaderCluster = currCluster_, leaderFunc = currRelation_;
-                computeRelation(leaderCluster, leaderFunc, true);
-            }
-            
-            else {
-                leaderCluster = currCluster_, leaderFunc = currRelation_;
-                SimplexId diff = leaderCluster - baseCluster_;
-                // check if the precomputation needs to be performed
-                if (diff < 0 || diff > numBlocks_ * blockSize_ * 0.8 + 1) {
-                    computeRelation(leaderCluster, leaderFunc);
-                }
+        if (waiting_) {
+            leaderCluster = currCluster_, leaderFunc = currRelation_;
+            if (leaderCluster == -1) return;
+            computeRelation(leaderCluster, leaderFunc, true);
+        }
+        
+        else {
+            leaderCluster = currCluster_, leaderFunc = currRelation_;
+            if (leaderCluster == -1) return;
+            SimplexId diff = leaderCluster - baseClusters_[static_cast<int>(leaderFunc)];
+            // check if the precomputation needs to be performed
+            if (diff < 0 || diff > numBlocks_ * blockSize_ * 0.6 + 1) {
+                computeRelation(leaderCluster, leaderFunc);
             }
         }
     }
 }
 
-void AcTopo::initialize(vtkPointSet *pointSet) {
+void AcTopo::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
     vtkPoints *points = pointSet->GetPoints();
     if(!points) {
         std::cerr << "DataSet has uninitialized `vtkPoints`." << std::endl;
@@ -268,12 +268,11 @@ void AcTopo::initialize(vtkPointSet *pointSet) {
     clusterNumber_ = hIndexArray_[vertexNumber_ - 1] + 1;
     sem_init(&VVSem_, 0, 0);
     sem_init(&VTSem_, 0, 0);
+    if (blockNum > 0) numBlocks_ = blockNum;
     computeCellIntervals();
     computeVertexIntervals();
-    vertexNeighbors_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
-    vertexStars_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
     producer_ = std::thread(&AcTopo::assistProcedure, this);
-    printf("Cluster number: %d, cell number: %d, vertex number: %d\n ", clusterNumber_, cellNumber_, vertexNumber_);
+    printf("Block number: %d, Cluster number: %d, cell number: %d, vertex number: %d\n", numBlocks_, clusterNumber_, cellNumber_, vertexNumber_);
 }
 
 
@@ -363,6 +362,7 @@ int AcTopo::preconditionVertexNeighborsInternal() {
         std::cerr << "Empty dataset, precondition skipped";
         return 1;
     }
+    vertexNeighbors_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
 
     // let GPU compute vertex neighbor data
     int endCluster = min(numBlocks_ * blockSize_, clusterNumber_ - 1);
@@ -373,17 +373,13 @@ int AcTopo::preconditionVertexNeighborsInternal() {
 
     precomputeVertexNeighbors<<<numBlocks_, blockSize_>>>(
         dVertexNeighborMatrix_, dVertexNeighborSizes_, 
-        baseCluster_, clusterNumber_, 
+        1, clusterNumber_, 
         dConnectivity_, dOffsets_, dIndexArray_,
         dVertexIntervals_, dCellIntervals_, dExternalCells_,
         dExternalCellOffsets_, cellDimension_);
     
-    cudaError_t status = cudaDeviceSynchronize();
-    if (status != cudaSuccess) {
-        fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
-            __FILE__, __LINE__); if (abort) exit(status);
-    }
-    
+    baseClusters_[static_cast<int>(RelationType::VVRelation)] = 1;
+
     return 0;
 }
 
@@ -393,6 +389,7 @@ int AcTopo::preconditionVertexStarsInternal() {
         std::cerr << "Empty dataset, precondition skipped";
         return 1;
     }
+    vertexStars_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
 
     // let GPU compute vertex neighbor data
     int endCluster = min(numBlocks_ * blockSize_, clusterNumber_ - 1);
@@ -403,16 +400,12 @@ int AcTopo::preconditionVertexStarsInternal() {
 
     precomputeVertexStars<<<numBlocks_, blockSize_>>>(
         dVertexStarMatrix_, dVertexStarSizes_, 
-        baseCluster_, clusterNumber_, 
+        1, clusterNumber_, 
         dConnectivity_, dOffsets_, dIndexArray_,
         dVertexIntervals_, dCellIntervals_, dExternalCells_,
         dExternalCellOffsets_, cellDimension_);
-    
-    cudaError_t status = cudaDeviceSynchronize();
-    if (status != cudaSuccess) {
-        fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
-            __FILE__, __LINE__); if (abort) exit(status);
-    }
+
+    baseClusters_[static_cast<int>(RelationType::VTRelation)] = 1;
 
     return 0;
 }

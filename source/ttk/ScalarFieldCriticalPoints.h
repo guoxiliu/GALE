@@ -33,6 +33,7 @@
 #include "AbstractTriangulation.h"
 #include "Timer.h"
 #include "UnionFind.h"
+#include <chrono>
 #include <vector>
 // #include <MemoryUsage.h>
 
@@ -61,9 +62,8 @@ namespace ttk {
     int execute(const SimplexId *const offsets,
                 const triangulationType *triangulation);
 
-    template <class triangulationType = AbstractTriangulation>
     int executeLegacy(const SimplexId *const offsets,
-                      const triangulationType *triangulation);
+                      const AbstractTriangulation *triangulation);
 
     template <class triangulationType = AbstractTriangulation>
     int executeProgressive(const SimplexId *const offsets,
@@ -99,14 +99,16 @@ namespace ttk {
 
     inline void
       preconditionTriangulation(AbstractTriangulation *triangulation) {
-      // pre-condition functions
-      if(triangulation) {
-        triangulation->preconditionVertexNeighbors();
-        triangulation->preconditionVertexStars();
-      }
+        Timer t;
+        // pre-condition functions
+        if(triangulation) {
+          triangulation->preconditionVertexNeighbors();
+          triangulation->preconditionVertexStars();
+        }
 
-      setDomainDimension(triangulation->getDimensionality());
-      setVertexNumber(triangulation->getNumberOfVertices());
+        setDomainDimension(triangulation->getDimensionality());
+        setVertexNumber(triangulation->getNumberOfVertices());
+        std::cout << "[ScalarFieldCriticalPoints] Time usage for preconditioning: " << t.getElapsedTime() << " s.\n";
     }
 
     inline void setVertexLinkEdgeLists(
@@ -172,9 +174,8 @@ int ttk::ScalarFieldCriticalPoints::execute(
   return 0;
 }
 
-template <class triangulationType>
 int ttk::ScalarFieldCriticalPoints::executeLegacy(
-  const SimplexId *const offsets, const triangulationType *triangulation) {
+  const SimplexId *const offsets, const AbstractTriangulation *triangulation) {
 
   // check the consistency of the variables -- to adapt
 #ifndef TTK_ENABLE_KAMIKAZE
@@ -195,7 +196,7 @@ int ttk::ScalarFieldCriticalPoints::executeLegacy(
 
   std::cout << "Extracting critical points..." << std::endl;
 
-  Timer t;
+  auto t_start = std::chrono::high_resolution_clock::now();
 
   std::vector<char> vertexTypes(vertexNumber_);
 
@@ -222,54 +223,53 @@ int ttk::ScalarFieldCriticalPoints::executeLegacy(
             oneSaddleNumber = 0, twoSaddleNumber = 0, monkeySaddleNumber = 0;
 
   // debug msg
-  // if(debugLevel_ >= (int)debug::Priority::INFO) {
-  //   if(dimension_ == 3) {
-  //     for(SimplexId i = 0; i < vertexNumber_; i++) {
-  //       switch(vertexTypes[i]) {
+    if(dimension_ == 3) {
+      for(SimplexId i = 0; i < vertexNumber_; i++) {
+        switch(vertexTypes[i]) {
 
-  //         case(char)(CriticalType::Local_minimum):
-  //           minimumNumber++;
-  //           break;
+          case(char)(CriticalType::Local_minimum):
+            minimumNumber++;
+            break;
 
-  //         case(char)(CriticalType::Saddle1):
-  //           oneSaddleNumber++;
-  //           break;
+          case(char)(CriticalType::Saddle1):
+            oneSaddleNumber++;
+            break;
 
-  //         case(char)(CriticalType::Saddle2):
-  //           twoSaddleNumber++;
-  //           break;
+          case(char)(CriticalType::Saddle2):
+            twoSaddleNumber++;
+            break;
 
-  //         case(char)(CriticalType::Local_maximum):
-  //           maximumNumber++;
-  //           break;
+          case(char)(CriticalType::Local_maximum):
+            maximumNumber++;
+            break;
 
-  //         case(char)(CriticalType::Degenerate):
-  //           monkeySaddleNumber++;
-  //           break;
-  //       }
-  //     }
-  //   } else if(dimension_ == 2) {
-  //     for(SimplexId i = 0; i < vertexNumber_; i++) {
-  //       switch(vertexTypes[i]) {
+          case(char)(CriticalType::Degenerate):
+            monkeySaddleNumber++;
+            break;
+        }
+      }
+    } else if(dimension_ == 2) {
+      for(SimplexId i = 0; i < vertexNumber_; i++) {
+        switch(vertexTypes[i]) {
 
-  //         case(char)(CriticalType::Local_minimum):
-  //           minimumNumber++;
-  //           break;
+          case(char)(CriticalType::Local_minimum):
+            minimumNumber++;
+            break;
 
-  //         case(char)(CriticalType::Saddle1):
-  //           saddleNumber++;
-  //           break;
+          case(char)(CriticalType::Saddle1):
+            saddleNumber++;
+            break;
 
-  //         case(char)(CriticalType::Local_maximum):
-  //           maximumNumber++;
-  //           break;
+          case(char)(CriticalType::Local_maximum):
+            maximumNumber++;
+            break;
 
-  //         case(char)(CriticalType::Degenerate):
-  //           monkeySaddleNumber++;
-  //           break;
-  //       }
-  //     }
-  //   }
+          case(char)(CriticalType::Degenerate):
+            monkeySaddleNumber++;
+            break;
+        }
+      }
+    }
 
   //   {
   //     std::vector<std::vector<std::string>> stats;
@@ -283,10 +283,23 @@ int ttk::ScalarFieldCriticalPoints::executeLegacy(
   //     }
   //     stats.push_back({"  #Multi-saddles", std::to_string(monkeySaddleNumber)});
   //     stats.push_back({"  #Maxima", std::to_string(maximumNumber)});
-
-  //     // TODO: handle the print of stats here 
   //   }
-  // }
+
+  std::cout << "  #Minima\t\t" << minimumNumber << std::endl;
+  if (dimension_ == 3) {
+    std::cout << "  #1-saddles\t\t" << oneSaddleNumber << std::endl;
+    std::cout << "  #2-saddles\t\t" << twoSaddleNumber << std::endl;
+  }
+  else if (dimension_ == 2) {
+    std::cout << "  #Saddles\t\t" << saddleNumber << std::endl;
+  }
+
+  std::cout << "  #Multi-saddles\t" << monkeySaddleNumber << std::endl;
+  std::cout << "  #Maxima\t\t" << maximumNumber << std::endl;
+
+  auto t_end = std::chrono::high_resolution_clock::now();
+  auto t_elapsed = std::chrono::duration<double>(t_end - t_start);
+  std::cout << "[ScalarFieldCriticalPoints] Processed " << vertexNumber_ << " vertices " << t_elapsed.count() << " s." << std::endl;
 
   // prepare the output
   criticalPoints_->clear();
@@ -296,8 +309,6 @@ int ttk::ScalarFieldCriticalPoints::executeLegacy(
       criticalPoints_->emplace_back(i, vertexTypes[i]);
     }
   }
-
-  std::cout << "Processed " << vertexNumber_ << " vertices " << t.getElapsedTime() << " s." << std::endl;
 
   return 0;
 }

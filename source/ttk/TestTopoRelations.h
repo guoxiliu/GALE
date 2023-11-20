@@ -1,6 +1,5 @@
 #pragma once
 
-#include "DataTypes.h"
 #include "AbstractTriangulation.h"
 #include "Timer.h"
 #include <iostream>
@@ -54,13 +53,13 @@ namespace ttk {
       SimplexId vertexNumber = triangulation->getNumberOfVertices();
       // SimplexId edgeNumber = triangulation->getNumberOfEdges();
       // SimplexId triangleNumber = triangulation->getNumberOfTriangles();
-      // SimplexId cellNumber = triangulation->getNumberOfCells();
+      SimplexId cellNumber = triangulation->getNumberOfCells();
 
       // std::cout << "[TestTopoRelations] vertex num: " << vertexNumber << ", edge num: "
       //     << edgeNumber << ", triangle num: " << triangleNumber << ", cell num: " << 
       //     cellNumber << std::endl;
 
-      // SimplexId verticesPerCell = triangulation->getCellVertexNumber(0);
+      SimplexId verticesPerCell = triangulation->getCellVertexNumber(0);
       // SimplexId edgesPerCell = triangulation->getCellEdgeNumber(0);
       // SimplexId trianglesPerCell = triangulation->getCellTriangleNumber(0);
 
@@ -73,11 +72,13 @@ namespace ttk {
       // #endif
       for(SimplexId vid = 0; vid < vertexNumber; vid++) {
         SimplexId neighborNum = triangulation->getVertexNeighborNumber(vid);
-        std::cout << "vertex " << vid << ": " << neighborNum << std::endl;
-        // SimplexId neighborId;
-        // for(int j = 0; j < neighborNum; j++) {
-        //   triangulation->getVertexNeighbor(vid, j, neighborId);
-        // }
+        // std::cout << "vertex " << vid << ": ";
+        SimplexId neighborId;
+        for(int j = 0; j < neighborNum; j++) {
+          triangulation->getVertexNeighbor(vid, j, neighborId);
+          // std::cout << neighborId << " ";
+        }
+        // std::cout << std::endl;
       }
       std::cout << "[TestTopoCluster] Time usage for VN: " << t.getElapsedTime()
                 << " s." << std::endl;
@@ -123,7 +124,6 @@ namespace ttk {
       // #endif
       for(SimplexId vertexId = 0; vertexId < vertexNumber; vertexId++){
         SimplexId cellNum = triangulation->getVertexStarNumber(vertexId);
-        std::cout << "vertex " << vertexId << ": " << cellNum << std::endl;
         // SimplexId cellId;
         // for(SimplexId j = 0; j < cellNum; j++){
         //   int result1 = triangulation->getVertexStar(vertexId, j, cellId);
@@ -234,21 +234,24 @@ namespace ttk {
       // }
       // std::cout << "[TestTopoRelations] Time usage for FT: " << t.getElapsedTime() << " s.\n";
 
-      // /* test tetrahedron vertex relationship */
-      // t.reStart();
-      // // #ifdef TTK_ENABLE_OPENMP
-      // // #pragma omp parallel for num_threads(threadNumber_)
-      // // #endif
-      // for(SimplexId cellId = 0; cellId < cellNumber; cellId++){
-      //   SimplexId vertexId;
-      //   for(SimplexId j = 0; j < verticesPerCell; j++){
-      //     int result1 = triangulation->getCellVertex(cellId, j, vertexId);
-      //     if(result1){
-      //         std::cout << "[TestTopoRelations] cellId " << cellId << " Something wrong in getCellVertex()! Error code: " << result1 << "\n";
-      //     }
-      //   }
-      // }
-      // std::cout << "[TestTopoRelations] Time usage for TV: " << t.getElapsedTime() << " s.\n";
+      /* test tetrahedron vertex relationship */
+      t.reStart();
+      // #ifdef TTK_ENABLE_OPENMP
+      // #pragma omp parallel for num_threads(threadNumber_)
+      // #endif
+      for(SimplexId cellId = 0; cellId < cellNumber; cellId++){
+        SimplexId vertexId;
+        // std::cout << "cell " << cellId << ": ";
+        for(SimplexId j = 0; j < verticesPerCell; j++){
+          int result1 = triangulation->getCellVertex(cellId, j, vertexId);
+          // std::cout << vertexId << " ";
+          if(result1){
+              std::cout << "[TestTopoRelations] cellId " << cellId << " Something wrong in getCellVertex()! Error code: " << result1 << "\n";
+          }
+        }
+        // std::cout << std::endl;
+      }
+      std::cout << "[TestTopoRelations] Time usage for TV: " << t.getElapsedTime() << " s.\n";
 
       // /* test tetrahedron edge relationship */
       // t.reStart();

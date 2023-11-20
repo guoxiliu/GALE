@@ -9,6 +9,9 @@ add_executable(ttkTestTopoRelations ttkTestTopoRelations.cu)
 set_property(TARGET ttkTestTopoRelations PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 target_link_libraries(ttkTestTopoRelations PRIVATE ttk)
 
+add_executable(ttkScalarFieldCriticalPoints ttkScalarFieldCriticalPoints.cu)
+set_property(TARGET ttkScalarFieldCriticalPoints PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+target_link_libraries(ttkScalarFieldCriticalPoints PRIVATE ttk)
 
 add_executable(cudaBlockRelation cudaBlockRelation.cu)
 set_property(TARGET cudaBlockRelation PROPERTY CUDA_SEPARABLE_COMPILATION ON)

@@ -25,7 +25,20 @@ class AcTopo final : public AbstractTriangulation {
     public: 
         AcTopo();
         ~AcTopo();
-        void initialize(vtkPointSet *pointSet);
+        void initialize(vtkPointSet *pointSet, int numBlocks = 100, int blockSize = 32);
+
+        inline int TTK_TRIANGULATION_INTERNAL(getCellVertex)(
+            const SimplexId &cellId,
+            const int &localVertexId,
+            SimplexId &vertexId) const override {
+            vertexId = hConnectivity_[hOffsets_[cellId] + localVertexId];
+            return 0;
+        }
+
+        inline SimplexId TTK_TRIANGULATION_INTERNAL(getCellVertexNumber)(
+            const SimplexId &cellId) const override {
+            return hOffsets_[cellId + 1] - hOffsets_[cellId];
+        }
 
 
         int TTK_TRIANGULATION_INTERNAL(getDimensionality)() const override {
@@ -57,6 +70,11 @@ class AcTopo final : public AbstractTriangulation {
         // int preconditionVertexTrianglesInternal() override;
 
         inline SimplexId
+            TTK_TRIANGULATION_INTERNAL(getNumberOfCells)() const override {
+                return cellNumber_;
+        }
+
+        inline SimplexId
             TTK_TRIANGULATION_INTERNAL(getNumberOfVertices)() const override {
                 return vertexNumber_;
         }
@@ -68,21 +86,23 @@ class AcTopo final : public AbstractTriangulation {
 
             if (vertexNeighbors_[vertexId].empty()) {
                 waiting_ = true;
+                waitingCount_++;
                 currCluster_ = hIndexArray_[vertexId], currRelation_ = RelationType::VVRelation;
                 sem_wait(&VVSem_);
                 waiting_ = false;
             }
             std::lock_guard<std::mutex> lck(VVMutex_);
-            neighborId = vertexNeighbors_[vertexId][neighborId];
+            neighborId = vertexNeighbors_[vertexId][localNeighborId];
             return 0;
         }
 
         inline SimplexId TTK_TRIANGULATION_INTERNAL(getVertexNeighborNumber)(
             const SimplexId &vertexId) const override {
             
+            currCluster_ = hIndexArray_[vertexId], currRelation_ = RelationType::VVRelation;
             if (vertexNeighbors_[vertexId].empty()) {
                 waiting_ = true;
-                currCluster_ = hIndexArray_[vertexId], currRelation_ = RelationType::VVRelation;
+                waitingCount_++;
                 sem_wait(&VVSem_);
                 waiting_ = false;
             }
@@ -101,24 +121,26 @@ class AcTopo final : public AbstractTriangulation {
             const SimplexId &vertexId,
             const int &localStarId,
             SimplexId &starId) const override {
-                
+            
             if (vertexStars_[vertexId].empty()) {
                 waiting_ = true;
+                waitingCount_++;
                 currCluster_ = hIndexArray_[vertexId], currRelation_ = RelationType::VTRelation;
                 sem_wait(&VTSem_);
                 waiting_ = false;
             }
             std::lock_guard<std::mutex> lck(VTMutex_);
-            starId = vertexStars_[vertexId][starId];
+            starId = vertexStars_[vertexId][localStarId];
             return 0;
         }
 
         inline SimplexId TTK_TRIANGULATION_INTERNAL(getVertexStarNumber)(
             const SimplexId &vertexId) const override {
             
+            currCluster_ = hIndexArray_[vertexId], currRelation_ = RelationType::VTRelation;
             if (vertexStars_[vertexId].empty()) {
                 waiting_ = true;
-                currCluster_ = hIndexArray_[vertexId], currRelation_ = RelationType::VTRelation;
+                waitingCount_++;
                 sem_wait(&VTSem_);
                 waiting_ = false;
             }
@@ -174,11 +196,12 @@ class AcTopo final : public AbstractTriangulation {
 
         // multithreading support
         std::thread producer_;
-        mutable volatile SimplexId currCluster_, baseCluster_;
+        int baseClusters_[25];
+        mutable volatile SimplexId currCluster_;
         mutable volatile RelationType currRelation_;
         mutable std::mutex VVMutex_, VTMutex_;
         mutable sem_t VVSem_, VTSem_;
-        mutable std::atomic<bool> waiting_;
-        
+        mutable volatile bool waiting_;
+        mutable int waitingCount_;
     };
 }
