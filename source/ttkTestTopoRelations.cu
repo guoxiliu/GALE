@@ -15,6 +15,7 @@ int main(int argc, char const *argv[])
     }
 
     std::string fileName = argv[2];
+    int threadNumber = 1;
     std::cout << "Parsing vtu file: " << fileName << std::endl;
     
     //read all the data from the file
@@ -30,11 +31,12 @@ int main(int argc, char const *argv[])
     // testPlugin.preconditionTriangulation(&explicitTriangulation);
     // testPlugin.execute(&explicitTriangulation);
 
-    ttk::AcTopo actopo;
+    ttk::AcTopo actopo(threadNumber);
     actopo.initialize(reader->GetOutput());
 
     ttk::TestTopoRelations testPlugin;
     testPlugin.preconditionTriangulation(&actopo);
+    testPlugin.setThreadNumber(threadNumber);
     testPlugin.execute(&actopo);
 
     return 0;

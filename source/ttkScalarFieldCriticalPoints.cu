@@ -133,11 +133,12 @@ int main(int argc, char *argv[])
 
     int c;
     int blockNumber = 0;
+    int threadNumber = 4;
     std::string fileName = "";
     std::string inputArrayName = "";
     vtkDataArray *inputScalarField = nullptr;
 
-    while ((c = getopt(argc, argv, "a:b:i:")) != -1) {
+    while ((c = getopt(argc, argv, "a:b:i:t:")) != -1) {
         switch (c) {
             case 'i':
                 fileName = optarg;
@@ -147,6 +148,9 @@ int main(int argc, char *argv[])
                 break;
             case 'b':
                 blockNumber = atoi(optarg);
+                break;
+            case 't':
+                threadNumber = atoi(optarg);
                 break;
         }
     }
@@ -189,7 +193,7 @@ int main(int argc, char *argv[])
         std::cout << "Default to array: '" << inputScalarField->GetName() << "'" << std::endl;
     }
 
-    ttk::AcTopo actopo_;
+    ttk::AcTopo actopo_(threadNumber);
     if (blockNumber > 0)
         actopo_.initialize(unstructuredGrid, blockNumber);
     else 
@@ -199,6 +203,7 @@ int main(int argc, char *argv[])
 
     ttk::ScalarFieldCriticalPoints cpPlugin;
     cpPlugin.preconditionTriangulation(&actopo_);
+    cpPlugin.setThreadNumber(threadNumber);
     cpPlugin.setOutput(&criticalPoints_);
 
     

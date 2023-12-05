@@ -6,11 +6,15 @@
 
 namespace ttk {
     class TestTopoRelations {
+    protected:
+      int threadNumber_;
     public:
-        TestTopoRelations() {}
-        ~TestTopoRelations() {}
-        int execute(const AbstractTriangulation *triangulation) const;
-        inline int preconditionTriangulation(AbstractTriangulation *triangulation){
+      TestTopoRelations() { threadNumber_ = 10; }
+      ~TestTopoRelations() {}
+
+      int execute(const AbstractTriangulation *triangulation) const;
+      inline void setThreadNumber(int tnum) { threadNumber_ = tnum; }
+      inline int preconditionTriangulation(AbstractTriangulation *triangulation){
         if(triangulation){
           Timer t;
           // build edges and triangles
@@ -67,9 +71,7 @@ namespace ttk {
 
       // Vertex neighbor relation
       t.reStart();
-      // #ifdef TTK_ENABLE_OPENMP
-      // #pragma omp parallel for num_threads(threadNumber_)
-      // #endif
+      #pragma omp parallel for num_threads(threadNumber_)
       for(SimplexId vid = 0; vid < vertexNumber; vid++) {
         SimplexId neighborNum = triangulation->getVertexNeighborNumber(vid);
         // std::cout << "vertex " << vid << ": ";
@@ -119,9 +121,7 @@ namespace ttk {
       
       /* test vertex tetrahedron relationship */
       t.reStart();
-      // #ifdef TTK_ENABLE_OPENMP
-      // #pragma omp parallel for num_threads(threadNumber_)
-      // #endif
+      #pragma omp parallel for num_threads(threadNumber_)
       for(SimplexId vertexId = 0; vertexId < vertexNumber; vertexId++){
         SimplexId cellNum = triangulation->getVertexStarNumber(vertexId);
         // SimplexId cellId;
@@ -237,7 +237,7 @@ namespace ttk {
       /* test tetrahedron vertex relationship */
       t.reStart();
       // #ifdef TTK_ENABLE_OPENMP
-      // #pragma omp parallel for num_threads(threadNumber_)
+      #pragma omp parallel for num_threads(threadNumber_)
       // #endif
       for(SimplexId cellId = 0; cellId < cellNumber; cellId++){
         SimplexId vertexId;

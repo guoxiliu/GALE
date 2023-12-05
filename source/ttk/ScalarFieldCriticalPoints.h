@@ -46,6 +46,8 @@ namespace ttk {
 
     enum class BACKEND { GENERIC = 0, PROGRESSIVE_TOPOLOGY = 1 };
 
+    inline void setThreadNumber(int tnum) { threadNumber_ = tnum; }
+
     /**
      * Execute the package.
      * \param argment Dummy integer argument.
@@ -133,6 +135,7 @@ namespace ttk {
 
   protected:
     int dimension_{};
+    int threadNumber_{10};
     SimplexId vertexNumber_{};
     const std::vector<std::vector<std::pair<SimplexId, SimplexId>>>
       *vertexLinkEdgeLists_{};
@@ -202,7 +205,7 @@ int ttk::ScalarFieldCriticalPoints::executeLegacy(
 
   if(triangulation) {
 // #ifdef TTK_ENABLE_OPENMP
-// #pragma omp parallel for num_threads(threadNumber_)
+#pragma omp parallel for num_threads(threadNumber_)
 // #endif
     for(SimplexId i = 0; i < (SimplexId)vertexNumber_; i++) {
 
@@ -211,7 +214,7 @@ int ttk::ScalarFieldCriticalPoints::executeLegacy(
   } else if(vertexLinkEdgeLists_) {
     // legacy implementation
 // #ifdef TTK_ENABLE_OPENMP
-// #pragma omp parallel for num_threads(threadNumber_)
+#pragma omp parallel for num_threads(threadNumber_)
 // #endif
     for(SimplexId i = 0; i < (SimplexId)vertexNumber_; i++) {
 

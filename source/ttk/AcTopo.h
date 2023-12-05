@@ -4,7 +4,9 @@
 #include <vtkPointSet.h>
 #include <atomic>
 #include <mutex>
+#include <queue>
 #include <thread>
+#include <omp.h>
 #include <semaphore.h>
 
 #define OUTSCOPE(cluster) (cluster > baseCluster_ + numBlocks_ * blockSize_ || cluster < baseCluster_)
@@ -23,7 +25,7 @@ namespace ttk {
 
 class AcTopo final : public AbstractTriangulation {
     public: 
-        AcTopo();
+        AcTopo(int tnum = 1);
         ~AcTopo();
         void initialize(vtkPointSet *pointSet, int numBlocks = 100, int blockSize = 32);
 
@@ -85,13 +87,18 @@ class AcTopo final : public AbstractTriangulation {
             SimplexId &neighborId) const override {
 
             if (vertexNeighbors_[vertexId].empty()) {
-                waiting_ = true;
-                waitingCount_++;
-                currCluster_ = hIndexArray_[vertexId], currRelation_ = RelationType::VVRelation;
-                sem_wait(&VVSem_);
-                waiting_ = false;
+                int tid = omp_get_thread_num();
+                // waiting_ = true;
+                currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VVRelation;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VVRelation)]);
+                // waiting_ = false;
             }
-            std::lock_guard<std::mutex> lck(VVMutex_);
+            // std::lock_guard<std::mutex> lck(VVMutex_);
             neighborId = vertexNeighbors_[vertexId][localNeighborId];
             return 0;
         }
@@ -99,14 +106,19 @@ class AcTopo final : public AbstractTriangulation {
         inline SimplexId TTK_TRIANGULATION_INTERNAL(getVertexNeighborNumber)(
             const SimplexId &vertexId) const override {
             
-            currCluster_ = hIndexArray_[vertexId], currRelation_ = RelationType::VVRelation;
+            int tid = omp_get_thread_num();
+            currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VVRelation;
             if (vertexNeighbors_[vertexId].empty()) {
-                waiting_ = true;
-                waitingCount_++;
-                sem_wait(&VVSem_);
-                waiting_ = false;
+                // waiting_ = true;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VVRelation)]);
+                // waiting_ = false;
             }
-            std::lock_guard<std::mutex> lck(VVMutex_);
+            // std::lock_guard<std::mutex> lck(VVMutex_);
             return vertexNeighbors_[vertexId].size();
         }
 
@@ -123,13 +135,18 @@ class AcTopo final : public AbstractTriangulation {
             SimplexId &starId) const override {
             
             if (vertexStars_[vertexId].empty()) {
-                waiting_ = true;
-                waitingCount_++;
-                currCluster_ = hIndexArray_[vertexId], currRelation_ = RelationType::VTRelation;
-                sem_wait(&VTSem_);
-                waiting_ = false;
+                int tid = omp_get_thread_num();
+                // waiting_ = true;
+                currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VTRelation;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VTRelation)]);
+                // waiting_ = false;
             }
-            std::lock_guard<std::mutex> lck(VTMutex_);
+            // std::lock_guard<std::mutex> lck(VTMutex_);
             starId = vertexStars_[vertexId][localStarId];
             return 0;
         }
@@ -137,14 +154,19 @@ class AcTopo final : public AbstractTriangulation {
         inline SimplexId TTK_TRIANGULATION_INTERNAL(getVertexStarNumber)(
             const SimplexId &vertexId) const override {
             
-            currCluster_ = hIndexArray_[vertexId], currRelation_ = RelationType::VTRelation;
+            int tid = omp_get_thread_num();
+            currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VTRelation;
             if (vertexStars_[vertexId].empty()) {
-                waiting_ = true;
-                waitingCount_++;
-                sem_wait(&VTSem_);
-                waiting_ = false;
+                // waiting_ = true;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VTRelation)]);
+                // waiting_ = false;
             }
-            std::lock_guard<std::mutex> lck(VTMutex_);
+            // std::lock_guard<std::mutex> lck(VTMutex_);
             return vertexStars_[vertexId].size();
         }
 
@@ -167,7 +189,7 @@ class AcTopo final : public AbstractTriangulation {
         void assistProcedure();
 
         /* Compute the array for the given topological relation */
-        void computeRelation(const SimplexId clusterId, const RelationType relation, bool signal);
+        int computeRelation(const SimplexId clusterId, const RelationType relation, int threadId, bool signal);
 
         int cellDimension_;
         int clusterNumber_;
@@ -196,12 +218,15 @@ class AcTopo final : public AbstractTriangulation {
 
         // multithreading support
         std::thread producer_;
-        int baseClusters_[25];
-        mutable volatile SimplexId currCluster_;
-        mutable volatile RelationType currRelation_;
-        mutable std::mutex VVMutex_, VTMutex_;
-        mutable sem_t VVSem_, VTSem_;
-        mutable volatile bool waiting_;
-        mutable int waitingCount_;
+        int threadNumber_;
+        std::array<std::vector<int>, 25> baseClusters_;
+        mutable std::vector<SimplexId> currClusters_;
+        mutable std::vector<RelationType> currRelations_;
+        mutable std::mutex VVMutex_, VTMutex_, qMutex_;
+        mutable std::vector<std::vector<sem_t>> relationSems_;
+        // mutable std::vector<sem_t> VVSems_, VTSems_;
+        // mutable volatile bool waiting_;
+        mutable std::vector<int> waitingCounts_;
+        mutable std::queue<int> jobQueue;
     };
 }
