@@ -5,8 +5,11 @@
 #include <vtkXMLUnstructuredGridReader.h>
 #include <vtkUnstructuredGrid.h>
 #include <iostream>
+#include <stdio.h>
+#include <unistd.h>
 
-int main(int argc, char const *argv[])
+
+int main(int argc, char *argv[])
 {
     if (argc < 2) {
         std::cout << "Usage: " << argv[0] << " -i <input.vtu>" << std::endl;
@@ -14,8 +17,25 @@ int main(int argc, char const *argv[])
         return EXIT_FAILURE;
     }
 
-    std::string fileName = argv[2];
+    int c;
+    std::string fileName = "";
+    int blockNumber = 0;
     int threadNumber = 1;
+
+    while ((c = getopt(argc, argv, "a:b:i:t:")) != -1) {
+        switch (c) {
+            case 'i':
+                fileName = optarg;
+                break;
+            case 'b':
+                blockNumber = atoi(optarg);
+                break;
+            case 't':
+                threadNumber = atoi(optarg);
+                break;
+        }
+    }
+
     std::cout << "Parsing vtu file: " << fileName << std::endl;
     
     //read all the data from the file
@@ -32,7 +52,10 @@ int main(int argc, char const *argv[])
     // testPlugin.execute(&explicitTriangulation);
 
     ttk::AcTopo actopo(threadNumber);
-    actopo.initialize(reader->GetOutput());
+    if (blockNumber > 0)
+        actopo.initialize(reader->GetOutput(), blockNumber);
+    else 
+        actopo.initialize(reader->GetOutput());
 
     ttk::TestTopoRelations testPlugin;
     testPlugin.preconditionTriangulation(&actopo);
