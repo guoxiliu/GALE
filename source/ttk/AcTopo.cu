@@ -32,6 +32,9 @@ AcTopo::AcTopo(int tnum) {
     threadNumber_ = tnum;
     currClusters_ = std::vector<SimplexId>(threadNumber_, 0);
     currRelations_ = std::vector<RelationType>(threadNumber_, RelationType::BlankRelation);
+    // waitings_ = std::vector<int>(threadNumber_, 0);
+    timers_ = std::vector<Timer>(threadNumber_);
+    waitingTimes_ = std::vector<double>(threadNumber_, 0);
     waitingCounts_ = std::vector<int>(threadNumber_, 0);
     relationSems_ = std::vector<std::vector<sem_t>>(threadNumber_, std::vector<sem_t>(25));
     for (int i = 0; i < 25; ++i) {
@@ -50,7 +53,8 @@ AcTopo::~AcTopo() {
     }
 
     for (int i = 0; i < threadNumber_; ++i)
-        std::cout << "waiting count " << i << ": " << waitingCounts_[i] << std::endl;
+        std::cout << "waiting count " << i << ": " << waitingCounts_[i] << ", waiting time: " << waitingTimes_[i] << std::endl;
+    
     // host memory deallocation
     if (hCellIntervals_ != nullptr) free(hCellIntervals_);
     if (hTriangleIntervals_ != nullptr) free(hTriangleIntervals_);
@@ -202,10 +206,33 @@ void AcTopo::assistProcedure() {
     volatile RelationType leaderFunc = RelationType::BlankRelation;
 
     while (true) {
+        // bool wait = false;
+        // for (int tid = 0; tid < threadNumber_; ++tid) {
+        //     volatile int wval = waitings_[tid];
+        //     if (wval > 0) {
+        //         leaderCluster = currClusters_[tid], leaderFunc = currRelations_[tid];
+
+        //         // no need to compute if the relation is already there from another thread
+        //         int baseCluster = baseClusters_[static_cast<int>(leaderFunc)][tid];
+        //         // if (leaderCluster == baseCluster) continue;
+        //         if (baseCluster > 0) {
+        //             SimplexId diff = leaderCluster - baseCluster;
+        //             // check if the precomputation needs to be performed
+        //             if (diff > 0 && diff < numBlocks_ * blockSize_) {
+        //                 sem_post(&relationSems_[tid][static_cast<int>(leaderFunc)]);
+        //                 continue;
+        //             }
+        //         }
+
+        //         wait = true;
+        //         int res = computeRelation(leaderCluster, leaderFunc, tid, true);
+        //     }
+        // }
+
+        /* Job queue version */
         std::unique_lock<std::mutex> qlock(qMutex_);
         int qSize = jobQueue.size();
         qlock.unlock();
-
         if (qSize > 0) {
             int qSize = jobQueue.size();
             // handle the waiting jobs in the queue
@@ -236,6 +263,7 @@ void AcTopo::assistProcedure() {
             }
         }
         else {
+        // if (!wait) {
             for (int i = 0; i < threadNumber_; ++i) {
                 leaderCluster = currClusters_[i], leaderFunc = currRelations_[i];
                 if (leaderCluster == -1) return;
@@ -247,6 +275,7 @@ void AcTopo::assistProcedure() {
                     computeRelation(leaderCluster, leaderFunc, i, false);
                 }
             }
+        // }
         }
     }
 }
@@ -424,6 +453,7 @@ int AcTopo::preconditionVertexNeighborsInternal() {
     }
     vertexNeighbors_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
 
+    /* No precomputation during the preconditioning phase as there are multiple consumers */
     // // let GPU compute vertex neighbor data
     // int endCluster = min(numBlocks_ * blockSize_, clusterNumber_ - 1);
     // const int computedVertexNum = hVertexIntervals_[endCluster] - hVertexIntervals_[0];
@@ -475,6 +505,7 @@ int AcTopo::preconditionVertexStarsInternal() {
     }
     vertexStars_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
 
+    /* No precomputation during the preconditioning phase as there are multiple consumers */
     // // let GPU compute vertex neighbor data
     // int endCluster = min(numBlocks_ * blockSize_, clusterNumber_ - 1);
     // const int computedVertexNum = hVertexIntervals_[endCluster];
