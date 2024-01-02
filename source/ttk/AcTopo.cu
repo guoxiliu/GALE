@@ -31,7 +31,7 @@ AcTopo::AcTopo(int tnum) {
     for (int i = 0; i < 25; ++i) {
         baseClusters_[i] = std::vector<int>(threadNumber_, 0);
     }
-    // waitings_ = std::vector<int>(threadNumber_, 0);
+    waitings_ = std::vector<int>(threadNumber_, 0);
 
     /* timing performance measurement */
     timers_ = std::vector<Timer>(threadNumber_);
@@ -263,19 +263,27 @@ void AcTopo::assistProcedure() {
         //     }
         // }
         // else {
-        // if (!wait) {
+        bool wait = false;
+        for (int tid = 0; tid < threadNumber_; ++tid) {
+            volatile int wval = waitings_[tid];
+            if (wval > 0) { 
+                wait = true; 
+            }
+        }
+        if (!wait) {
             for (int i = 0; i < threadNumber_; ++i) {
                 leaderCluster = currClusters_[i], leaderFunc = currRelations_[i];
+                int baseCluster = baseClusters_[static_cast<int>(leaderFunc)][i];
                 if (leaderCluster == -1) return;
-                else if (leaderCluster == 0) continue;
-                SimplexId diff = leaderCluster - baseClusters_[static_cast<int>(leaderFunc)][i];
+                else if (leaderCluster == 0 || baseCluster == 0) continue;
+                SimplexId diff = leaderCluster - baseCluster;
                 // check if the precomputation needs to be performed
                 if (diff < 0 || diff > numBlocks_ * blockSize_ * 0.6) {
                     // std::cout << "precomputing for thread " << i << " cluster = " << leaderCluster << " diff = " << diff << std::endl;
                     computeRelation(leaderCluster, leaderFunc, i, false);
                 }
             }
-        // }
+        }
         // }
     }
 }

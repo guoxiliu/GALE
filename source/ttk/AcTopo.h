@@ -90,7 +90,7 @@ class AcTopo final : public AbstractTriangulation {
             if (vertexNeighbors_[vertexId].empty()) {
                 int tid = omp_get_thread_num();
                 currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VVRelation;
-                // waitings_[tid] = 1;
+                waitings_[tid] = 1;
                 // std::unique_lock<std::mutex> qlock(qMutex_);
                 // jobQueue.push(tid);
                 // qlock.unlock();
@@ -100,7 +100,7 @@ class AcTopo final : public AbstractTriangulation {
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 // sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VVRelation)]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                // waitings_[tid] = 0;
+                waitings_[tid] = 0;
             }
             // std::lock_guard<std::mutex> lck(VVMutex_);
             neighborId = vertexNeighbors_[vertexId][localNeighborId];
@@ -113,7 +113,7 @@ class AcTopo final : public AbstractTriangulation {
             int tid = omp_get_thread_num();
             currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VVRelation;
             if (vertexNeighbors_[vertexId].empty()) {
-                // waitings_[tid] = 1;
+                waitings_[tid] = 1;
                 // std::unique_lock<std::mutex> qlock(qMutex_);
                 // jobQueue.push(tid);
                 // qlock.unlock();
@@ -123,7 +123,7 @@ class AcTopo final : public AbstractTriangulation {
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 // sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VVRelation)]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                // waitings_[tid] = 0;
+                waitings_[tid] = 0;
             }
             // std::lock_guard<std::mutex> lck(VVMutex_);
             return vertexNeighbors_[vertexId].size();
@@ -144,7 +144,7 @@ class AcTopo final : public AbstractTriangulation {
             if (vertexStars_[vertexId].empty()) {
                 int tid = omp_get_thread_num();
                 currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VTRelation;
-                // waitings_[tid] = 1;
+                waitings_[tid] = 1;
                 // std::unique_lock<std::mutex> qlock(qMutex_);
                 // jobQueue.push(tid);
                 // qlock.unlock();
@@ -154,7 +154,7 @@ class AcTopo final : public AbstractTriangulation {
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 // sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VTRelation)]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                // waitings_[tid] = 0;
+                waitings_[tid] = 0;
             }
             // std::lock_guard<std::mutex> lck(VTMutex_);
             starId = vertexStars_[vertexId][localStarId];
@@ -167,7 +167,7 @@ class AcTopo final : public AbstractTriangulation {
             int tid = omp_get_thread_num();
             currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VTRelation;
             if (vertexStars_[vertexId].empty()) {
-                // waitings_[tid] = 1;
+                waitings_[tid] = 1;
                 // std::unique_lock<std::mutex> qlock(qMutex_);
                 // jobQueue.push(tid);
                 // qlock.unlock();
@@ -177,7 +177,7 @@ class AcTopo final : public AbstractTriangulation {
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 // sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VTRelation)]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                // waitings_[tid] = 0;
+                waitings_[tid] = 0;
             }
             // std::lock_guard<std::mutex> lck(VTMutex_);
             return vertexStars_[vertexId].size();
@@ -233,7 +233,7 @@ class AcTopo final : public AbstractTriangulation {
         mutable std::mutex VVMutex_, VTMutex_;
         mutable std::vector<std::vector<sem_t>> relationSems_;
         mutable std::vector<Timer> timers_;
-        // mutable std::vector<int> waitings_;
+        mutable std::vector<int> waitings_;
         mutable std::vector<double> waitingTimes_;
         mutable std::vector<int> waitingCounts_;
         mutable std::mutex qMutex_, ioMutex_;
