@@ -1,4 +1,4 @@
-#include "gpu/Relations.cuh"
+#include "ttk/Relations.cuh"
 #include <cstddef>
 #include <iostream>
 #include <set>
@@ -279,7 +279,7 @@ int main(int argc, char const *argv[]) {
     CHECK(cudaMalloc((void **)&dVertexEdgeMatrix, sizeof(int) * localVertexNum * columns));
     CHECK(cudaMalloc((void **) &dVertexEdgeSize, sizeof(int) * localVertexNum));
 
-    getVertexEdgesSize<<<numBlock, blockSize>>>(dVertexEdgeMatrix, dVertexEdgeSize, baseCluster, dConnectitity, dOffsets, dIndexArray, 
+    precomputeVertexEdges<<<numBlock, blockSize>>>(dVertexEdgeMatrix, dVertexEdgeSize, baseCluster, dConnectitity, dOffsets, dIndexArray, 
                                 dVertexIntervals, dCellIntervals, dExternalCells, dExternalCellOffsets, 3);
 
     // cudaDeviceSynchronize();

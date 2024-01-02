@@ -8,8 +8,8 @@ set(CMAKE_USE_WIN32_THREADS_INIT 0)
 set(CMAKE_USE_PTHREADS_INIT 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
-set(VTK_INCLUDE_DIRS /usr/local/include/paraview-5.8)
-find_package(VTK PATHS /usr/local/)
+set(VTK_INCLUDE_DIRS ~/usr/local/include/vtk-9.0)
+find_package(VTK PATHS ~/usr/local)
 find_package(VTK)
 
 if (NOT VTK_FOUND)
@@ -17,7 +17,14 @@ if (NOT VTK_FOUND)
     return()
 endif()
 
+find_package(OpenMP)
+if (NOT OpenMP_CXX_FOUND) 
+    message("OpenMP NOT FOUND!")
+    return()
+endif()
+
 message(STATUS "VTK_VERSION: ${VTK_VERSION}")
+message("VTK_DIR: ${VTK_DIR}")
 message("VTK_INCLUDE_DIRS: ${VTK_INCLUDE_DIRS}")
 message("VTK_LIBRARIES: ${VTK_LIBRARIES}")
 
