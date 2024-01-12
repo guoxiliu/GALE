@@ -1,4 +1,4 @@
-#include "gpu/Relations.cuh"
+#include "ttk/Relations.cuh"
 #include <cstddef>
 #include <iostream>
 #include <set>
@@ -238,13 +238,10 @@ int main(int argc, char const *argv[]) {
     /**
      * Testing output goes here
      */
-    // for (int i = 1; i < 64; ++i) {
-    //     std::cout << "cluster " << i << ": vertexInterval=" << hVertexIntervals[i] << ", cellInterval=" << hCellIntervals[i] << ", externalCellOffset=" << hExternalCellOffsets[i] << std::endl;
-    //     // std::cout << "externalOffset=" << hExternalCellOffsets[i] << ", externalCell=";
-    //     // std::cout << hExternalCells[hExternalCellOffsets[i-1]] << std::endl;
-    // }
 
-    // printArray<<<1, 9>>>(dCellIntervals, 0);
+    // for (int i = 1; i < nodeNumber; ++i) {
+    //     std::cout << "cluster " << i << ": " << hExternalCellOffsets[i] << std::endl;
+    // }
 
     // int maxVertexId = 0;
     // int startCellId = hCellIntervals[1];
@@ -262,38 +259,81 @@ int main(int argc, char const *argv[]) {
 
 
     int blockSize = 32;
-    int numBlock = 115;
+    int numBlock = 120;
     int baseCluster = 1;
-    const int columns = 30;
     int numThreads = numBlock * blockSize;
-    const int localVertexNum = hVertexIntervals[baseCluster+numThreads-1] - hVertexIntervals[baseCluster-1];
+    // int numThreads = numBlock;
+    int endCluster = min(numThreads, nodeNumber - 1);
+    const int localVertexNum = hVertexIntervals[endCluster] - hVertexIntervals[baseCluster-1];
 
 
-    int *dVertexEdgeMatrix;
-    int *dVertexEdgeSize;
-    std::vector<int> hVertexEdgeSize(localVertexNum);
-    std::vector<int> hVertexEdgeMatrix(localVertexNum * columns);
+    // int *dVertexEdgeMatrix;
+    // int *dVertexEdgeSize;
+    // std::vector<int> hVertexEdgeSize(localVertexNum);
+    // std::vector<int> hVertexEdgeMatrix(localVertexNum * matrixColumns);
+
+    // // clock_t t = clock();
+    // cudaEventRecord(start, 0);
+    // CHECK(cudaMalloc((void **)&dVertexEdgeMatrix, sizeof(int) * localVertexNum * matrixColumns));
+    // CHECK(cudaMalloc((void **) &dVertexEdgeSize, sizeof(int) * localVertexNum));
+
+    // precomputeVertexEdges<<<numBlock, blockSize>>>(dVertexEdgeMatrix, dVertexEdgeSize, baseCluster, dConnectitity, dOffsets, dIndexArray, 
+    //                             dVertexIntervals, dCellIntervals, dExternalCells, dExternalCellOffsets, 3);
+
+    // // cudaDeviceSynchronize();
+    // CHECK(cudaMemcpy(hVertexEdgeSize.data(), dVertexEdgeSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
+    // CHECK(cudaMemcpy(hVertexEdgeMatrix.data(), dVertexEdgeMatrix, sizeof(int) * localVertexNum * matrixColumns, cudaMemcpyDeviceToHost));
+    // cudaEventRecord(stop, 0);
+    // cudaEventSynchronize(stop);
+    // // t = clock() - t;
+    // // printf("Total time measured for computation: %.5f s\n", ((double) t / CLOCKS_PER_SEC));
+
+
+    // float computeTime;
+    // cudaEventElapsedTime(&computeTime, start, stop);
+    // printf("Time measured for computation: %f s\n", computeTime / 1000);
+    
+    // cudaError_t status = cudaGetLastError();
+    // if (status != cudaSuccess) {
+    //     fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
+    //         __FILE__, __LINE__); if (abort) exit(status);
+    // }
+
+    // // check the number of vertex edges for the first cluster
+    // for (int i = 0; i < localVertexNum; ++i) {
+    //     std::cout << "vertex " << i + hVertexIntervals[baseCluster-1] << ": " << hVertexEdgeSize[i] << std::endl;
+    // }
+
+    // compute vertex star matrix
+    int *dVertexStarMatrix;
+    int *dVertexStarSize;
+    std::vector<int> hVertexStarSize(localVertexNum);
+    std::vector<int> hVertexStarMatrix(localVertexNum * matrixColumns);
 
     // clock_t t = clock();
     cudaEventRecord(start, 0);
-    CHECK(cudaMalloc((void **)&dVertexEdgeMatrix, sizeof(int) * localVertexNum * columns));
-    CHECK(cudaMalloc((void **) &dVertexEdgeSize, sizeof(int) * localVertexNum));
+    CHECK(cudaMalloc((void **)&dVertexStarMatrix, sizeof(int) * localVertexNum * matrixColumns));
+    CHECK(cudaMalloc((void **) &dVertexStarSize, sizeof(int) * localVertexNum));
 
-    getVertexEdgesSize<<<numBlock, blockSize>>>(dVertexEdgeMatrix, dVertexEdgeSize, baseCluster, dConnectitity, dOffsets, dIndexArray, 
-                                dVertexIntervals, dCellIntervals, dExternalCells, dExternalCellOffsets, 3);
+    // precomputeVertexStars<<<numBlock, blockSize>>>(dVertexStarMatrix, 
+    //         dVertexStarSize, baseCluster, nodeNumber, 
+    //         dConnectitity, dOffsets, dIndexArray, 
+    //         dVertexIntervals, dCellIntervals, 
+    //         dExternalCells, dExternalCellOffsets, 3);
 
     // cudaDeviceSynchronize();
-    CHECK(cudaMemcpy(hVertexEdgeSize.data(), dVertexEdgeSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
-    CHECK(cudaMemcpy(hVertexEdgeMatrix.data(), dVertexEdgeMatrix, sizeof(int) * localVertexNum * columns, cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(hVertexStarSize.data(), dVertexStarSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(hVertexStarMatrix.data(), dVertexStarMatrix, sizeof(int) * localVertexNum * matrixColumns, cudaMemcpyDeviceToHost));
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
+
     // t = clock() - t;
     // printf("Total time measured for computation: %.5f s\n", ((double) t / CLOCKS_PER_SEC));
 
 
-    float computeTime;
-    cudaEventElapsedTime(&computeTime, start, stop);
-    printf("Time measured for computation: %f s\n", computeTime / 1000);
+    // float computeTime;
+    // cudaEventElapsedTime(&computeTime, start, stop);
+    // printf("Time measured for computation: %f s\n", computeTime / 1000);
     
     cudaError_t status = cudaGetLastError();
     if (status != cudaSuccess) {
@@ -301,10 +341,49 @@ int main(int argc, char const *argv[]) {
             __FILE__, __LINE__); if (abort) exit(status);
     }
 
-    // check the number of vertex edges for the first cluster
+    // check the number of vertex star for the first cluster
     for (int i = 0; i < localVertexNum; ++i) {
-        std::cout << "vertex " << i + hVertexIntervals[baseCluster-1] << ": " << hVertexEdgeSize[i] << std::endl;
+        std::cout << "vertex " << i + hVertexIntervals[baseCluster-1] << ": " << hVertexStarSize[i] << std::endl;
     }
+
+    // // compute vertex neighbor matrix
+    // int *dVertexNeighborMatrix;
+    // int *dVertexNeighborSize;
+    // std::vector<int> hVertexNeighborSize(localVertexNum);
+    // std::vector<int> hVertexNeighborMatrix(localVertexNum * matrixColumns);
+
+    // // clock_t t = clock();
+    // cudaEventRecord(start, 0);
+    // CHECK(cudaMalloc((void **)&dVertexNeighborMatrix, sizeof(int) * localVertexNum * matrixColumns));
+    // CHECK(cudaMalloc((void **) &dVertexNeighborSize, sizeof(int) * localVertexNum));
+
+    // precomputeVertexNeighbors<<<numBlock, blockSize>>>(dVertexNeighborMatrix, dVertexNeighborSize, baseCluster, nodeNumber, dConnectitity, dOffsets, dIndexArray, 
+    //                             dVertexIntervals, dCellIntervals, dExternalCells, dExternalCellOffsets, 3);
+
+    // // cudaDeviceSynchronize();
+    // CHECK(cudaMemcpy(hVertexNeighborSize.data(), dVertexNeighborSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
+    // CHECK(cudaMemcpy(hVertexNeighborMatrix.data(), dVertexNeighborMatrix, sizeof(int) * localVertexNum * matrixColumns, cudaMemcpyDeviceToHost));
+    // cudaEventRecord(stop, 0);
+    // cudaEventSynchronize(stop);
+
+    // // t = clock() - t;
+    // // printf("Total time measured for computation: %.5f s\n", ((double) t / CLOCKS_PER_SEC));
+
+
+    // // float computeTime;
+    // // cudaEventElapsedTime(&computeTime, start, stop);
+    // // printf("Time measured for computation: %f s\n", computeTime / 1000);
+    
+    // cudaError_t status = cudaGetLastError();
+    // if (status != cudaSuccess) {
+    //     fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
+    //         __FILE__, __LINE__); if (abort) exit(status);
+    // }
+
+    // // check the number of vertex neighbor for the first cluster
+    // for (int i = 0; i < localVertexNum; ++i) {
+    //     std::cout << "vertex " << i + hVertexIntervals[baseCluster-1] << ": " << hVertexNeighborSize[i] << std::endl;
+    // }
 
     // free host memory
     free(hCellIntervals);
@@ -317,8 +396,12 @@ int main(int argc, char const *argv[]) {
     cudaFree(dEdgeIntervals);
     cudaFree(dExternalCells);
     cudaFree(dExternalCellOffsets);
-    cudaFree(dVertexEdgeMatrix);
-
+    // cudaFree(dVertexEdgeSize);
+    // cudaFree(dVertexEdgeMatrix);
+    cudaFree(dVertexStarSize);
+    cudaFree(dVertexStarMatrix);
+    // cudaFree(dVertexNeighborSize);
+    // cudaFree(dVertexNeighborMatrix);
 
     return 0;
 }

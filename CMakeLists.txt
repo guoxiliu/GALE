@@ -8,8 +8,11 @@ set(CMAKE_USE_WIN32_THREADS_INIT 0)
 set(CMAKE_USE_PTHREADS_INIT 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
-set(VTK_INCLUDE_DIRS /usr/local/include/paraview-5.8)
+# set(VTK_INCLUDE_DIRS /usr/local/include/paraview-5.8)
+set(VTK_INCLUDE_DIRS ~/usr/local/include/vtk-9.0)
+
 find_package(VTK PATHS /usr/local/)
+find_package(VTK PATHS ~/usr/local)
 find_package(VTK)
 
 if (NOT VTK_FOUND)
