@@ -4,8 +4,10 @@
 #include "Timer.h"
 #include <vtkPointSet.h>
 #include <atomic>
+#include <map>
 #include <mutex>
 #include <queue>
+#include <set>
 #include <thread>
 #include <omp.h>
 #include <semaphore.h>
@@ -26,6 +28,7 @@ namespace ttk {
 
 class AcTopo final : public AbstractTriangulation {
     public: 
+        friend class TestTopoRelations;
         AcTopo(int tnum = 1);
         ~AcTopo();
         void initialize(vtkPointSet *pointSet, int numBlocks = 100, int blockSize = 32);
@@ -56,25 +59,58 @@ class AcTopo final : public AbstractTriangulation {
         // int preconditionCellNeighborsInternal() override;
         // int preconditionCellTrianglesInternal() override;
 
-        // int preconditionEdgesInternal() override;
+        int preconditionEdgesInternal() override;
         // int preconditionEdgeLinksInternal() override;
         // int preconditionEdgeStarsInternal() override;
         // int preconditionEdgeTrianglesInternal() override;
 
-        // int preconditionTrianglesInternal() override;
+        int preconditionTrianglesInternal() override;
         // int preconditionTriangleEdgesInternal() override;
         // int preconditionTriangleLinksInternal() override;
         // int preconditionTriangleStarsInternal() override;
 
-        // int preconditionVertexEdgesInternal() override;
+        int preconditionVertexEdgesInternal() override {
+            if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
+                std::cerr << "Empty dataset, precondition skipped";
+                return 1;
+            }
+            vertexEdges_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
+            return 0;
+        }
         // int preconditionVertexLinksInternal() override;
-        int preconditionVertexNeighborsInternal() override;
-        int preconditionVertexStarsInternal() override;
+
+        inline int preconditionVertexNeighborsInternal() override {
+            if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
+                std::cerr << "Empty dataset, precondition skipped";
+                return 1;
+            }
+            vertexNeighbors_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
+            return 0;
+        }
+
+        inline int preconditionVertexStarsInternal() override {
+            if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
+                std::cerr << "Empty dataset, precondition skipped";
+                return 1;
+            }
+            vertexStars_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
+            return 0;
+        }
         // int preconditionVertexTrianglesInternal() override;
 
         inline SimplexId
             TTK_TRIANGULATION_INTERNAL(getNumberOfCells)() const override {
                 return cellNumber_;
+        }
+
+        inline SimplexId
+            TTK_TRIANGULATION_INTERNAL(getNumberOfEdges)() const override {
+                return edgeNumber_;
+        }
+
+        inline SimplexId
+            TTK_TRIANGULATION_INTERNAL(getNumberOfTriangles)() const override {
+                return triangleNumber_;
         }
 
         inline SimplexId
@@ -129,6 +165,57 @@ class AcTopo final : public AbstractTriangulation {
 
         inline const std::vector<std::vector<SimplexId>> *
             TTK_TRIANGULATION_INTERNAL(getVertexNeighbors)() override {
+            // vertexNeighborData_.copyTo(vertexNeighborList_);
+            // TODO: copy the matrix data back to vector of vector
+            return &vertexNeighborList_;
+        }
+        inline int TTK_TRIANGULATION_INTERNAL(getVertexEdge)(
+            const SimplexId &vertexId,
+            const int &localEdgeId,
+            SimplexId &edgeId) const override {
+
+            if (vertexEdges_[vertexId].empty()) {
+                int tid = omp_get_thread_num();
+                currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VERelation;
+                // waitings_[tid] = 1;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                timers_[tid].reStart();
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VERelation)]);
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                // waitings_[tid] = 0;
+            }
+            // std::lock_guard<std::mutex> lck(VVMutex_);
+            edgeId = vertexEdges_[vertexId][localEdgeId];
+            return 0;
+        }
+
+        inline SimplexId TTK_TRIANGULATION_INTERNAL(getVertexEdgeNumber)(
+            const SimplexId &vertexId) const override {
+            
+            int tid = omp_get_thread_num();
+            currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VERelation;
+            if (vertexEdges_[vertexId].empty()) {
+                // waitings_[tid] = 1;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                timers_[tid].reStart();
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VERelation)]);
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                // waitings_[tid] = 0;
+            }
+            // std::lock_guard<std::mutex> lck(VVMutex_);
+            return vertexEdges_[vertexId].size();
+        }
+
+        inline const std::vector<std::vector<SimplexId>> *
+            TTK_TRIANGULATION_INTERNAL(getVertexEdges)() override {
             // vertexNeighborData_.copyTo(vertexNeighborList_);
             // TODO: copy the matrix data back to vector of vector
             return &vertexNeighborList_;
@@ -188,6 +275,13 @@ class AcTopo final : public AbstractTriangulation {
 
 
     private:
+    
+        /* Build the internal edge list in the cluster. */
+        int buildInternalEdgeList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 2>>> &clusterEdges, bool buildBoundary = false);
+
+        /* Build the internal triangle list in the cluster. */
+        int buildInternalTriangleList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 3>>> &clusterTriangles, bool buildBoundary = false);
+
         /* Compute the interval array for cells */
         void computeCellIntervals();
 
@@ -209,7 +303,7 @@ class AcTopo final : public AbstractTriangulation {
 
         // data allocated on host memory
         volatile int numBlocks_, blockSize_;
-        int *hIndexArray_, *hExternalCells_;
+        int *hIndexArray_, *hExternalCells_, *hExternalCellOffsets_;
         vtkIdType *hConnectivity_, *hOffsets_;
         int *hCellIntervals_, *hTriangleIntervals_, *hEdgeIntervals_, *hVertexIntervals_;
 
@@ -220,11 +314,15 @@ class AcTopo final : public AbstractTriangulation {
         int *dExternalCells_, *dExternalCellOffsets_;
 
         // relation matrices
-        std::vector<std::vector<int>> vertexNeighbors_;
+        std::vector<std::vector<SimplexId>> vertexEdges_;
+        int *hVertexEdgeSizes_, *hVertexEdgeMatrix_;
+        int *dVertexEdgeSizes_, *dVertexEdgeMatrix_;
+
+        std::vector<std::vector<SimplexId>> vertexNeighbors_;
         int *hVertexNeighborSizes_, *hVertexNeighborMatrix_;
         int *dVertexNeighborSizes_, *dVertexNeighborMatrix_;
         
-        std::vector<std::vector<int>> vertexStars_;
+        std::vector<std::vector<SimplexId>> vertexStars_;
         int *hVertexStarSizes_, *hVertexStarMatrix_;
         int *dVertexStarSizes_, *dVertexStarMatrix_;
 
@@ -234,7 +332,7 @@ class AcTopo final : public AbstractTriangulation {
         std::array<std::vector<int>, 25> baseClusters_;
         mutable std::vector<SimplexId> currClusters_;
         mutable std::vector<RelationType> currRelations_;
-        mutable std::mutex VVMutex_, VTMutex_;
+        mutable std::mutex VEMutex_, VVMutex_, VTMutex_;
         mutable std::vector<std::vector<sem_t>> relationSems_;
         mutable std::vector<Timer> timers_;
         // mutable std::vector<int> waitings_;

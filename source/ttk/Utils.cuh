@@ -43,6 +43,7 @@ __global__ void printArray(const int *arr, int start, int end) {
     }
 }
 
+// Binary search an integer in a 1D array
 __device__ int binarySearch(const int arr[], const int length, const int target) {
     int left = 0, right = length-1;
     while (left <= right) {
@@ -55,9 +56,39 @@ __device__ int binarySearch(const int arr[], const int length, const int target)
     return -(left+1);
 }
 
+// Insert an interger at a specific position
 __device__ void insertElement(int arr[], const int length, const int pos, const int target) {
-    for (int i = length+1; i > pos; --i) {
+    for (int i = length; i > pos; --i) {
         arr[i] = arr[i-1];
     }
     arr[pos] = target;
+}
+
+// Binary search an integer pair in a 1D array of pairs
+__device__ int binarySearch(int *arr, const int start, const int length, const int target[2]) {
+    int left = start, right = start + length - 1;
+    // printf("left: %d, right: %d, length: %d, target: (%d, %d)\n", left, right, length, target[0], target[1]);
+    while (left <= right) {
+        int mid = left + (right - left) / 2;
+        if (arr[mid * 2] == target[0]) {
+            if (arr[mid * 2 + 1] == target[1])
+                return mid;
+            else if (arr[mid * 2 + 1] < target[1]) left = mid + 1;
+            else if (arr[mid * 2 + 1] > target[1]) right = mid - 1;
+        }
+        else if (arr[mid * 2] < target[0]) left = mid + 1;
+        else right = mid - 1;
+    }
+    // no exact match found, return negative
+    return -(left+1);
+}
+
+// Insert an interger pair at a specific position
+__device__ void insertElement(int *arr, const int start, const int length, const int pos, const int target[2]) {
+    for (int i = start + length; i > pos; --i) {
+        arr[i * 2] = arr[(i-1) * 2];
+        arr[i * 2 + 1] = arr[(i-1) * 2 + 1];
+    }
+    arr[2 * pos] = target[0];
+    arr[2 * pos + 1] = target[1];
 }

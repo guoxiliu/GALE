@@ -12,20 +12,20 @@ namespace ttk {
       TestTopoRelations() { threadNumber_ = 10; }
       ~TestTopoRelations() {}
 
-      int execute(const AbstractTriangulation *triangulation) const;
+      int execute(AbstractTriangulation *triangulation) const;
       inline void setThreadNumber(int tnum) { threadNumber_ = tnum; }
       inline int preconditionTriangulation(AbstractTriangulation *triangulation){
         if(triangulation){
           Timer t;
           // build edges and triangles
-          // triangulation->preconditionEdges();
-          // triangulation->preconditionTriangles();
+          triangulation->preconditionEdges();
+          triangulation->preconditionTriangles();
           // // boundary relations
           // triangulation->preconditionBoundaryVertices();
           // triangulation->preconditionBoundaryEdges();
           // triangulation->preconditionBoundaryTriangles();
           // vertex related relations
-          // triangulation->preconditionVertexEdges();
+          triangulation->preconditionVertexEdges();
           triangulation->preconditionVertexNeighbors();
           triangulation->preconditionVertexStars();
           // triangulation->preconditionVertexTriangles();
@@ -50,18 +50,18 @@ namespace ttk {
       }
     };
     
-    int TestTopoRelations::execute(const AbstractTriangulation *triangulation) const {
+    int TestTopoRelations::execute(AbstractTriangulation *triangulation) const {
 
       std::cout << "[TestTopoRelations] Dimension: " << triangulation->getDimensionality() << std::endl;
 
       SimplexId vertexNumber = triangulation->getNumberOfVertices();
-      // SimplexId edgeNumber = triangulation->getNumberOfEdges();
-      // SimplexId triangleNumber = triangulation->getNumberOfTriangles();
+      SimplexId edgeNumber = triangulation->getNumberOfEdges();
+      SimplexId triangleNumber = triangulation->getNumberOfTriangles();
       SimplexId cellNumber = triangulation->getNumberOfCells();
 
-      // std::cout << "[TestTopoRelations] vertex num: " << vertexNumber << ", edge num: "
-      //     << edgeNumber << ", triangle num: " << triangleNumber << ", cell num: " << 
-      //     cellNumber << std::endl;
+      std::cout << "[TestTopoRelations] vertex num: " << vertexNumber << ", edge num: "
+          << edgeNumber << ", triangle num: " << triangleNumber << ", cell num: " << 
+          cellNumber << std::endl;
 
       SimplexId verticesPerCell = triangulation->getCellVertexNumber(0);
       // SimplexId edgesPerCell = triangulation->getCellEdgeNumber(0);
@@ -70,37 +70,41 @@ namespace ttk {
       Timer t, tot;
 
       // Vertex neighbor relation
-      t.reStart();
-      #pragma omp parallel for num_threads(threadNumber_)
-      for(SimplexId vid = 0; vid < vertexNumber; vid++) {
-        SimplexId neighborNum = triangulation->getVertexNeighborNumber(vid);
-        // std::cout << "vertex " << vid << ": ";
-        SimplexId neighborId;
-        for(int j = 0; j < neighborNum; j++) {
-          triangulation->getVertexNeighbor(vid, j, neighborId);
-          // std::cout << neighborId << " ";
-        }
-        // std::cout << std::endl;
-      }
-      std::cout << "[TestTopoCluster] Time usage for VN: " << t.getElapsedTime()
-                << " s." << std::endl;
-
-      // /* test vertex edge relationship */
       // t.reStart();
-      // // #ifdef TTK_ENABLE_OPENMP
-      // // #pragma omp parallel for num_threads(threadNumber_)
-      // // #endif
-      // for(SimplexId vertexId = 0; vertexId < vertexNumber; vertexId++){
+      // #pragma omp parallel for num_threads(threadNumber_)
+      // for(SimplexId vid = 0; vid < 5000; vid++) {
+      //   SimplexId neighborNum = triangulation->getVertexNeighborNumber(vid);
+      //   std::cout << "vertex " << vid << ": ";
+      //   SimplexId neighborId;
+      //   for(int j = 0; j < neighborNum; j++) {
+      //     triangulation->getVertexNeighbor(vid, j, neighborId);
+      //     std::cout << neighborId << " ";
+      //   }
+      //   std::cout << std::endl;
+      // }
+      // std::cout << "[TestTopoRelations] Time usage for VN: " << t.getElapsedTime()
+      //           << " s." << std::endl;
+
+      /* test vertex edge relationship */
+      t.reStart();
+      // #ifdef TTK_ENABLE_OPENMP
+      // #pragma omp parallel for num_threads(threadNumber_)
+      // #endif
+      triangulation->getVertexEdgeNumber(0);
+      // for(SimplexId vertexId = 0; vertexId < 5000; vertexId++){
       //   SimplexId edgeNum = triangulation->getVertexEdgeNumber(vertexId);
+      //   std::cout << "vertex " << vertexId << ": [";
       //   SimplexId edgeId;
       //   for(SimplexId j = 0; j < edgeNum; j++){
       //     int result1 = triangulation->getVertexEdge(vertexId, j, edgeId);
       //     if(result1){
       //         std::cerr << "[TestTopoRelations] vertexId " << vertexId << " Something wrong in getVertexEdge()! Error code: " << result1 << "\n";
       //     }
+      //     std::cout << edgeId << " ";
       //   }
+      //   std::cout << "]" << std::endl;
       // }
-      // std::cout << "[TestTopoRelations] Time usage for VE: " << t.getElapsedTime() << " s.\n";
+      std::cout << "[TestTopoRelations] Time usage for VE: " << t.getElapsedTime() << " s.\n";
 
       // /* test vertex triangle relationship */
       // t.reStart();
@@ -120,19 +124,19 @@ namespace ttk {
       // std::cout << "[TestTopoRelations] Time usage for VF: " << t.getElapsedTime() << " s.\n";
       
       /* test vertex tetrahedron relationship */
-      t.reStart();
-      #pragma omp parallel for num_threads(threadNumber_)
-      for(SimplexId vertexId = 0; vertexId < vertexNumber; vertexId++){
-        SimplexId cellNum = triangulation->getVertexStarNumber(vertexId);
-        // SimplexId cellId;
-        // for(SimplexId j = 0; j < cellNum; j++){
-        //   int result1 = triangulation->getVertexStar(vertexId, j, cellId);
-        //   if(result1){
-        //       std::cout << "[TestTopoRelations] vertexId " << vertexId << " Something wrong in getVertexStar()! Error code: " << result1 << "\n";
-        //   }
-        // }
-      }
-      std::cout << "[TestTopoRelations] Time usage for VT: " << t.getElapsedTime() << " s.\n";
+      // t.reStart();
+      // #pragma omp parallel for num_threads(threadNumber_)
+      // for(SimplexId vertexId = 0; vertexId < vertexNumber; vertexId++){
+      //   SimplexId cellNum = triangulation->getVertexStarNumber(vertexId);
+      //   SimplexId cellId;
+      //   for(SimplexId j = 0; j < cellNum; j++){
+      //     int result1 = triangulation->getVertexStar(vertexId, j, cellId);
+      //     if(result1){
+      //         std::cout << "[TestTopoRelations] vertexId " << vertexId << " Something wrong in getVertexStar()! Error code: " << result1 << "\n";
+      //     }
+      //   }
+      // }
+      // std::cout << "[TestTopoRelations] Time usage for VT: " << t.getElapsedTime() << " s.\n";
 
       // /* test edge vertex relationship */
       // t.reStart();
@@ -235,23 +239,23 @@ namespace ttk {
       // std::cout << "[TestTopoRelations] Time usage for FT: " << t.getElapsedTime() << " s.\n";
 
       /* test tetrahedron vertex relationship */
-      t.reStart();
-      // #ifdef TTK_ENABLE_OPENMP
-      #pragma omp parallel for num_threads(threadNumber_)
-      // #endif
-      for(SimplexId cellId = 0; cellId < cellNumber; cellId++){
-        SimplexId vertexId;
-        // std::cout << "cell " << cellId << ": ";
-        for(SimplexId j = 0; j < verticesPerCell; j++){
-          int result1 = triangulation->getCellVertex(cellId, j, vertexId);
-          // std::cout << vertexId << " ";
-          if(result1){
-              std::cout << "[TestTopoRelations] cellId " << cellId << " Something wrong in getCellVertex()! Error code: " << result1 << "\n";
-          }
-        }
-        // std::cout << std::endl;
-      }
-      std::cout << "[TestTopoRelations] Time usage for TV: " << t.getElapsedTime() << " s.\n";
+      // t.reStart();
+      // // #ifdef TTK_ENABLE_OPENMP
+      // #pragma omp parallel for num_threads(threadNumber_)
+      // // #endif
+      // for(SimplexId cellId = 0; cellId < cellNumber; cellId++){
+      //   SimplexId vertexId;
+      //   // std::cout << "cell " << cellId << ": ";
+      //   for(SimplexId j = 0; j < verticesPerCell; j++){
+      //     int result1 = triangulation->getCellVertex(cellId, j, vertexId);
+      //     // std::cout << vertexId << " ";
+      //     if(result1){
+      //         std::cout << "[TestTopoRelations] cellId " << cellId << " Something wrong in getCellVertex()! Error code: " << result1 << "\n";
+      //     }
+      //   }
+      //   // std::cout << std::endl;
+      // }
+      // std::cout << "[TestTopoRelations] Time usage for TV: " << t.getElapsedTime() << " s.\n";
 
       // /* test tetrahedron edge relationship */
       // t.reStart();
