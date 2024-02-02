@@ -105,10 +105,10 @@ __global__ void buildEdges(int *edgeList, int *edgeCounts,
                     edgeIds[1] = connectivity[offsets[cid] + k];
 
                     // not found in the cluster edge list - increase the edge count
-                    int pos = binarySearch(edgeList, startEdgeIdx, edgeCounts[tid], edgeIds);
+                    int pos = binarySearch<2>(edgeList, startEdgeIdx, startEdgeIdx + edgeCounts[tid], edgeIds);
                     // printf("tid: %d, edgeId: (%d, %d), pos:%d\n", tid, edgeIds[0], edgeIds[1], pos);
                     if(pos < 0) {
-                        insertElement(edgeList, startEdgeIdx, edgeCounts[tid], -pos-1, edgeIds);
+                        insertElement<2>(edgeList, startEdgeIdx, edgeCounts[tid], -pos-1, edgeIds);
                         edgeCounts[tid] += 1;
                     }
                 }
@@ -129,9 +129,9 @@ __global__ void buildEdges(int *edgeList, int *edgeCounts,
 
                 // the edge is in the current cluster
                 if(edgeIds[0] >= startVertexId && edgeIds[0] < endVertexId) {
-                    int pos = binarySearch(edgeList, startEdgeIdx, edgeCounts[tid], edgeIds);
+                    int pos = binarySearch<2>(edgeList, startEdgeIdx, startEdgeIdx + edgeCounts[tid], edgeIds);
                     if (pos < 0) {
-                        insertElement(edgeList, startEdgeIdx, edgeCounts[tid], -pos-1, edgeIds);
+                        insertElement<2>(edgeList, startEdgeIdx, edgeCounts[tid], -pos-1, edgeIds);
                         edgeCounts[tid] += 1;
                     }
                 }
@@ -162,35 +162,15 @@ __global__ void precomputeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int 
     // each block thread computes one cluster
     int tid = blockIdx.x * blockDim.x + threadIdx.x + baseCluster;
     if (tid >= clusterNumber) return;
-
-    /*
-    * divide the job by clusters
-    */
+    
     // determine the range of vertices
     const int baseVertexId = vertexIntervals[baseCluster - 1];
     const int startVertexId = vertexIntervals[tid-1];
     const int endVertexId = vertexIntervals[tid];
     const int startEdgeId = edgeIntervals[tid-1];
     const int endEdgeId = edgeIntervals[tid];
-    // const int localVertexNum = vertexIntervals[tid]-startVertexId;
-    
-    // for (int i = 0; i < localVertexNum; ++i) 
-    //     vertexEdgeSizes[vertexIntervals[tid-1] - vertexIntervals[baseCluster-1] + i] = 0;
 
-    // internel edges can be handled from the edge list
-    for (int edgeId = startEdgeId; edgeId < endEdgeId; ++edgeId) {
-        int relativeViId = edgeList[edgeId * 2] - baseVertexId;
-        // no need to check duplication as the edge id is unique
-        insertElement(vertexEdgeMatrix + matrixColumns * relativeViId, vertexEdgeSizes[relativeViId], vertexEdgeSizes[relativeViId], edgeId);
-        vertexEdgeSizes[relativeViId] += 1;
-        if (edgeList[edgeId * 2 + 1] < endVertexId) {
-            int relativeVjId = edgeList[edgeId * 2 + 1] - baseVertexId;
-            insertElement(vertexEdgeMatrix + matrixColumns * relativeVjId, vertexEdgeSizes[relativeVjId], vertexEdgeSizes[relativeVjId], edgeId);
-            vertexEdgeSizes[relativeVjId] += 1;
-        }
-    }
-
-    // only external edges need to be checked
+    // only external edges need to be checked for duplication
     for (int i = externalCellOffsets[tid-1]; i < externalCellOffsets[tid]; ++i) {
         int cellId = offsets[externalCells[i]];
         for (int vi = 0; vi < dimension; ++vi) {
@@ -198,7 +178,7 @@ __global__ void precomputeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int 
             // int localViId = viId - vertexIntervals[tid-1];
             for (int vj = vi + 1; vj <= dimension; ++vj) {
                 int vjId = connectivity[cellId + vj];
-                // // already checked from the internal edge list above
+                // // already included in the internal edge list
                 // if (viId >= startVertexId && viId < endVertexId) {
                 //     int relativeViId = viId - vertexIntervals[baseCluster-1];
                 //     int pos = binarySearch(vertexEdgeMatrix + matrixColumns * relativeViId, vertexEdgeSizes[relativeViId], edgeId);
@@ -211,14 +191,27 @@ __global__ void precomputeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int 
                     int exCluster = indexArray[viId];
                     int newEdge[2] = {viId, vjId};
                     int relativeVjId = vjId - baseVertexId;
-                    int edgeId = binarySearch(edgeList, edgeIntervals[exCluster-1], edgeIntervals[exCluster]-edgeIntervals[exCluster-1], newEdge);
-                    int pos = binarySearch(vertexEdgeMatrix + matrixColumns * relativeVjId, vertexEdgeSizes[relativeVjId], edgeId);
+                    int edgeId = binarySearch<2>(edgeList, edgeIntervals[exCluster-1], edgeIntervals[exCluster], newEdge);
+                    int pos = binarySearch1D(vertexEdgeMatrix + matrixColumns * relativeVjId, vertexEdgeSizes[relativeVjId], edgeId);
                     if (pos < 0) {
-                        insertElement(vertexEdgeMatrix + matrixColumns * relativeVjId, vertexEdgeSizes[relativeVjId], -pos-1, edgeId);
+                        insertElement1D(vertexEdgeMatrix + matrixColumns * relativeVjId, vertexEdgeSizes[relativeVjId], -pos-1, edgeId);
                         vertexEdgeSizes[relativeVjId] += 1;
                     }
                 }
             }
+        }
+    }
+    
+    // internel edges can be handled from the edge list
+    for (int edgeId = startEdgeId; edgeId < endEdgeId; ++edgeId) {
+        int relativeViId = edgeList[edgeId * 2] - baseVertexId;
+        // no need to check duplication as the edge id is unique
+        insertElement1D(vertexEdgeMatrix + matrixColumns * relativeViId, vertexEdgeSizes[relativeViId], vertexEdgeSizes[relativeViId], edgeId);
+        vertexEdgeSizes[relativeViId] += 1;
+        if (edgeList[edgeId * 2 + 1] < endVertexId) {
+            int relativeVjId = edgeList[edgeId * 2 + 1] - baseVertexId;
+            insertElement1D(vertexEdgeMatrix + matrixColumns * relativeVjId, vertexEdgeSizes[relativeVjId], vertexEdgeSizes[relativeVjId], edgeId);
+            vertexEdgeSizes[relativeVjId] += 1;
         }
     }
 }
@@ -239,36 +232,6 @@ __global__ void precomputeVertexNeighbors(int *vertexNeighborMatrix, int *vertex
     const int startVertexId = vertexIntervals[tid-1];
     const int endVertexId = vertexIntervals[tid];
     const int startCellId = cellIntervals[tid-1];
-    const int localVertexNum = vertexIntervals[tid]-startVertexId;
-    
-    for (int i = 0; i < localVertexNum; ++i) 
-        vertexNeighborSizes[vertexIntervals[tid-1] - vertexIntervals[baseCluster-1] + i] = 0;
-
-    // loop through the internal cell list
-    for (int cid = startCellId; cid < cellIntervals[tid]; ++cid) {
-        for (int vi = 0; vi < dimension; ++vi) {
-            int viId = connectivity[offsets[cid] + vi];
-            for (int vj = vi+1; vj <= dimension; ++vj) {
-                int vjId = connectivity[offsets[cid] + vj];
-                if (viId >= startVertexId && viId < endVertexId) {
-                    int relativeViId = viId - vertexIntervals[baseCluster-1];
-                    int pos = binarySearch(vertexNeighborMatrix + matrixColumns * relativeViId, vertexNeighborSizes[relativeViId], vjId);
-                    if (pos < 0) {
-                        insertElement(vertexNeighborMatrix + matrixColumns * relativeViId, vertexNeighborSizes[relativeViId], -pos-1, vjId);
-                        atomicAdd(&vertexNeighborSizes[relativeViId], 1);
-                    }
-                }
-                if (vjId >= startVertexId && vjId < endVertexId) {
-                    int relativeVjId = vjId - vertexIntervals[baseCluster-1];
-                    int pos = binarySearch(vertexNeighborMatrix + matrixColumns * relativeVjId, vertexNeighborSizes[relativeVjId], viId);
-                    if (pos < 0) {
-                        insertElement(vertexNeighborMatrix + matrixColumns * relativeVjId, vertexNeighborSizes[relativeVjId], -pos-1, viId);
-                        atomicAdd(&vertexNeighborSizes[relativeVjId], 1);
-                    }
-                }
-            }
-        }
-    }
 
     // loop through the external cell list
     for (int i = externalCellOffsets[tid-1]; i < externalCellOffsets[tid]; ++i) {
@@ -281,17 +244,75 @@ __global__ void precomputeVertexNeighbors(int *vertexNeighborMatrix, int *vertex
                 // int localVjId = vjId - vertexIntervals[tid-1];
                 if (viId >= startVertexId && viId < endVertexId) {
                     int relativeViId = viId - vertexIntervals[baseCluster-1];
-                    int pos = binarySearch(vertexNeighborMatrix + matrixColumns * relativeViId, vertexNeighborSizes[relativeViId], vjId);
+
+                    // // hash function version to keep the list unique (not sorted)
+                    // int *list = vertexNeighborMatrix + matrixColumns * relativeViId;
+                    // int pos = getHashPosition(list, matrixColumns, vjId);
+                    // if (list[pos] == -1) {
+                    //     list[pos] = vjId;
+                    //     atomicAdd(&vertexNeighborSizes[relativeViId], 1);
+                    // }
+
+                    // binary search version to keep the list sorted and unique
+                    int pos = binarySearch1D(vertexNeighborMatrix + matrixColumns * relativeViId, vertexNeighborSizes[relativeViId], vjId);
                     if (pos < 0) {
-                        insertElement(vertexNeighborMatrix + matrixColumns * relativeViId, vertexNeighborSizes[relativeViId], -pos-1, vjId);
+                        insertElement1D(vertexNeighborMatrix + matrixColumns * relativeViId, vertexNeighborSizes[relativeViId], -pos-1, vjId);
                         atomicAdd(&vertexNeighborSizes[relativeViId], 1);
                     }
-                } 
+                }
                 if (vjId >= startVertexId && vjId < endVertexId) {
                     int relativeVjId = vjId - vertexIntervals[baseCluster-1];
-                    int pos = binarySearch(vertexNeighborMatrix + matrixColumns * relativeVjId, vertexNeighborSizes[relativeVjId], viId);
+                    // int *list = vertexNeighborMatrix + matrixColumns * relativeVjId;
+                    // int pos = getHashPosition(list, matrixColumns, viId);
+                    // if (list[pos] == -1) {
+                    //     list[pos] = viId;
+                    //     atomicAdd(&vertexNeighborSizes[relativeVjId], 1);
+                    // }
+
+                    int pos = binarySearch1D(vertexNeighborMatrix + matrixColumns * relativeVjId, vertexNeighborSizes[relativeVjId], viId);
                     if (pos < 0) {
-                        insertElement(vertexNeighborMatrix + matrixColumns * relativeVjId, vertexNeighborSizes[relativeVjId], -pos-1, viId);
+                        insertElement1D(vertexNeighborMatrix + matrixColumns * relativeVjId, vertexNeighborSizes[relativeVjId], -pos-1, viId);
+                        atomicAdd(&vertexNeighborSizes[relativeVjId], 1);
+                    }
+                }
+            }
+        }
+    }
+
+    // loop through the internal cell list
+    for (int cid = startCellId; cid < cellIntervals[tid]; ++cid) {
+        for (int vi = 0; vi < dimension; ++vi) {
+            int viId = connectivity[offsets[cid] + vi];
+            for (int vj = vi+1; vj <= dimension; ++vj) {
+                int vjId = connectivity[offsets[cid] + vj];
+                if (viId >= startVertexId && viId < endVertexId) {
+                    int relativeViId = viId - vertexIntervals[baseCluster-1];
+
+                    // int *list = vertexNeighborMatrix + matrixColumns * relativeViId;
+                    // int pos = getHashPosition(list, matrixColumns, vjId);
+                    // if (list[pos] == -1) {
+                    //     list[pos] = vjId;
+                    //     atomicAdd(&vertexNeighborSizes[relativeViId], 1);
+                    // }
+
+                    int pos = binarySearch1D(vertexNeighborMatrix + matrixColumns * relativeViId, vertexNeighborSizes[relativeViId], vjId);
+                    if (pos < 0) {
+                        insertElement1D(vertexNeighborMatrix + matrixColumns * relativeViId, vertexNeighborSizes[relativeViId], -pos-1, vjId);
+                        atomicAdd(&vertexNeighborSizes[relativeViId], 1);
+                    }
+                }
+                if (vjId >= startVertexId && vjId < endVertexId) {
+                    int relativeVjId = vjId - vertexIntervals[baseCluster-1];
+                    // int *list = vertexNeighborMatrix + matrixColumns * relativeVjId;
+                    // int pos = getHashPosition(list, matrixColumns, viId);
+                    // if (list[pos] == -1) {
+                    //     list[pos] = viId;
+                    //     atomicAdd(&vertexNeighborSizes[relativeVjId], 1);
+                    // }
+
+                    int pos = binarySearch1D(vertexNeighborMatrix + matrixColumns * relativeVjId, vertexNeighborSizes[relativeVjId], viId);
+                    if (pos < 0) {
+                        insertElement1D(vertexNeighborMatrix + matrixColumns * relativeVjId, vertexNeighborSizes[relativeVjId], -pos-1, viId);
                         atomicAdd(&vertexNeighborSizes[relativeVjId], 1);
                     }
                 }
@@ -317,23 +338,6 @@ __global__ void precomputeVertexStars(int *vertexStarMatrix, int *vertexStarSize
     const int startVertexId = vertexIntervals[tid-1];
     const int endVertexId = vertexIntervals[tid];
     const int startCellId = cellIntervals[tid-1];
-    const int localVertexNum = vertexIntervals[tid]-startVertexId;
-    
-    for (int i = 0; i < localVertexNum; ++i) 
-        vertexStarSizes[vertexIntervals[tid-1] - vertexIntervals[baseCluster-1] + i] = 0;
-
-    // loop through the internal cell list
-    for (int cid = startCellId; cid < cellIntervals[tid]; ++cid) {
-        // the first vertex belongs to the cluster
-        for (int vi = 0; vi <= dimension; ++vi) {
-            int viId = connectivity[offsets[cid] + vi];
-            if (viId < endVertexId) {
-                int relativeViId = viId - vertexIntervals[baseCluster-1];
-                vertexStarMatrix[matrixColumns * relativeViId + vertexStarSizes[relativeViId]] = cid;
-                atomicAdd(&vertexStarSizes[relativeViId], 1);
-            }
-        }
-    }
 
     // loop through the external cell list
     for (int i = externalCellOffsets[tid-1]; i < externalCellOffsets[tid]; ++i) {
@@ -344,6 +348,19 @@ __global__ void precomputeVertexStars(int *vertexStarMatrix, int *vertexStarSize
             if (viId >= startVertexId && viId < endVertexId) {
                 int relativeViId = viId - vertexIntervals[baseCluster-1];
                 vertexStarMatrix[matrixColumns * relativeViId + vertexStarSizes[relativeViId]] = externalCells[i];
+                atomicAdd(&vertexStarSizes[relativeViId], 1);
+            }
+        }
+    }
+
+    // loop through the internal cell list
+    for (int cid = startCellId; cid < cellIntervals[tid]; ++cid) {
+        // the first vertex belongs to the cluster
+        for (int vi = 0; vi <= dimension; ++vi) {
+            int viId = connectivity[offsets[cid] + vi];
+            if (viId < endVertexId) {
+                int relativeViId = viId - vertexIntervals[baseCluster-1];
+                vertexStarMatrix[matrixColumns * relativeViId + vertexStarSizes[relativeViId]] = cid;
                 atomicAdd(&vertexStarSizes[relativeViId], 1);
             }
         }
@@ -364,17 +381,10 @@ __global__ void precomputeMultiVertexNeighbors(int *vertexNeighborMatrix, int *v
     // printf("tid: %d, baseCluster: %d, vertexOffset: %d\n", tid, baseCluster, vertexOffset);
     if (tid >= clusterNumber) return;
 
-    /*
-    * divide the job by clusters
-    */
     // determine the range of vertices
     const int startVertexId = vertexIntervals[tid-1];
     const int endVertexId = vertexIntervals[tid];
     const int startCellId = cellIntervals[tid-1];
-    const int localVertexNum = vertexIntervals[tid]-startVertexId;
-    
-    for (int i = 0; i < localVertexNum; ++i) 
-        vertexNeighborSizes[vertexIntervals[tid-1] - vertexIntervals[baseCluster-1] + i + vertexOffset] = 0;
 
     // loop through the internal cell list
     for (int cid = startCellId; cid < cellIntervals[tid]; ++cid) {
@@ -384,17 +394,19 @@ __global__ void precomputeMultiVertexNeighbors(int *vertexNeighborMatrix, int *v
                 int vjId = connectivity[offsets[cid] + vj];
                 if (viId >= startVertexId && viId < endVertexId) {
                     int relativeViId = viId - vertexIntervals[baseCluster-1] + vertexOffset;
-                    int pos = binarySearch(vertexNeighborMatrix + matrixColumns * relativeViId, vertexNeighborSizes[relativeViId], vjId);
-                    if (pos < 0) {
-                        insertElement(vertexNeighborMatrix + matrixColumns * relativeViId, vertexNeighborSizes[relativeViId], -pos-1, vjId);
+                    int *list = vertexNeighborMatrix + matrixColumns * relativeViId;
+                    int pos = getHashPosition(list, matrixColumns, vjId);
+                    if (list[pos] == -1) {
+                        list[pos] = vjId;
                         atomicAdd(&vertexNeighborSizes[relativeViId], 1);
                     }
                 }
                 if (vjId >= startVertexId && vjId < endVertexId) {
                     int relativeVjId = vjId - vertexIntervals[baseCluster-1] + vertexOffset;
-                    int pos = binarySearch(vertexNeighborMatrix + matrixColumns * relativeVjId, vertexNeighborSizes[relativeVjId], viId);
-                    if (pos < 0) {
-                        insertElement(vertexNeighborMatrix + matrixColumns * relativeVjId, vertexNeighborSizes[relativeVjId], -pos-1, viId);
+                    int *list = vertexNeighborMatrix + matrixColumns * relativeVjId;
+                    int pos = getHashPosition(list, matrixColumns, viId);
+                    if (list[pos] == -1) {
+                        list[pos] = viId;
                         atomicAdd(&vertexNeighborSizes[relativeVjId], 1);
                     }
                 }
@@ -413,17 +425,19 @@ __global__ void precomputeMultiVertexNeighbors(int *vertexNeighborMatrix, int *v
                 // int localVjId = vjId - vertexIntervals[tid-1];
                 if (viId >= startVertexId && viId < endVertexId) {
                     int relativeViId = viId - vertexIntervals[baseCluster-1] + vertexOffset;
-                    int pos = binarySearch(vertexNeighborMatrix + matrixColumns * relativeViId, vertexNeighborSizes[relativeViId], vjId);
-                    if (pos < 0) {
-                        insertElement(vertexNeighborMatrix + matrixColumns * relativeViId, vertexNeighborSizes[relativeViId], -pos-1, vjId);
+                    int *list = vertexNeighborMatrix + matrixColumns * relativeViId;
+                    int pos = getHashPosition(list, matrixColumns, vjId);
+                    if (list[pos] == -1) {
+                        list[pos] = vjId;
                         atomicAdd(&vertexNeighborSizes[relativeViId], 1);
                     }
-                } 
+                }
                 if (vjId >= startVertexId && vjId < endVertexId) {
                     int relativeVjId = vjId - vertexIntervals[baseCluster-1] + vertexOffset;
-                    int pos = binarySearch(vertexNeighborMatrix + matrixColumns * relativeVjId, vertexNeighborSizes[relativeVjId], viId);
-                    if (pos < 0) {
-                        insertElement(vertexNeighborMatrix + matrixColumns * relativeVjId, vertexNeighborSizes[relativeVjId], -pos-1, viId);
+                    int *list = vertexNeighborMatrix + matrixColumns * relativeVjId;
+                    int pos = getHashPosition(list, matrixColumns, viId);
+                    if (list[pos] == -1) {
+                        list[pos] = viId;
                         atomicAdd(&vertexNeighborSizes[relativeVjId], 1);
                     }
                 }
@@ -445,9 +459,6 @@ __global__ void precomputeMultiVertexStars(int *vertexStarMatrix, int *vertexSta
     // int tid = blockIdx.x * blockDim.x + threadIdx.x + baseCluster;
     if (tid >= clusterNumber) return;
 
-    /*
-    * divide the job by clusters
-    */
     // determine the range of vertices
     const int startVertexId = vertexIntervals[tid-1];
     const int endVertexId = vertexIntervals[tid];

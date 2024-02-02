@@ -314,6 +314,7 @@ int main(int argc, char const *argv[]) {
     cudaEventRecord(start, 0);
     CHECK(cudaMalloc((void **)&dVertexStarMatrix, sizeof(int) * localVertexNum * matrixColumns));
     CHECK(cudaMalloc((void **) &dVertexStarSize, sizeof(int) * localVertexNum));
+    CHECK(cudaMemset(dVertexStarSize, 0, sizeof(int) * localVertexNum));
 
     precomputeVertexStars<<<numBlock, blockSize>>>(dVertexStarMatrix, 
             dVertexStarSize, baseCluster, nodeNumber, 
@@ -356,6 +357,7 @@ int main(int argc, char const *argv[]) {
     cudaEventRecord(start, 0);
     CHECK(cudaMalloc((void **)&dVertexNeighborMatrix, sizeof(int) * localVertexNum * matrixColumns));
     CHECK(cudaMalloc((void **) &dVertexNeighborSize, sizeof(int) * localVertexNum));
+    CHECK(cudaMemset(dVertexNeighborSize, 0, sizeof(int) * localVertexNum));
 
     precomputeVertexNeighbors<<<numBlock, blockSize>>>(
                     dVertexNeighborMatrix, dVertexNeighborSize, 
@@ -384,9 +386,13 @@ int main(int argc, char const *argv[]) {
             __FILE__, __LINE__); if (abort) exit(status);
     }
 
-    // // check the number of vertex neighbor for the first cluster
+    // // check the output of vertex neighbor list
     // for (int i = 0; i < localVertexNum; ++i) {
-    //     std::cout << "vertex " << i + hVertexIntervals[baseCluster-1] << ": " << hVertexNeighborSize[i] << std::endl;
+    //     std::cout << "vertex " << i + hVertexIntervals[baseCluster-1] << ": "  << hVertexNeighborSize[i] << " [";
+    //     for (int j = 0; j < hVertexNeighborSize[i]; ++j) {
+    //         std::cout << hVertexNeighborMatrix[i * matrixColumns + j] << " ";
+    //     }
+    //     std::cout << "]" << std::endl;
     // }
 
     // free host memory

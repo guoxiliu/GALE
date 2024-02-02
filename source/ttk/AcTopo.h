@@ -295,7 +295,7 @@ class AcTopo final : public AbstractTriangulation {
         int computeRelation(const RelationType relation, const SimplexId clusterId, int threadId, bool signal);
 
         /* Compute the relations for different starting clusters */
-        int computeRelations(const RelationType relation, const std::vector<std::pair<int, int>> requests);
+        int computeCombinedRelation(const RelationType relation, const std::vector<std::pair<int, int>> requests);
 
         int cellDimension_;
         int clusterNumber_;
