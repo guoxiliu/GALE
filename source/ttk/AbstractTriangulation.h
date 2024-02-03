@@ -2827,6 +2827,7 @@ namespace ttk {
 
         std::cerr << "BoundaryEdge query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionBoundaryEdges() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
       }
 #endif
 
@@ -2839,6 +2840,7 @@ namespace ttk {
 
         std::cerr << "BoundaryTriangle query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionBoundaryTriangles() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
       }
 #endif
       return hasPreconditionedBoundaryTriangles_;
@@ -2850,6 +2852,7 @@ namespace ttk {
 
         std::cerr << "BoundaryVertex query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionBoundaryVertices() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
       }
 #endif
       return hasPreconditionedBoundaryVertices_;
@@ -2863,6 +2866,7 @@ namespace ttk {
 
         std::cerr << "CellEdge query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionCellEdges() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
         return false;
       }
 #endif
@@ -2875,6 +2879,7 @@ namespace ttk {
 
         std::cerr << "CellNeighbor query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionCellNeighbors() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
       }
 #endif
       return hasPreconditionedCellNeighbors_;
@@ -2888,6 +2893,7 @@ namespace ttk {
 
         std::cerr << "CellTriangle query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionCellTriangles() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
 
         return false;
       }
@@ -2901,6 +2907,7 @@ namespace ttk {
 
         std::cerr << "EdgeLink query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionEdgeLinks() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
       }
 #endif
       return hasPreconditionedEdgeLinks_;
@@ -2912,6 +2919,7 @@ namespace ttk {
 
         std::cerr << "EdgeStar query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionEdgeStars() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
       }
 #endif
       return hasPreconditionedEdgeStars_;
@@ -2925,6 +2933,7 @@ namespace ttk {
 
         std::cerr << "EdgeTriangle query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionEdgeTriangles() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
 
         return false;
       }
@@ -2938,6 +2947,7 @@ namespace ttk {
 
         std::cerr << "Edge query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionEdges() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
 
         return false;
       }
@@ -2951,6 +2961,7 @@ namespace ttk {
 
         std::cerr << "Triangle query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionTriangles() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
 
         return false;
       }
@@ -2966,6 +2977,7 @@ namespace ttk {
 
         std::cerr << "TriangleEdge query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionTriangleEdges() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
 
         return false;
       }
@@ -2979,6 +2991,7 @@ namespace ttk {
 
         std::cerr << "TriangleLink query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionTriangleLinks() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
       }
 #endif
       return hasPreconditionedTriangleLinks_;
@@ -2990,6 +3003,7 @@ namespace ttk {
 
         std::cerr << "TriangleStar query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionTriangleStars() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
       }
 #endif
       return hasPreconditionedTriangleStars_;
@@ -3002,6 +3016,7 @@ namespace ttk {
 
         std::cerr << "VertexEdge query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionVertexEdges() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
 
         return false;
       }
@@ -3015,6 +3030,7 @@ namespace ttk {
 
         std::cerr << "VertexLink query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionVertexLinks() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
       }
 #endif
       return hasPreconditionedVertexLinks_;
@@ -3026,6 +3042,7 @@ namespace ttk {
 
         std::cerr << "VertexNeighbor query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionVertexNeighbors() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
       }
 #endif
       return hasPreconditionedVertexNeighbors_;
@@ -3037,6 +3054,7 @@ namespace ttk {
 
         std::cerr << "VertexStar query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionVertexStars() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
       }
 #endif
       return hasPreconditionedVertexStars_;
@@ -3050,6 +3068,7 @@ namespace ttk {
 
         std::cerr << "VertexTriangle query without pre-process!" << std::endl;
         std::cerr << "Please call preconditionVertexTriangles() in a pre-process." << std::endl;
+        return EXIT_FAILURE;
 
         return false;
       }

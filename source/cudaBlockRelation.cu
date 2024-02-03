@@ -270,11 +270,11 @@ int main(int argc, char const *argv[]) {
     // int *dVertexEdgeMatrix;
     // int *dVertexEdgeSize;
     // std::vector<int> hVertexEdgeSize(localVertexNum);
-    // std::vector<int> hVertexEdgeMatrix(localVertexNum * matrixColumns);
+    // std::vector<int> hVertexEdgeMatrix(localVertexNum * matrixColumnSmall);
 
     // // clock_t t = clock();
     // cudaEventRecord(start, 0);
-    // CHECK(cudaMalloc((void **)&dVertexEdgeMatrix, sizeof(int) * localVertexNum * matrixColumns));
+    // CHECK(cudaMalloc((void **)&dVertexEdgeMatrix, sizeof(int) * localVertexNum * matrixColumnSmall));
     // CHECK(cudaMalloc((void **) &dVertexEdgeSize, sizeof(int) * localVertexNum));
 
     // precomputeVertexEdges<<<numBlock, blockSize>>>(dVertexEdgeMatrix, dVertexEdgeSize, baseCluster, dConnectitity, dOffsets, dIndexArray, 
@@ -282,7 +282,7 @@ int main(int argc, char const *argv[]) {
 
     // // cudaDeviceSynchronize();
     // CHECK(cudaMemcpy(hVertexEdgeSize.data(), dVertexEdgeSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
-    // CHECK(cudaMemcpy(hVertexEdgeMatrix.data(), dVertexEdgeMatrix, sizeof(int) * localVertexNum * matrixColumns, cudaMemcpyDeviceToHost));
+    // CHECK(cudaMemcpy(hVertexEdgeMatrix.data(), dVertexEdgeMatrix, sizeof(int) * localVertexNum * matrixColumnSmall, cudaMemcpyDeviceToHost));
     // cudaEventRecord(stop, 0);
     // cudaEventSynchronize(stop);
     // // t = clock() - t;
@@ -308,11 +308,11 @@ int main(int argc, char const *argv[]) {
     int *dVertexStarMatrix;
     int *dVertexStarSize;
     std::vector<int> hVertexStarSize(localVertexNum);
-    std::vector<int> hVertexStarMatrix(localVertexNum * matrixColumns);
+    std::vector<int> hVertexStarMatrix(localVertexNum * matrixColumnSmall);
 
     // clock_t t = clock();
     cudaEventRecord(start, 0);
-    CHECK(cudaMalloc((void **)&dVertexStarMatrix, sizeof(int) * localVertexNum * matrixColumns));
+    CHECK(cudaMalloc((void **)&dVertexStarMatrix, sizeof(int) * localVertexNum * matrixColumnSmall));
     CHECK(cudaMalloc((void **) &dVertexStarSize, sizeof(int) * localVertexNum));
     CHECK(cudaMemset(dVertexStarSize, 0, sizeof(int) * localVertexNum));
 
@@ -323,7 +323,7 @@ int main(int argc, char const *argv[]) {
 
     // cudaDeviceSynchronize();
     CHECK(cudaMemcpy(hVertexStarSize.data(), dVertexStarSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
-    CHECK(cudaMemcpy(hVertexStarMatrix.data(), dVertexStarMatrix, sizeof(int) * localVertexNum * matrixColumns, cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(hVertexStarMatrix.data(), dVertexStarMatrix, sizeof(int) * localVertexNum * matrixColumnSmall, cudaMemcpyDeviceToHost));
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
 
@@ -351,11 +351,11 @@ int main(int argc, char const *argv[]) {
     int *dVertexNeighborMatrix;
     int *dVertexNeighborSize;
     std::vector<int> hVertexNeighborSize(localVertexNum);
-    std::vector<int> hVertexNeighborMatrix(localVertexNum * matrixColumns);
+    std::vector<int> hVertexNeighborMatrix(localVertexNum * matrixColumnSmall);
 
     // clock_t t = clock();
     cudaEventRecord(start, 0);
-    CHECK(cudaMalloc((void **)&dVertexNeighborMatrix, sizeof(int) * localVertexNum * matrixColumns));
+    CHECK(cudaMalloc((void **)&dVertexNeighborMatrix, sizeof(int) * localVertexNum * matrixColumnSmall));
     CHECK(cudaMalloc((void **) &dVertexNeighborSize, sizeof(int) * localVertexNum));
     CHECK(cudaMemset(dVertexNeighborSize, 0, sizeof(int) * localVertexNum));
 
@@ -367,7 +367,7 @@ int main(int argc, char const *argv[]) {
 
     // cudaDeviceSynchronize();
     CHECK(cudaMemcpy(hVertexNeighborSize.data(), dVertexNeighborSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
-    CHECK(cudaMemcpy(hVertexNeighborMatrix.data(), dVertexNeighborMatrix, sizeof(int) * localVertexNum * matrixColumns, cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(hVertexNeighborMatrix.data(), dVertexNeighborMatrix, sizeof(int) * localVertexNum * matrixColumnSmall, cudaMemcpyDeviceToHost));
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
 
@@ -390,7 +390,7 @@ int main(int argc, char const *argv[]) {
     // for (int i = 0; i < localVertexNum; ++i) {
     //     std::cout << "vertex " << i + hVertexIntervals[baseCluster-1] << ": "  << hVertexNeighborSize[i] << " [";
     //     for (int j = 0; j < hVertexNeighborSize[i]; ++j) {
-    //         std::cout << hVertexNeighborMatrix[i * matrixColumns + j] << " ";
+    //         std::cout << hVertexNeighborMatrix[i * matrixColumnSmall + j] << " ";
     //     }
     //     std::cout << "]" << std::endl;
     // }

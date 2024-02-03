@@ -69,12 +69,12 @@ class AcTopo final : public AbstractTriangulation {
         // int preconditionTriangleLinksInternal() override;
         // int preconditionTriangleStarsInternal() override;
 
-        int preconditionVertexEdgesInternal() override {
+        inline int preconditionVertexEdgesInternal() override {
             if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
                 std::cerr << "Empty dataset, precondition skipped";
                 return 1;
             }
-            vertexEdges_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
+            vertexEdgeList_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
             return 0;
         }
         // int preconditionVertexLinksInternal() override;
@@ -84,7 +84,7 @@ class AcTopo final : public AbstractTriangulation {
                 std::cerr << "Empty dataset, precondition skipped";
                 return 1;
             }
-            vertexNeighbors_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
+            vertexNeighborList_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
             return 0;
         }
 
@@ -93,10 +93,18 @@ class AcTopo final : public AbstractTriangulation {
                 std::cerr << "Empty dataset, precondition skipped";
                 return 1;
             }
-            vertexStars_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
+            vertexStarList_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
             return 0;
         }
-        // int preconditionVertexTrianglesInternal() override;
+
+        inline int preconditionVertexTrianglesInternal() override {
+            if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
+                std::cerr << "Empty dataset, precondition skipped";
+                return 1;
+            }
+            vertexTriangleList_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
+            return 0;
+        }
 
         inline SimplexId
             TTK_TRIANGULATION_INTERNAL(getNumberOfCells)() const override {
@@ -123,7 +131,7 @@ class AcTopo final : public AbstractTriangulation {
             const int &localNeighborId,
             SimplexId &neighborId) const override {
 
-            if (vertexNeighbors_[vertexId].empty()) {
+            if (vertexNeighborList_[vertexId].empty()) {
                 int tid = omp_get_thread_num();
                 currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VVRelation;
                 // waitings_[tid] = 1;
@@ -138,7 +146,7 @@ class AcTopo final : public AbstractTriangulation {
                 // waitings_[tid] = 0;
             }
             // std::lock_guard<std::mutex> lck(VVMutex_);
-            neighborId = vertexNeighbors_[vertexId][localNeighborId];
+            neighborId = vertexNeighborList_[vertexId][localNeighborId];
             return 0;
         }
 
@@ -147,7 +155,7 @@ class AcTopo final : public AbstractTriangulation {
             
             int tid = omp_get_thread_num();
             currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VVRelation;
-            if (vertexNeighbors_[vertexId].empty()) {
+            if (vertexNeighborList_[vertexId].empty()) {
                 // waitings_[tid] = 1;
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
@@ -160,7 +168,7 @@ class AcTopo final : public AbstractTriangulation {
                 // waitings_[tid] = 0;
             }
             // std::lock_guard<std::mutex> lck(VVMutex_);
-            return vertexNeighbors_[vertexId].size();
+            return vertexNeighborList_[vertexId].size();
         }
 
         inline const std::vector<std::vector<SimplexId>> *
@@ -169,12 +177,13 @@ class AcTopo final : public AbstractTriangulation {
             // TODO: copy the matrix data back to vector of vector
             return &vertexNeighborList_;
         }
+
         inline int TTK_TRIANGULATION_INTERNAL(getVertexEdge)(
             const SimplexId &vertexId,
             const int &localEdgeId,
             SimplexId &edgeId) const override {
 
-            if (vertexEdges_[vertexId].empty()) {
+            if (vertexEdgeList_[vertexId].empty()) {
                 int tid = omp_get_thread_num();
                 currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VERelation;
                 // waitings_[tid] = 1;
@@ -189,7 +198,7 @@ class AcTopo final : public AbstractTriangulation {
                 // waitings_[tid] = 0;
             }
             // std::lock_guard<std::mutex> lck(VVMutex_);
-            edgeId = vertexEdges_[vertexId][localEdgeId];
+            edgeId = vertexEdgeList_[vertexId][localEdgeId];
             return 0;
         }
 
@@ -198,7 +207,7 @@ class AcTopo final : public AbstractTriangulation {
             
             int tid = omp_get_thread_num();
             currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VERelation;
-            if (vertexEdges_[vertexId].empty()) {
+            if (vertexEdgeList_[vertexId].empty()) {
                 // waitings_[tid] = 1;
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
@@ -211,14 +220,14 @@ class AcTopo final : public AbstractTriangulation {
                 // waitings_[tid] = 0;
             }
             // std::lock_guard<std::mutex> lck(VVMutex_);
-            return vertexEdges_[vertexId].size();
+            return vertexEdgeList_[vertexId].size();
         }
 
         inline const std::vector<std::vector<SimplexId>> *
             TTK_TRIANGULATION_INTERNAL(getVertexEdges)() override {
             // vertexNeighborData_.copyTo(vertexNeighborList_);
             // TODO: copy the matrix data back to vector of vector
-            return &vertexNeighborList_;
+            return &vertexEdgeList_;
         }
 
         inline int TTK_TRIANGULATION_INTERNAL(getVertexStar)(
@@ -226,7 +235,7 @@ class AcTopo final : public AbstractTriangulation {
             const int &localStarId,
             SimplexId &starId) const override {
             
-            if (vertexStars_[vertexId].empty()) {
+            if (vertexStarList_[vertexId].empty()) {
                 int tid = omp_get_thread_num();
                 currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VTRelation;
                 // waitings_[tid] = 1;
@@ -241,7 +250,7 @@ class AcTopo final : public AbstractTriangulation {
                 // waitings_[tid] = 0;
             }
             // std::lock_guard<std::mutex> lck(VTMutex_);
-            starId = vertexStars_[vertexId][localStarId];
+            starId = vertexStarList_[vertexId][localStarId];
             return 0;
         }
 
@@ -250,7 +259,7 @@ class AcTopo final : public AbstractTriangulation {
             
             int tid = omp_get_thread_num();
             currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VTRelation;
-            if (vertexStars_[vertexId].empty()) {
+            if (vertexStarList_[vertexId].empty()) {
                 // waitings_[tid] = 1;
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
@@ -263,7 +272,7 @@ class AcTopo final : public AbstractTriangulation {
                 // waitings_[tid] = 0;
             }
             // std::lock_guard<std::mutex> lck(VTMutex_);
-            return vertexStars_[vertexId].size();
+            return vertexStarList_[vertexId].size();
         }
 
         inline const std::vector<std::vector<SimplexId>> *
@@ -271,6 +280,58 @@ class AcTopo final : public AbstractTriangulation {
             // vertexStarData_.copyTo(vertexStarList_);
             // TODO: copy the matrix data back to vector of vector
             return &vertexStarList_;
+        }
+
+        inline int TTK_TRIANGULATION_INTERNAL(getVertexTriangle)(
+            const SimplexId &vertexId,
+            const int &localTriangleId,
+            SimplexId &triangleId) const override {
+
+            if (vertexTriangleList_[vertexId].empty()) {
+                int tid = omp_get_thread_num();
+                currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VFRelation;
+                // waitings_[tid] = 1;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                timers_[tid].reStart();
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VFRelation)]);
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                // waitings_[tid] = 0;
+            }
+            // std::lock_guard<std::mutex> lck(VVMutex_);
+            triangleId = vertexTriangleList_[vertexId][localTriangleId];
+            return 0;
+        }
+
+        inline SimplexId TTK_TRIANGULATION_INTERNAL(getVertexTriangleNumber)(
+            const SimplexId &vertexId) const override {
+            
+            int tid = omp_get_thread_num();
+            currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VFRelation;
+            if (vertexTriangleList_[vertexId].empty()) {
+                // waitings_[tid] = 1;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                timers_[tid].reStart();
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VFRelation)]);
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                // waitings_[tid] = 0;
+            }
+            // std::lock_guard<std::mutex> lck(VVMutex_);
+            return vertexTriangleList_[vertexId].size();
+        }
+
+        inline const std::vector<std::vector<SimplexId>> *
+            TTK_TRIANGULATION_INTERNAL(getVertexTriangles)() override {
+            // vertexNeighborData_.copyTo(vertexNeighborList_);
+            // TODO: copy the matrix data back to vector of vector
+            return &vertexTriangleList_;
         }
 
 
@@ -314,17 +375,17 @@ class AcTopo final : public AbstractTriangulation {
         int *dExternalCells_, *dExternalCellOffsets_;
 
         // relation matrices
-        std::vector<std::vector<SimplexId>> vertexEdges_;
         int *hVertexEdgeSizes_, *hVertexEdgeMatrix_;
         int *dVertexEdgeSizes_, *dVertexEdgeMatrix_;
 
-        std::vector<std::vector<SimplexId>> vertexNeighbors_;
         int *hVertexNeighborSizes_, *hVertexNeighborMatrix_;
         int *dVertexNeighborSizes_, *dVertexNeighborMatrix_;
         
-        std::vector<std::vector<SimplexId>> vertexStars_;
         int *hVertexStarSizes_, *hVertexStarMatrix_;
         int *dVertexStarSizes_, *dVertexStarMatrix_;
+
+        int *hVertexTriangleSizes_, *hVertexTriangleMatrix_;
+        int *dVertexTriangleSizes_, *dVertexTriangleMatrix_;
 
         // multithreading support
         std::thread producer_;

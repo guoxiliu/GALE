@@ -325,7 +325,7 @@ int AcTopo::computeRelation(const RelationType relation,
             int *dEdgeList; 
             CHECK(cudaMalloc((void **)&dEdgeList, sizeof(SimplexId) * hEdgeIntervals_[endCluster] * 2));
             CHECK(cudaMalloc((void **)&dVertexEdgeSizes_, sizeof(int) * localVertexNum));
-            CHECK(cudaMalloc((void **)&dVertexEdgeMatrix_, sizeof(int) * localVertexNum * matrixColumns));
+            CHECK(cudaMalloc((void **)&dVertexEdgeMatrix_, sizeof(int) * localVertexNum * matrixColumnSmall));
             CHECK(cudaMemcpy(dEdgeList, edgeList_.data(), sizeof(SimplexId) * hEdgeIntervals_[endCluster] * 2, cudaMemcpyHostToDevice));
             CHECK(cudaMemset(dVertexEdgeSizes_, 0, sizeof(int) * localVertexNum));
 
@@ -338,7 +338,7 @@ int AcTopo::computeRelation(const RelationType relation,
             // }
 
             hVertexEdgeSizes_ = new int[localVertexNum];
-            hVertexEdgeMatrix_ = new int[localVertexNum * matrixColumns];
+            hVertexEdgeMatrix_ = new int[localVertexNum * matrixColumnSmall];
 
             cudaError_t status = cudaDeviceSynchronize();
             if (status != cudaSuccess) {
@@ -349,13 +349,13 @@ int AcTopo::computeRelation(const RelationType relation,
             }
 
             CHECK(cudaMemcpy(hVertexEdgeSizes_, dVertexEdgeSizes_, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hVertexEdgeMatrix_, dVertexEdgeMatrix_, sizeof(int) * localVertexNum * matrixColumns, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(hVertexEdgeMatrix_, dVertexEdgeMatrix_, sizeof(int) * localVertexNum * matrixColumnSmall, cudaMemcpyDeviceToHost));
 
             std::unique_lock<std::mutex> lck(VEMutex_);
             for (int i = 0; i < localVertexNum; ++i) {
                 SimplexId vid = vertexIdOffset + i;
-                if (!vertexEdges_[vid].empty()) continue;
-                vertexEdges_[vid] = std::vector<int>(hVertexEdgeMatrix_ + i * matrixColumns, hVertexEdgeMatrix_ + i * matrixColumns + hVertexEdgeSizes_[i]);
+                if (!vertexEdgeList_[vid].empty()) continue;
+                vertexEdgeList_[vid] = std::vector<int>(hVertexEdgeMatrix_ + i * matrixColumnSmall, hVertexEdgeMatrix_ + i * matrixColumnSmall + hVertexEdgeSizes_[i]);
             }
             baseClusters_[static_cast<int>(RelationType::VERelation)][threadId] = clusterId;
 
@@ -367,6 +367,7 @@ int AcTopo::computeRelation(const RelationType relation,
                 sem_post(&relationSems_[threadId][static_cast<int>(relation)]);
             }
 
+            CHECK(cudaFree(dEdgeList));
             CHECK(cudaFree(dVertexEdgeSizes_));
             dVertexEdgeSizes_ = nullptr;
             CHECK(cudaFree(dVertexEdgeMatrix_));
@@ -374,6 +375,69 @@ int AcTopo::computeRelation(const RelationType relation,
 
             delete[] hVertexEdgeMatrix_;
             delete[] hVertexEdgeSizes_;
+            break;
+        }
+
+        case RelationType::VFRelation:
+        {
+            int totalBlocks = numBlocks_ * blockSize_;
+
+            int vertexIdOffset = hVertexIntervals_[clusterId - 1];
+            int endCluster = min(clusterId + totalBlocks, clusterNumber_) - 1;
+            int localVertexNum = hVertexIntervals_[endCluster] - hVertexIntervals_[clusterId - 1];
+            int *dTriangleList; 
+            CHECK(cudaMalloc((void **)&dTriangleList, sizeof(SimplexId) * hTriangleIntervals_[endCluster] * 3));
+            CHECK(cudaMalloc((void **)&dVertexTriangleSizes_, sizeof(int) * localVertexNum));
+            CHECK(cudaMalloc((void **)&dVertexTriangleMatrix_, sizeof(int) * localVertexNum * matrixColumnLarge));
+            CHECK(cudaMemcpy(dTriangleList, triangleList_.data(), sizeof(SimplexId) * hTriangleIntervals_[endCluster] * 3, cudaMemcpyHostToDevice));
+            CHECK(cudaMemset(dVertexTriangleSizes_, 0, sizeof(int) * localVertexNum));
+
+            precomputeVertexTriangles<<<numBlocks_, blockSize_>>>(
+                dTriangleList, dVertexTriangleMatrix_, dVertexTriangleSizes_,
+                clusterId, clusterNumber_,
+                dConnectivity_, dOffsets_, dIndexArray_,
+                dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
+                dExternalCells_, dExternalCellOffsets_, cellDimension_);
+            // }
+
+            hVertexTriangleSizes_ = new int[localVertexNum];
+            hVertexTriangleMatrix_ = new int[localVertexNum * matrixColumnLarge];
+
+            cudaError_t status = cudaDeviceSynchronize();
+            if (status != cudaSuccess) {
+                fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(status),
+                        __FILE__, __LINE__);
+                if (abort)
+                    exit(status);
+            }
+
+            CHECK(cudaMemcpy(hVertexTriangleSizes_, dVertexTriangleSizes_, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(hVertexTriangleMatrix_, dVertexTriangleMatrix_, sizeof(int) * localVertexNum * matrixColumnLarge, cudaMemcpyDeviceToHost));
+
+            std::unique_lock<std::mutex> lck(VEMutex_);
+            for (int i = 0; i < localVertexNum; ++i) {
+                SimplexId vid = vertexIdOffset + i;
+                if (!vertexTriangleList_[vid].empty()) continue;
+                vertexTriangleList_[vid] = std::vector<int>(hVertexTriangleMatrix_ + i * matrixColumnLarge, hVertexTriangleMatrix_ + i * matrixColumnLarge + hVertexTriangleSizes_[i]);
+            }
+            baseClusters_[static_cast<int>(RelationType::VFRelation)][threadId] = clusterId;
+
+            lck.unlock();
+            if (signal)
+            {
+                // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+                // else res = 1;
+                sem_post(&relationSems_[threadId][static_cast<int>(relation)]);
+            }
+
+            CHECK(cudaFree(dTriangleList));
+            CHECK(cudaFree(dVertexTriangleSizes_));
+            dVertexTriangleSizes_ = nullptr;
+            CHECK(cudaFree(dVertexTriangleMatrix_));
+            dVertexTriangleMatrix_ = nullptr;
+
+            delete[] hVertexTriangleMatrix_;
+            delete[] hVertexTriangleSizes_;
             break;
         }
 
@@ -386,9 +450,9 @@ int AcTopo::computeRelation(const RelationType relation,
             int endCluster = min(clusterId + totalBlocks, clusterNumber_) - 1;
             int localVertexNum = hVertexIntervals_[endCluster] - hVertexIntervals_[clusterId - 1];
             CHECK(cudaMalloc((void **)&dVertexNeighborSizes_, sizeof(int) * localVertexNum));
-            CHECK(cudaMalloc((void **)&dVertexNeighborMatrix_, sizeof(int) * localVertexNum * matrixColumns));
+            CHECK(cudaMalloc((void **)&dVertexNeighborMatrix_, sizeof(int) * localVertexNum * matrixColumnSmall));
             CHECK(cudaMemset(dVertexNeighborSizes_, 0, sizeof(int) * localVertexNum));
-            // CHECK(cudaMemset(dVertexNeighborMatrix_, -1, sizeof(int) * localVertexNum * matrixColumns));
+            // CHECK(cudaMemset(dVertexNeighborMatrix_, -1, sizeof(int) * localVertexNum * matrixColumnSmall));
 
             precomputeVertexNeighbors<<<numBlocks_, blockSize_>>>(
                 dVertexNeighborMatrix_, dVertexNeighborSizes_,
@@ -399,7 +463,7 @@ int AcTopo::computeRelation(const RelationType relation,
             // }
 
             hVertexNeighborSizes_ = new int[localVertexNum];
-            hVertexNeighborMatrix_ = new int[localVertexNum * matrixColumns];
+            hVertexNeighborMatrix_ = new int[localVertexNum * matrixColumnSmall];
 
             cudaError_t status = cudaDeviceSynchronize();
                 if (status != cudaSuccess) {
@@ -408,23 +472,23 @@ int AcTopo::computeRelation(const RelationType relation,
             }
 
             CHECK(cudaMemcpy(hVertexNeighborSizes_, dVertexNeighborSizes_, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hVertexNeighborMatrix_, dVertexNeighborMatrix_, sizeof(int) * localVertexNum * matrixColumns, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(hVertexNeighborMatrix_, dVertexNeighborMatrix_, sizeof(int) * localVertexNum * matrixColumnSmall, cudaMemcpyDeviceToHost));
 
             std::unique_lock<std::mutex> lck(VVMutex_);
             for (int i = 0; i < localVertexNum; ++i) {
                 SimplexId vid = vertexIdOffset + i;
-                if (!vertexNeighbors_[vid].empty()) continue;
-                vertexNeighbors_[vid] = std::vector<int>(hVertexNeighborMatrix_ + i * matrixColumns, hVertexNeighborMatrix_ + i * matrixColumns + hVertexNeighborSizes_[i]);
+                if (!vertexNeighborList_[vid].empty()) continue;
+                vertexNeighborList_[vid] = std::vector<int>(hVertexNeighborMatrix_ + i * matrixColumnSmall, hVertexNeighborMatrix_ + i * matrixColumnSmall + hVertexNeighborSizes_[i]);
                 // // hash table version (faster in computing, slower in copying)
                 // int k = 0;
                 // std::vector<SimplexId> localVec(hVertexNeighborSizes_[i]);
-                // for (int j = 0; j < matrixColumns; ++j) {
-                //     if (hVertexNeighborMatrix_[i * matrixColumns + j] != -1) {
-                //         localVec[k++] = hVertexNeighborMatrix_[i * matrixColumns + j];
+                // for (int j = 0; j < matrixColumnSmall; ++j) {
+                //     if (hVertexNeighborMatrix_[i * matrixColumnSmall + j] != -1) {
+                //         localVec[k++] = hVertexNeighborMatrix_[i * matrixColumnSmall + j];
                 //         if (k == hVertexNeighborSizes_[i]) break;
                 //     }
                 // }
-                // vertexNeighbors_[vid] = localVec;
+                // vertexNeighborList_[vid] = localVec;
             }
             lck.unlock();
             baseClusters_[static_cast<int>(RelationType::VVRelation)][threadId] = clusterId;
@@ -453,7 +517,7 @@ int AcTopo::computeRelation(const RelationType relation,
             int localVertexNum = hVertexIntervals_[endCluster] - hVertexIntervals_[clusterId - 1];
             baseClusters_[static_cast<int>(RelationType::VTRelation)][threadId] = clusterId;
             CHECK(cudaMalloc((void **)&dVertexStarSizes_, sizeof(int) * localVertexNum));
-            CHECK(cudaMalloc((void **)&dVertexStarMatrix_, sizeof(int) * localVertexNum * matrixColumns));
+            CHECK(cudaMalloc((void **)&dVertexStarMatrix_, sizeof(int) * localVertexNum * matrixColumnSmall));
             CHECK(cudaMemset(dVertexStarSizes_, 0, sizeof(int) * localVertexNum));
 
             precomputeVertexStars<<<numBlocks_, blockSize_>>>(
@@ -465,7 +529,7 @@ int AcTopo::computeRelation(const RelationType relation,
             // }
 
             hVertexStarSizes_ = new int[localVertexNum];
-            hVertexStarMatrix_ = new int[localVertexNum * matrixColumns];
+            hVertexStarMatrix_ = new int[localVertexNum * matrixColumnSmall];
 
             cudaError_t status = cudaDeviceSynchronize();
             if (status != cudaSuccess) {
@@ -474,13 +538,13 @@ int AcTopo::computeRelation(const RelationType relation,
             }
 
             CHECK(cudaMemcpy(hVertexStarSizes_, dVertexStarSizes_, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hVertexStarMatrix_, dVertexStarMatrix_, sizeof(int) * localVertexNum * matrixColumns, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(hVertexStarMatrix_, dVertexStarMatrix_, sizeof(int) * localVertexNum * matrixColumnSmall, cudaMemcpyDeviceToHost));
 
             std::unique_lock<std::mutex> lck(VTMutex_);
             for (int i = 0; i < localVertexNum; ++i) {
                 SimplexId vid = vertexIdOffset + i;
-                if (!vertexStars_[vid].empty()) continue;
-                vertexStars_[vid] = std::vector<int>(hVertexStarMatrix_ + i * matrixColumns, hVertexStarMatrix_ + i * matrixColumns + hVertexStarSizes_[i]);
+                if (!vertexStarList_[vid].empty()) continue;
+                vertexStarList_[vid] = std::vector<int>(hVertexStarMatrix_ + i * matrixColumnSmall, hVertexStarMatrix_ + i * matrixColumnSmall + hVertexStarSizes_[i]);
             }
             lck.unlock();
             if (signal) {
@@ -538,10 +602,10 @@ int AcTopo::computeCombinedRelation(const RelationType relation,
             CHECK(cudaMalloc((void **)&dClusterIds, sizeof(int) * threadNum));
             CHECK(cudaMalloc((void **)&dVertexOffsets, sizeof(int) * threadNum));
             CHECK(cudaMalloc((void **)&dVertexNeighborSizes_, sizeof(int) * localVertexSum));
-            CHECK(cudaMalloc((void **)&dVertexNeighborMatrix_, sizeof(int) * localVertexSum * matrixColumns));
+            CHECK(cudaMalloc((void **)&dVertexNeighborMatrix_, sizeof(int) * localVertexSum * matrixColumnSmall));
             CHECK(cudaMemcpy(dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice));
             CHECK(cudaMemcpy(dVertexOffsets, hVertexOffsets, sizeof(int) * threadNum, cudaMemcpyHostToDevice));
-            CHECK(cudaMemset(dVertexNeighborMatrix_, -1, sizeof(int) * localVertexSum * matrixColumns));
+            CHECK(cudaMemset(dVertexNeighborMatrix_, -1, sizeof(int) * localVertexSum * matrixColumnSmall));
             CHECK(cudaMemset(dVertexNeighborSizes_, 0, sizeof(int) * localVertexSum));
 
             dim3 dimBlock(threadNum, gpuBlocks);
@@ -553,7 +617,7 @@ int AcTopo::computeCombinedRelation(const RelationType relation,
                 dExternalCells_, dExternalCellOffsets_, cellDimension_);
 
             hVertexNeighborSizes_ = new int[localVertexSum];
-            hVertexNeighborMatrix_ = new int[localVertexSum * matrixColumns];
+            hVertexNeighborMatrix_ = new int[localVertexSum * matrixColumnSmall];
 
             cudaError_t status = cudaDeviceSynchronize();
             if (status != cudaSuccess) {
@@ -562,16 +626,16 @@ int AcTopo::computeCombinedRelation(const RelationType relation,
             }
 
             CHECK(cudaMemcpy(hVertexNeighborSizes_, dVertexNeighborSizes_, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hVertexNeighborMatrix_, dVertexNeighborMatrix_, sizeof(int) * localVertexSum * matrixColumns, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(hVertexNeighborMatrix_, dVertexNeighborMatrix_, sizeof(int) * localVertexSum * matrixColumnSmall, cudaMemcpyDeviceToHost));
 
             for (int i = 0; i < threadNum; ++i) {
                 // might be useless if only one thread can write to the vector?
                 // std::unique_lock<std::mutex> lck(VVMutex_);
                 for (int j = 0; j < localVertexNums[i]; ++j) {
                     SimplexId vid = hVertexIntervals_[hClusterIds[i]-1] + j;
-                    if (!vertexNeighbors_[vid].empty()) continue;
+                    if (!vertexNeighborList_[vid].empty()) continue;
                     int rj = j + hVertexOffsets[i]; // relative j value in the large matrix
-                    vertexNeighbors_[vid] = std::vector<int>(hVertexNeighborMatrix_ + rj * matrixColumns, hVertexNeighborMatrix_ + rj * matrixColumns + hVertexNeighborSizes_[rj]);
+                    vertexNeighborList_[vid] = std::vector<int>(hVertexNeighborMatrix_ + rj * matrixColumnSmall, hVertexNeighborMatrix_ + rj * matrixColumnSmall + hVertexNeighborSizes_[rj]);
                 }
                 baseClusters_[static_cast<int>(RelationType::VVRelation)][requests[i].first] = hClusterIds[i];
                 // lck.unlock();
@@ -609,7 +673,7 @@ int AcTopo::computeCombinedRelation(const RelationType relation,
             CHECK(cudaMalloc((void **)&dClusterIds, sizeof(int) * threadNum));
             CHECK(cudaMalloc((void **)&dVertexOffsets, sizeof(int) * threadNum));
             CHECK(cudaMalloc((void **)&dVertexStarSizes_, sizeof(int) * localVertexSum));
-            CHECK(cudaMalloc((void **)&dVertexStarMatrix_, sizeof(int) * localVertexSum * matrixColumns));
+            CHECK(cudaMalloc((void **)&dVertexStarMatrix_, sizeof(int) * localVertexSum * matrixColumnSmall));
             CHECK(cudaMemcpy(dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice));
             CHECK(cudaMemcpy(dVertexOffsets, hVertexOffsets, sizeof(int) * threadNum, cudaMemcpyHostToDevice));
             CHECK(cudaMemset(dVertexStarSizes_, 0, sizeof(int) * localVertexSum));
@@ -623,7 +687,7 @@ int AcTopo::computeCombinedRelation(const RelationType relation,
                 dExternalCells_, dExternalCellOffsets_, cellDimension_);
 
             hVertexStarSizes_ = new int[localVertexSum];
-            hVertexStarMatrix_ = new int[localVertexSum * matrixColumns];
+            hVertexStarMatrix_ = new int[localVertexSum * matrixColumnSmall];
 
             cudaError_t status = cudaDeviceSynchronize();
             if (status != cudaSuccess) {
@@ -632,16 +696,16 @@ int AcTopo::computeCombinedRelation(const RelationType relation,
             }
 
             CHECK(cudaMemcpy(hVertexStarSizes_, dVertexStarSizes_, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hVertexStarMatrix_, dVertexStarMatrix_, sizeof(int) * localVertexSum * matrixColumns, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(hVertexStarMatrix_, dVertexStarMatrix_, sizeof(int) * localVertexSum * matrixColumnSmall, cudaMemcpyDeviceToHost));
 
             for (int i = 0; i < threadNum; ++i) {
                 // might be useless if only one thread can write to the vector?
                 // std::unique_lock<std::mutex> lck(VVMutex_);
                 for (int j = 0; j < localVertexNums[i]; ++j) {
                     SimplexId vid = hVertexIntervals_[hClusterIds[i]-1] + j;
-                    if (!vertexStars_[vid].empty()) continue;
+                    if (!vertexStarList_[vid].empty()) continue;
                     int rj = j + hVertexOffsets[i];
-                    vertexStars_[vid] = std::vector<int>(hVertexStarMatrix_ + rj * matrixColumns, hVertexStarMatrix_ + rj * matrixColumns + hVertexStarSizes_[rj]);
+                    vertexStarList_[vid] = std::vector<int>(hVertexStarMatrix_ + rj * matrixColumnSmall, hVertexStarMatrix_ + rj * matrixColumnSmall + hVertexStarSizes_[rj]);
                 }
                 baseClusters_[static_cast<int>(RelationType::VVRelation)][requests[i].first] = hClusterIds[i];
                 // lck.unlock();
@@ -976,7 +1040,7 @@ int AcTopo::preconditionTrianglesInternal() {
         Timer t;
         std::vector<std::vector<std::array<SimplexId, 3>>> clusterTriangles(clusterNumber_);
         hTriangleIntervals_ = new int[clusterNumber_];
-        hTriangleIntervals_[0] = -1;
+        hTriangleIntervals_[0] = 0;
 
         // use the producer threads to compute the triangles
 #pragma omp parallel for num_threads(threadNumber_)
@@ -1074,7 +1138,7 @@ int AcTopo::preconditionEdgesInternal() {
 //         std::cerr << "Empty dataset, precondition skipped";
 //         return 1;
 //     }
-//     vertexNeighbors_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
+//     vertexNeighborList_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
 
     /* No precomputation during the preconditioning phase as there are multiple consumers */
     // // let GPU compute vertex neighbor data
@@ -1082,7 +1146,7 @@ int AcTopo::preconditionEdgesInternal() {
     // const int computedVertexNum = hVertexIntervals_[endCluster] - hVertexIntervals_[0];
 
     // CHECK(cudaMalloc((void **) &dVertexNeighborSizes_, sizeof(int) * computedVertexNum));
-    // CHECK(cudaMalloc((void **) &dVertexNeighborMatrix_, sizeof(int) * computedVertexNum * matrixColumns));
+    // CHECK(cudaMalloc((void **) &dVertexNeighborMatrix_, sizeof(int) * computedVertexNum * matrixColumnSmall));
 
     // precomputeVertexNeighbors<<<numBlocks_, blockSize_>>>(
     //     dVertexNeighborMatrix_, dVertexNeighborSizes_,
@@ -1092,7 +1156,7 @@ int AcTopo::preconditionEdgesInternal() {
     //     dExternalCellOffsets_, cellDimension_);
 
     // hVertexNeighborSizes_ = new int[computedVertexNum];
-    // hVertexNeighborMatrix_ = new int[computedVertexNum * matrixColumns];
+    // hVertexNeighborMatrix_ = new int[computedVertexNum * matrixColumnSmall];
 
     // cudaError_t status = cudaDeviceSynchronize();
     // if (status != cudaSuccess) {
@@ -1101,12 +1165,12 @@ int AcTopo::preconditionEdgesInternal() {
     // }
 
     // CHECK(cudaMemcpy(hVertexNeighborSizes_, dVertexNeighborSizes_, sizeof(int) * computedVertexNum, cudaMemcpyDeviceToHost));
-    // CHECK(cudaMemcpy(hVertexNeighborMatrix_, dVertexNeighborMatrix_, sizeof(int) * computedVertexNum * matrixColumns, cudaMemcpyDeviceToHost));
+    // CHECK(cudaMemcpy(hVertexNeighborMatrix_, dVertexNeighborMatrix_, sizeof(int) * computedVertexNum * matrixColumnSmall, cudaMemcpyDeviceToHost));
 
     // std::unique_lock<std::mutex> lck(VVMutex_);
     // for (int vid = 0; vid < computedVertexNum; ++vid) {
-    //     if (!vertexNeighbors_[vid].empty()) continue;
-    //     vertexNeighbors_[vid] = std::vector<int>(hVertexNeighborMatrix_ + vid * matrixColumns, hVertexNeighborMatrix_ + vid * matrixColumns + hVertexNeighborSizes_[vid]);
+    //     if (!vertexNeighborList_[vid].empty()) continue;
+    //     vertexNeighborList_[vid] = std::vector<int>(hVertexNeighborMatrix_ + vid * matrixColumnSmall, hVertexNeighborMatrix_ + vid * matrixColumnSmall + hVertexNeighborSizes_[vid]);
     // }
     // baseClusters_[static_cast<int>(RelationType::VVRelation)][0] = 1;
 
@@ -1124,7 +1188,7 @@ int AcTopo::preconditionEdgesInternal() {
 //         std::cerr << "Empty dataset, precondition skipped";
 //         return 1;
 //     }
-//     vertexStars_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
+//     vertexStarList_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
 
     /* No precomputation during the preconditioning phase as there are multiple consumers */
     // // let GPU compute vertex neighbor data
@@ -1132,7 +1196,7 @@ int AcTopo::preconditionEdgesInternal() {
     // const int computedVertexNum = hVertexIntervals_[endCluster];
 
     // CHECK(cudaMalloc((void **) &dVertexStarSizes_, sizeof(int) * computedVertexNum));
-    // CHECK(cudaMalloc((void **) &dVertexStarMatrix_, sizeof(int) * computedVertexNum * matrixColumns));
+    // CHECK(cudaMalloc((void **) &dVertexStarMatrix_, sizeof(int) * computedVertexNum * matrixColumnSmall));
 
     // precomputeVertexStars<<<numBlocks_, blockSize_>>>(
     //     dVertexStarMatrix_, dVertexStarSizes_,
@@ -1142,7 +1206,7 @@ int AcTopo::preconditionEdgesInternal() {
     //     dExternalCellOffsets_, cellDimension_);
 
     // hVertexStarSizes_ = new int[computedVertexNum];
-    // hVertexStarMatrix_ = new int[computedVertexNum * matrixColumns];
+    // hVertexStarMatrix_ = new int[computedVertexNum * matrixColumnSmall];
 
     // cudaError_t status = cudaDeviceSynchronize();
     // if (status != cudaSuccess) {
@@ -1151,12 +1215,12 @@ int AcTopo::preconditionEdgesInternal() {
     // }
 
     // CHECK(cudaMemcpy(hVertexStarSizes_, dVertexStarSizes_, sizeof(int) * computedVertexNum, cudaMemcpyDeviceToHost));
-    // CHECK(cudaMemcpy(hVertexStarMatrix_, dVertexStarMatrix_, sizeof(int) * computedVertexNum * matrixColumns, cudaMemcpyDeviceToHost));
+    // CHECK(cudaMemcpy(hVertexStarMatrix_, dVertexStarMatrix_, sizeof(int) * computedVertexNum * matrixColumnSmall, cudaMemcpyDeviceToHost));
 
     // std::unique_lock<std::mutex> lck(VTMutex_);
     // for (int vid = 0; vid < computedVertexNum; ++vid) {
-    //     if (!vertexStars_[vid].empty()) continue;
-    //     vertexStars_[vid] = std::vector<int>(hVertexStarMatrix_ + vid * matrixColumns, hVertexStarMatrix_ + vid * matrixColumns + hVertexStarSizes_[vid]);
+    //     if (!vertexStarList_[vid].empty()) continue;
+    //     vertexStarList_[vid] = std::vector<int>(hVertexStarMatrix_ + vid * matrixColumnSmall, hVertexStarMatrix_ + vid * matrixColumnSmall + hVertexStarSizes_[vid]);
     // }
     // lck.unlock();
 
