@@ -920,6 +920,7 @@ void AcTopo::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
 void AcTopo::computeCellIntervals() {
     std::vector<std::vector<int>> externalCells(clusterNumber_);
     hExternalCellOffsets_ = new int[clusterNumber_];
+    hExternalCellOffsets_[0] = 0;
     hCellIntervals_ = (int *) calloc(clusterNumber_, sizeof(int));
 
     CHECK(cudaMallocAsync(&dCellIntervals_, sizeof(int) * clusterNumber_, 0));
