@@ -7,11 +7,23 @@ set(CMAKE_HAVE_THREADS_LIBRARY 1)
 set(CMAKE_USE_WIN32_THREADS_INIT 0)
 set(CMAKE_USE_PTHREADS_INIT 1)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# set(VTK_INCLUDE_DIRS /usr/local/include/paraview-5.8)
-set(VTK_INCLUDE_DIRS ~/usr/local/include/vtk-9.0)
+# Set a default build type if none was specified
+set(default_build_type "Release")
+if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
+    set(default_build_type "Debug")
+endif()
 
-find_package(VTK PATHS /usr/local/)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    message(STATUS "Setting build type to '${default_build_type}' as none was specified.")
+    set(CMAKE_BUILD_TYPE "${default_build_type}" CACHE
+        STRING "Choose the type of build." FORCE)
+    # Set the possible values of build type for cmake-gui
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS 
+        "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
+endif()
+
 find_package(VTK PATHS ~/usr/local)
 find_package(VTK)
 
@@ -20,7 +32,20 @@ if (NOT VTK_FOUND)
     return()
 endif()
 
+set(VTK_INCLUDE_DIRS "" CACHE PATH "VTK Include Directory")
+if (NOT EXISTS "${VTK_INCLUDE_DIRS}")
+    message(FATAL_ERROR "VTK_INCLUDE_DIRS NOT FOUND!")
+    return()
+endif()
+
+find_package(OpenMP)
+if (NOT OpenMP_CXX_FOUND) 
+    message("OpenMP NOT FOUND!")
+    return()
+endif()
+
 message(STATUS "VTK_VERSION: ${VTK_VERSION}")
+message("VTK_DIR: ${VTK_DIR}")
 message("VTK_INCLUDE_DIRS: ${VTK_INCLUDE_DIRS}")
 message("VTK_LIBRARIES: ${VTK_LIBRARIES}")
 
