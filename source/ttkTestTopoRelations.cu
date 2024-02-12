@@ -20,15 +20,19 @@ int main(int argc, char *argv[])
     int c;
     std::string fileName = "";
     int blockNumber = 0;
+    int blockSize = 0;
     int threadNumber = 1;
 
-    while ((c = getopt(argc, argv, "a:b:i:t:")) != -1) {
+    while ((c = getopt(argc, argv, "a:b:i:s:t:")) != -1) {
         switch (c) {
             case 'i':
                 fileName = optarg;
                 break;
             case 'b':
                 blockNumber = atoi(optarg);
+                break;
+            case 's':
+                blockSize = atoi(optarg);
                 break;
             case 't':
                 threadNumber = atoi(optarg);
@@ -52,7 +56,9 @@ int main(int argc, char *argv[])
     // testPlugin.execute(&explicitTriangulation);
 
     ttk::AcTopo actopo(threadNumber);
-    if (blockNumber > 0)
+    if (blockNumber > 0 && blockSize > 0)
+        actopo.initialize(reader->GetOutput(), blockNumber, blockSize);
+    else if (blockNumber > 0)
         actopo.initialize(reader->GetOutput(), blockNumber);
     else 
         actopo.initialize(reader->GetOutput());

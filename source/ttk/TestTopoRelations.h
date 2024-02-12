@@ -18,16 +18,16 @@ namespace ttk {
         if(triangulation){
           Timer t;
           // build edges and triangles
-          triangulation->preconditionEdges();
-          triangulation->preconditionTriangles();
+          // triangulation->preconditionEdges();
+          // triangulation->preconditionTriangles();
           // // boundary relations
           // triangulation->preconditionBoundaryVertices();
           // triangulation->preconditionBoundaryEdges();
           // triangulation->preconditionBoundaryTriangles();
           // vertex related relations
-          triangulation->preconditionVertexEdges();
+          // triangulation->preconditionVertexEdges();
           triangulation->preconditionVertexNeighbors();
-          triangulation->preconditionVertexStars();
+          // triangulation->preconditionVertexStars();
           // triangulation->preconditionVertexTriangles();
           // edge related relations
           // triangulation->preconditionEdgeStars();
@@ -55,13 +55,13 @@ namespace ttk {
       std::cout << "[TestTopoRelations] Dimension: " << triangulation->getDimensionality() << std::endl;
 
       SimplexId vertexNumber = triangulation->getNumberOfVertices();
-      SimplexId edgeNumber = triangulation->getNumberOfEdges();
-      SimplexId triangleNumber = triangulation->getNumberOfTriangles();
-      SimplexId cellNumber = triangulation->getNumberOfCells();
+      // SimplexId cellNumber = triangulation->getNumberOfCells();
+      // SimplexId edgeNumber = triangulation->getNumberOfEdges();
+      // SimplexId triangleNumber = triangulation->getNumberOfTriangles();
 
-      std::cout << "[TestTopoRelations] vertex num: " << vertexNumber << ", edge num: "
-          << edgeNumber << ", triangle num: " << triangleNumber << ", cell num: " << 
-          cellNumber << std::endl;
+      // std::cout << "[TestTopoRelations] vertex num: " << vertexNumber << ", edge num: "
+      //     << edgeNumber << ", triangle num: " << triangleNumber << ", cell num: " << 
+      //     cellNumber << std::endl;
 
       SimplexId verticesPerCell = triangulation->getCellVertexNumber(0);
       // SimplexId edgesPerCell = triangulation->getCellEdgeNumber(0);
@@ -69,57 +69,71 @@ namespace ttk {
 
       Timer t, tot;
 
-      // Vertex neighbor relation
       // t.reStart();
-      // #pragma omp parallel for num_threads(threadNumber_)
-      // for(SimplexId vid = 0; vid < 5000; vid++) {
-      //   SimplexId neighborNum = triangulation->getVertexNeighborNumber(vid);
-      //   std::cout << "vertex " << vid << ": ";
-      //   SimplexId neighborId;
-      //   for(int j = 0; j < neighborNum; j++) {
-      //     triangulation->getVertexNeighbor(vid, j, neighborId);
-      //     std::cout << neighborId << " ";
-      //   }
-      //   std::cout << std::endl;
-      // }
-      // std::cout << "[TestTopoRelations] Time usage for VN: " << t.getElapsedTime()
-      //           << " s." << std::endl;
+      // triangulation->getVertexEdgeNumber(0);
+      // std::cout << "[TestTopoRelations] Time usage for VE: " << t.getElapsedTime() << " s.\n";
+      
+      // t.reStart();
+      // triangulation->getVertexNeighborNumber(0);
+      // std::cout << "[TestTopoRelations] Time usage for VV: " << t.getElapsedTime() << " s.\n";
+
+      // t.reStart();
+      // triangulation->getVertexStarNumber(0);
+      // std::cout << "[TestTopoRelations] Time usage for VT: " << t.getElapsedTime() << " s.\n";
+
+      // Vertex neighbor relation
+      t.reStart();
+      #pragma omp parallel for num_threads(threadNumber_)
+      for(SimplexId vid = 0; vid < vertexNumber; vid++) {
+        SimplexId neighborNum = triangulation->getVertexNeighborNumber(vid);
+        // std::cout << "vertex " << vid << ": " << neighborNum << " [";
+        SimplexId neighborId;
+        for(int j = 0; j < neighborNum; j++) {
+          triangulation->getVertexNeighbor(vid, j, neighborId);
+          // std::cout << neighborId << " ";
+        }
+        // std::cout << "]" << std::endl;
+      }
+      std::cout << "[TestTopoRelations] Time usage for VN: " << t.getElapsedTime()
+                << " s." << std::endl;
 
       /* test vertex edge relationship */
-      t.reStart();
+      // t.reStart();
       // #ifdef TTK_ENABLE_OPENMP
       // #pragma omp parallel for num_threads(threadNumber_)
       // #endif
-      triangulation->getVertexEdgeNumber(0);
-      // for(SimplexId vertexId = 0; vertexId < 5000; vertexId++){
+      // for(SimplexId vertexId = 0; vertexId < vertexNumber; vertexId++){
       //   SimplexId edgeNum = triangulation->getVertexEdgeNumber(vertexId);
-      //   std::cout << "vertex " << vertexId << ": [";
+      //   // std::cout << "vertex " << vertexId << ": [";
       //   SimplexId edgeId;
       //   for(SimplexId j = 0; j < edgeNum; j++){
       //     int result1 = triangulation->getVertexEdge(vertexId, j, edgeId);
       //     if(result1){
       //         std::cerr << "[TestTopoRelations] vertexId " << vertexId << " Something wrong in getVertexEdge()! Error code: " << result1 << "\n";
       //     }
-      //     std::cout << edgeId << " ";
+      //     // std::cout << edgeId << " ";
       //   }
-      //   std::cout << "]" << std::endl;
+      //   // std::cout << "]" << std::endl;
       // }
-      std::cout << "[TestTopoRelations] Time usage for VE: " << t.getElapsedTime() << " s.\n";
+      // std::cout << "[TestTopoRelations] Time usage for VE: " << t.getElapsedTime() << " s.\n";
 
-      // /* test vertex triangle relationship */
+      /* test vertex triangle relationship */
       // t.reStart();
       // // #ifdef TTK_ENABLE_OPENMP
       // // #pragma omp parallel for num_threads(threadNumber_)
       // // #endif
       // for(SimplexId vertexId = 0; vertexId < vertexNumber; vertexId++){
       //   SimplexId triangleNum = triangulation->getVertexTriangleNumber(vertexId);
+      //   // std::cout << "vertex " << vertexId << ": " << triangleNum << " [";
       //   SimplexId triangleId;
       //   for(SimplexId j = 0; j < triangleNum; j++){
       //     int result1 = triangulation->getVertexTriangle(vertexId, j, triangleId);
       //     if(result1){
       //         std::cerr << "[TestTopoRelations] vertexId " << vertexId << " Something wrong in getVertexTriangle()! Error code: " << result1 << "\n";
       //     }
+      //     // std::cout << triangleId << " ";
       //   }
+      //   // std::cout << "]" << std::endl;
       // }
       // std::cout << "[TestTopoRelations] Time usage for VF: " << t.getElapsedTime() << " s.\n";
       
