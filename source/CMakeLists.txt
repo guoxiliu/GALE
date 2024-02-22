@@ -22,6 +22,10 @@ add_executable(cudaBlockRelation cudaBlockRelation.cu)
 set_property(TARGET cudaBlockRelation PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 target_link_libraries(cudaBlockRelation PRIVATE ttk)
 
+add_executable(cudaSparseMatrix cudaSparseMatrix.cu)
+set_property(TARGET cudaSparseMatrix PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+target_link_libraries(cudaSparseMatrix PRIVATE ttk cusparse)
+
 # add_executable(cudaSparse cudaSparse.cu)
 # set_property(TARGET cudaSparse PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 # target_link_libraries(cudaSparse PRIVATE ttk ${VTK_LIBRARIES})
