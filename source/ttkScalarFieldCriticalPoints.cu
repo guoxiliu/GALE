@@ -133,12 +133,13 @@ int main(int argc, char *argv[])
 
     int c;
     int blockNumber = 0;
+    int blockSize = 0;
     int threadNumber = 4;
     std::string fileName = "";
     std::string inputArrayName = "";
     vtkDataArray *inputScalarField = nullptr;
 
-    while ((c = getopt(argc, argv, "a:b:i:t:")) != -1) {
+    while ((c = getopt(argc, argv, "a:b:i:s:t:")) != -1) {
         switch (c) {
             case 'i':
                 fileName = optarg;
@@ -148,6 +149,9 @@ int main(int argc, char *argv[])
                 break;
             case 'b':
                 blockNumber = atoi(optarg);
+                break;
+            case 's':
+                blockSize = atoi(optarg);
                 break;
             case 't':
                 threadNumber = atoi(optarg);
@@ -194,7 +198,9 @@ int main(int argc, char *argv[])
     }
 
     ttk::AcTopo actopo_(threadNumber);
-    if (blockNumber > 0)
+    if (blockNumber > 0 && blockSize > 0)
+        actopo_.initialize(unstructuredGrid, blockNumber, blockSize);
+    else if (blockNumber > 0)
         actopo_.initialize(unstructuredGrid, blockNumber);
     else 
         actopo_.initialize(unstructuredGrid);

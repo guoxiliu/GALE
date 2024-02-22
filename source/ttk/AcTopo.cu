@@ -874,9 +874,9 @@ void AcTopo::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
     }
 
     CHECK(cudaMallocAsync(&dConnectivity_, sizeof(vtkIdType) * (cellNumber_ * 4), 0));
-    CHECK(cudaMallocAsync(&dOffsets_, sizeof(vtkIdType) * cellNumber_, 0));
+    CHECK(cudaMallocAsync(&dOffsets_, sizeof(vtkIdType) * (cellNumber_+1), 0));
     CHECK(cudaMemcpyAsync(dConnectivity_, hConnectivity_, sizeof(vtkIdType) * (cellNumber_ * 4), cudaMemcpyHostToDevice));
-    CHECK(cudaMemcpyAsync(dOffsets_, hOffsets_, sizeof(vtkIdType) * cellNumber_, cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpyAsync(dOffsets_, hOffsets_, sizeof(vtkIdType) * (cellNumber_+1), cudaMemcpyHostToDevice));
 
     // index array
     hIndexArray_ = nullptr;
