@@ -316,11 +316,11 @@ int AcTopo::computeRelation(const RelationType relation,
     switch (relation) {
         case RelationType::VERelation:
         {
-            int totalBlocks = numBlocks_ * blockSize_;
+            // int totalBlocks = numBlocks_ * blockSize_;
 
             // if (dVertexEdgeSizes_ == nullptr) {
             int vertexIdOffset = hVertexIntervals_[clusterId - 1];
-            int endCluster = min(clusterId + totalBlocks, clusterNumber_) - 1;
+            int endCluster = min(clusterId + numBlocks_, clusterNumber_) - 1;
             int localVertexNum = hVertexIntervals_[endCluster] - hVertexIntervals_[clusterId - 1];
             int *dEdgeList; 
             CHECK(cudaMalloc((void **)&dEdgeList, sizeof(SimplexId) * hEdgeIntervals_[endCluster] * 2));
@@ -447,11 +447,12 @@ int AcTopo::computeRelation(const RelationType relation,
 
             // if (dVertexNeighborSizes_ == nullptr) {
             int vertexIdOffset = hVertexIntervals_[clusterId - 1];
-            int endCluster = min(clusterId + totalBlocks, clusterNumber_) - 1;
+            int endCluster = min(clusterId + totalBlocks / THREADS_PER_CLUSTER, clusterNumber_) - 1;
             int localVertexNum = hVertexIntervals_[endCluster] - hVertexIntervals_[clusterId - 1];
             CHECK(cudaMalloc((void **)&dVertexNeighborSizes_, sizeof(int) * localVertexNum));
             CHECK(cudaMalloc((void **)&dVertexNeighborMatrix_, sizeof(int) * localVertexNum * matrixColumnSmall));
             CHECK(cudaMemset(dVertexNeighborSizes_, 0, sizeof(int) * localVertexNum));
+            
             // CHECK(cudaMemset(dVertexNeighborMatrix_, -1, sizeof(int) * localVertexNum * matrixColumnSmall));
 
             precomputeVertexNeighbors<<<numBlocks_, blockSize_>>>(
