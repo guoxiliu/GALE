@@ -1,5 +1,6 @@
 #include "ttk/AcTopo.h"
 #include "ttk/ExplicitTriangulation.h"
+#include "ttk/MemoryUsage.h"
 #include "ttk/ScalarFieldCriticalPoints.h"
 #include "ttk/OrderDisambiguation.h"
 #include <vtkSmartPointer.h>
@@ -166,7 +167,8 @@ int main(int argc, char *argv[])
         vtkSmartPointer<vtkXMLUnstructuredGridReader>::New();
     reader->SetFileName(fileName.c_str());
     reader->Update();
-    
+
+    MemoryUsage m;
 
     int scalarFieldIndex = 0;
     vtkUnstructuredGrid *unstructuredGrid = reader->GetOutput();
@@ -216,6 +218,9 @@ int main(int argc, char *argv[])
     vtkDataArray *offsetField = GetOrderArray(unstructuredGrid, scalarFieldIndex, 1);
 
     int res = cpPlugin.executeLegacy(static_cast<ttk::SimplexId *>(GetVoidPointer(offsetField)), &actopo_);
+    
+    // std::cout << "Time usage for computation: " << t.getElapsedTime() << " s." << std::endl;
+    std::cout << "[ScalarFieldCriticalPoints] Memory usage: " << m.getValue_in_MB(false) << " MB." << std::endl;
 
     return 0;
 }

@@ -235,7 +235,6 @@ __global__ void precomputeVertexNeighbors(int *vertexNeighborMatrix, int *vertex
     // determine the range of vertices
     const int startVertexId = vertexIntervals[tid-1];
     const int endVertexId = vertexIntervals[tid];
-    const int startCellId = cellIntervals[tid-1];
     const int startExCellIdx = externalCellOffsets[tid-1];
     const int endExCellIdx = externalCellOffsets[tid];
 
@@ -286,11 +285,14 @@ __global__ void precomputeVertexNeighbors(int *vertexNeighborMatrix, int *vertex
     }
 
     // loop through the internal cell list
-    for (int cid = startCellId; cid < cellIntervals[tid]; ++cid) {
+    const int startCellId = cellIntervals[tid-1];
+    const int endCellId = cellIntervals[tid];
+    for (int cid = startCellId; cid < endCellId; ++cid) {
+        int cellId = offsets[cid];
         for (int vi = 0; vi < dimension; ++vi) {
-            int viId = connectivity[offsets[cid] + vi];
+            int viId = connectivity[cellId + vi];
             for (int vj = vi+1; vj <= dimension; ++vj) {
-                int vjId = connectivity[offsets[cid] + vj];
+                int vjId = connectivity[cellId + vj];
                 if (viId >= startVertexId && viId < endVertexId) {
                     int relativeViId = viId - vertexIntervals[baseCluster-1];
 
