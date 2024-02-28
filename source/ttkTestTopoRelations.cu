@@ -22,14 +22,18 @@ int main(int argc, char *argv[])
     int blockNumber = 0;
     int blockSize = 0;
     int threadNumber = 1;
+    int numThreadsPerCluster = 1;
 
-    while ((c = getopt(argc, argv, "a:b:i:s:t:")) != -1) {
+    while ((c = getopt(argc, argv, "a:b:i:p:s:t:")) != -1) {
         switch (c) {
             case 'i':
                 fileName = optarg;
                 break;
             case 'b':
                 blockNumber = atoi(optarg);
+                break;
+            case 'p':
+                numThreadsPerCluster = atoi(optarg);
                 break;
             case 's':
                 blockSize = atoi(optarg);
@@ -55,7 +59,7 @@ int main(int argc, char *argv[])
     // testPlugin.preconditionTriangulation(&explicitTriangulation);
     // testPlugin.execute(&explicitTriangulation);
 
-    ttk::AcTopo actopo(threadNumber);
+    ttk::AcTopo actopo(threadNumber, numThreadsPerCluster);
     if (blockNumber > 0 && blockSize > 0)
         actopo.initialize(reader->GetOutput(), blockNumber, blockSize);
     else if (blockNumber > 0)

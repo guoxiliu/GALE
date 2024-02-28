@@ -363,7 +363,7 @@ int main(int argc, char const *argv[]) {
                     dVertexNeighborMatrix, dVertexNeighborSize, 
                     baseCluster, nodeNumber, dConnectitity, dOffsets, 
                     dVertexIntervals, dCellIntervals, 
-                    dExternalCells, dExternalCellOffsets, 3);
+                    dExternalCells, dExternalCellOffsets, 3, 1);
 
     // cudaDeviceSynchronize();
     CHECK(cudaMemcpy(hVertexNeighborSize.data(), dVertexNeighborSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));

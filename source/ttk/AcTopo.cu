@@ -3,12 +3,13 @@
 #include <vtkPointData.h>
 #include <vtkSmartPointer.h>
 #include <vtkUnstructuredGrid.h>
+#include <algorithm>
 #include <iostream>
 
 using namespace ttk;
 
 
-AcTopo::AcTopo(int tnum) {
+AcTopo::AcTopo(int tnum, int tnumPerCluster) {
     /* initialize the pointers */
     hConnectivity_ = nullptr;
     hOffsets_ = nullptr;
@@ -30,6 +31,7 @@ AcTopo::AcTopo(int tnum) {
     dVertexStarMatrix_ = nullptr;
 
     threadNumber_ = tnum;
+    threadsPerCluster_ = tnumPerCluster;
     currClusters_ = std::vector<SimplexId>(threadNumber_, 0);
     currRelations_ = std::vector<RelationType>(threadNumber_, RelationType::BlankRelation);
     // waitings_ = std::vector<int>(threadNumber_, 0);
@@ -447,11 +449,12 @@ int AcTopo::computeRelation(const RelationType relation,
 
             // if (dVertexNeighborSizes_ == nullptr) {
             int vertexIdOffset = hVertexIntervals_[clusterId - 1];
-            int endCluster = min(clusterId + totalBlocks / THREADS_PER_CLUSTER, clusterNumber_) - 1;
+            int endCluster = min(clusterId + totalBlocks / threadsPerCluster_, clusterNumber_) - 1;
             int localVertexNum = hVertexIntervals_[endCluster] - hVertexIntervals_[clusterId - 1];
             CHECK(cudaMalloc((void **)&dVertexNeighborSizes_, sizeof(int) * localVertexNum));
             CHECK(cudaMalloc((void **)&dVertexNeighborMatrix_, sizeof(int) * localVertexNum * matrixColumnSmall));
             CHECK(cudaMemset(dVertexNeighborSizes_, 0, sizeof(int) * localVertexNum));
+            CHECK(cudaMemset(dVertexNeighborMatrix_, -1, sizeof(int) * localVertexNum * matrixColumnSmall));
             
             // CHECK(cudaMemset(dVertexNeighborMatrix_, -1, sizeof(int) * localVertexNum * matrixColumnSmall));
 
@@ -460,7 +463,8 @@ int AcTopo::computeRelation(const RelationType relation,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_,
                 dVertexIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_, cellDimension_);
+                dExternalCells_, dExternalCellOffsets_, 
+                cellDimension_, threadsPerCluster_);
             // }
 
             hVertexNeighborSizes_ = new int[localVertexNum];
@@ -480,6 +484,7 @@ int AcTopo::computeRelation(const RelationType relation,
                 SimplexId vid = vertexIdOffset + i;
                 if (!vertexNeighborList_[vid].empty()) continue;
                 vertexNeighborList_[vid] = std::vector<int>(hVertexNeighborMatrix_ + i * matrixColumnSmall, hVertexNeighborMatrix_ + i * matrixColumnSmall + hVertexNeighborSizes_[i]);
+                std::sort(vertexNeighborList_[vid].begin(), vertexNeighborList_[vid].end());
                 // // hash table version (faster in computing, slower in copying)
                 // int k = 0;
                 // std::vector<SimplexId> localVec(hVertexNeighborSizes_[i]);
@@ -914,7 +919,7 @@ void AcTopo::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
     // std::cout << "thread " << threadNumber_ << ": " << clusterNumber_ << std::endl;
 
     producer_ = std::thread(&AcTopo::assistProcedure, this);
-    printf("Block number: %d, block size: %d, cluster number: %d, cell number: %d, vertex number: %d\n", numBlocks_, blockSize_, clusterNumber_, cellNumber_, vertexNumber_);
+    printf("Thread num: %d %d(per cluster), Block number: %d, block size: %d, cluster number: %d, cell number: %d, vertex number: %d\n", threadNumber_, threadsPerCluster_, numBlocks_, blockSize_, clusterNumber_, cellNumber_, vertexNumber_);
 }
 
 

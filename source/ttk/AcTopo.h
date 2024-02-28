@@ -29,7 +29,7 @@ namespace ttk {
 class AcTopo final : public AbstractTriangulation {
     public: 
         friend class TestTopoRelations;
-        AcTopo(int tnum = 1);
+        AcTopo(int tnum = 1, int tnumPerCluster = 1);
         ~AcTopo();
         void initialize(vtkPointSet *pointSet, int numBlocks = 100, int blockSize = 32);
 
@@ -390,6 +390,7 @@ class AcTopo final : public AbstractTriangulation {
         // multithreading support
         std::thread producer_;
         int threadNumber_;
+        int threadsPerCluster_;
         std::array<std::vector<int>, 25> baseClusters_;
         mutable std::vector<SimplexId> currClusters_;
         mutable std::vector<RelationType> currRelations_;
