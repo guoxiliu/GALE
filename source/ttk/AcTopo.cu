@@ -3,6 +3,7 @@
 #include <vtkPointData.h>
 #include <vtkSmartPointer.h>
 #include <vtkUnstructuredGrid.h>
+#include <algorithm>
 #include <iostream>
 
 using namespace ttk;
@@ -481,6 +482,7 @@ int AcTopo::computeRelation(const RelationType relation,
                 SimplexId vid = vertexIdOffset + i;
                 if (!vertexNeighborList_[vid].empty()) continue;
                 vertexNeighborList_[vid] = std::vector<int>(hVertexNeighborMatrix_ + i * matrixColumnSmall, hVertexNeighborMatrix_ + i * matrixColumnSmall + hVertexNeighborSizes_[i]);
+                // std::sort(vertexNeighborList_[vid].begin(), vertexNeighborList_[vid].end());
                 // // hash table version (faster in computing, slower in copying)
                 // int k = 0;
                 // std::vector<SimplexId> localVec(hVertexNeighborSizes_[i]);

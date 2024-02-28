@@ -259,9 +259,24 @@ __global__ void precomputeVertexNeighbors(int *vertexNeighborMatrix, int *vertex
                     // }
 
                     // binary search version to keep the list sorted and unique
-                    int pos = binarySearch1D(vertexNeighborMatrix + matrixColumnSmall * relativeViId, vertexNeighborSizes[relativeViId], vjId);
-                    if (pos < 0) {
-                        insertElement1D(vertexNeighborMatrix + matrixColumnSmall * relativeViId, vertexNeighborSizes[relativeViId], -pos-1, vjId);
+                    // int pos = binarySearch1D(vertexNeighborMatrix + matrixColumnSmall * relativeViId, vertexNeighborSizes[relativeViId], vjId);
+                    // if (pos < 0) {
+                    //     insertElement1D(vertexNeighborMatrix + matrixColumnSmall * relativeViId, vertexNeighborSizes[relativeViId], -pos-1, vjId);
+                    //     vertexNeighborSizes[relativeViId] += 1;
+                    // }
+
+                    // linear search version to keep the list unique (not sorted)
+                    int *arr = vertexNeighborMatrix + matrixColumnSmall * relativeViId;
+                    int localSize = vertexNeighborSizes[relativeViId];
+                    bool insert = true;
+                    for (int k = 0; k < localSize; ++k) {
+                        if (arr[k] == vjId) {
+                            insert = false;
+                            break;
+                        }
+                    }
+                    if (insert) {
+                        arr[localSize] = vjId;
                         vertexNeighborSizes[relativeViId] += 1;
                     }
                 }
@@ -274,9 +289,23 @@ __global__ void precomputeVertexNeighbors(int *vertexNeighborMatrix, int *vertex
                     //     vertexNeighborSizes[relativeVjId] += 1;
                     // }
 
-                    int pos = binarySearch1D(vertexNeighborMatrix + matrixColumnSmall * relativeVjId, vertexNeighborSizes[relativeVjId], viId);
-                    if (pos < 0) {
-                        insertElement1D(vertexNeighborMatrix + matrixColumnSmall * relativeVjId, vertexNeighborSizes[relativeVjId], -pos-1, viId);
+                    // int pos = binarySearch1D(vertexNeighborMatrix + matrixColumnSmall * relativeVjId, vertexNeighborSizes[relativeVjId], viId);
+                    // if (pos < 0) {
+                    //     insertElement1D(vertexNeighborMatrix + matrixColumnSmall * relativeVjId, vertexNeighborSizes[relativeVjId], -pos-1, viId);
+                    //     vertexNeighborSizes[relativeVjId] += 1;
+                    // }
+
+                    int *arr = vertexNeighborMatrix + matrixColumnSmall * relativeVjId;
+                    int localSize = vertexNeighborSizes[relativeVjId];
+                    bool insert = true;
+                    for (int k = 0; k < localSize; ++k) {
+                        if (arr[k] == viId) {
+                            insert = false;
+                            break;
+                        }
+                    }
+                    if (insert) {
+                        arr[localSize] = viId;
                         vertexNeighborSizes[relativeVjId] += 1;
                     }
                 }
@@ -303,9 +332,23 @@ __global__ void precomputeVertexNeighbors(int *vertexNeighborMatrix, int *vertex
                     //     vertexNeighborSizes[relativeViId] += 1;
                     // }
 
-                    int pos = binarySearch1D(vertexNeighborMatrix + matrixColumnSmall * relativeViId, vertexNeighborSizes[relativeViId], vjId);
-                    if (pos < 0) {
-                        insertElement1D(vertexNeighborMatrix + matrixColumnSmall * relativeViId, vertexNeighborSizes[relativeViId], -pos-1, vjId);
+                    // int pos = binarySearch1D(vertexNeighborMatrix + matrixColumnSmall * relativeViId, vertexNeighborSizes[relativeViId], vjId);
+                    // if (pos < 0) {
+                    //     insertElement1D(vertexNeighborMatrix + matrixColumnSmall * relativeViId, vertexNeighborSizes[relativeViId], -pos-1, vjId);
+                    //     vertexNeighborSizes[relativeViId] += 1;
+                    // }
+
+                    int *arr = vertexNeighborMatrix + matrixColumnSmall * relativeViId;
+                    int localSize = vertexNeighborSizes[relativeViId];
+                    bool insert = true;
+                    for (int k = 0; k < localSize; ++k) {
+                        if (arr[k] == vjId) {
+                            insert = false;
+                            break;
+                        }
+                    }
+                    if (insert) {
+                        arr[localSize] = vjId;
                         vertexNeighborSizes[relativeViId] += 1;
                     }
                 }
@@ -318,9 +361,23 @@ __global__ void precomputeVertexNeighbors(int *vertexNeighborMatrix, int *vertex
                     //     vertexNeighborSizes[relativeVjId] += 1;
                     // }
 
-                    int pos = binarySearch1D(vertexNeighborMatrix + matrixColumnSmall * relativeVjId, vertexNeighborSizes[relativeVjId], viId);
-                    if (pos < 0) {
-                        insertElement1D(vertexNeighborMatrix + matrixColumnSmall * relativeVjId, vertexNeighborSizes[relativeVjId], -pos-1, viId);
+                    // int pos = binarySearch1D(vertexNeighborMatrix + matrixColumnSmall * relativeVjId, vertexNeighborSizes[relativeVjId], viId);
+                    // if (pos < 0) {
+                    //     insertElement1D(vertexNeighborMatrix + matrixColumnSmall * relativeVjId, vertexNeighborSizes[relativeVjId], -pos-1, viId);
+                    //     vertexNeighborSizes[relativeVjId] += 1;
+                    // }
+
+                    int *arr = vertexNeighborMatrix + matrixColumnSmall * relativeVjId;
+                    int localSize = vertexNeighborSizes[relativeVjId];
+                    bool insert = true;
+                    for (int k = 0; k < localSize; ++k) {
+                        if (arr[k] == viId) {
+                            insert = false;
+                            break;
+                        }
+                    }
+                    if (insert) {
+                        arr[localSize] = viId;
                         vertexNeighborSizes[relativeVjId] += 1;
                     }
                 }
