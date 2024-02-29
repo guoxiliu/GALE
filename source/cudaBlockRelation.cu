@@ -319,7 +319,7 @@ int main(int argc, char const *argv[]) {
     precomputeVertexStars<<<numBlock, blockSize>>>(dVertexStarMatrix, 
             dVertexStarSize, baseCluster, nodeNumber, 
             dConnectitity, dOffsets, dVertexIntervals, 
-            dCellIntervals, dExternalCells, dExternalCellOffsets, 3);
+            dCellIntervals, dExternalCells, dExternalCellOffsets, 3, 64);
 
     // cudaDeviceSynchronize();
     CHECK(cudaMemcpy(hVertexStarSize.data(), dVertexStarSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
@@ -363,7 +363,7 @@ int main(int argc, char const *argv[]) {
                     dVertexNeighborMatrix, dVertexNeighborSize, 
                     baseCluster, nodeNumber, dConnectitity, dOffsets, 
                     dVertexIntervals, dCellIntervals, 
-                    dExternalCells, dExternalCellOffsets, 3, 1);
+                    dExternalCells, dExternalCellOffsets, 3, 64);
 
     // cudaDeviceSynchronize();
     CHECK(cudaMemcpy(hVertexNeighborSize.data(), dVertexNeighborSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));

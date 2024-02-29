@@ -96,7 +96,7 @@ __device__ void insertElement1D(int arr[], const int length, const int pos, cons
 
 // Binary search an integer pair in a 1D array of pairs/triplets (specified by `dim`) [start, end)
 template<size_t dim>
-__device__ int binarySearch(int *arr, const int start, const int end, const vtkIdType target[dim]) {
+__device__ int binarySearch(int *arr, const int start, const int end, const int target[dim]) {
     int left = start, right = end - 1;
     // printf("left: %d, right: %d, length: %d, target: (%d, %d)\n", left, right, length, target[0], target[1]);
     while (left <= right) {
@@ -122,7 +122,7 @@ __device__ int binarySearch(int *arr, const int start, const int end, const vtkI
 
 // Insert an interger pair at a specific position
 template<size_t dim>
-__device__ void insertElement(int *arr, const int start, const int length, const int pos, const vtkIdType target[dim]) {
+__device__ void insertElement(int *arr, const int start, const int length, const int pos, const int target[dim]) {
     for (int i = start + length; i > pos; --i) {
         for (int j = 0; j < dim; ++j) {
             arr[i * dim + j] = arr[(i-1) * dim + j];
