@@ -1073,9 +1073,6 @@ int AcTopo::preconditionEdgesInternal() {
             }
         }
         edgeList_.shrink_to_fit();
-        // for (int i = 0; i < 5000; ++i) {
-        //     std::cout << "edge " << i << ": (" << edgeList_[i][0] << "," << edgeList_[i][1] << ")" << std::endl;
-        // }
 
         std::cout << "Edges preconditioned in " << t.getElapsedTime() << "s." << std::endl;
     }

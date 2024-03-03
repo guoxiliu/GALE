@@ -12,7 +12,9 @@
 #include <omp.h>
 #include <semaphore.h>
 
-#define OUTSCOPE(cluster) (cluster > baseCluster_ + numBlocks_ * blockSize_ || cluster < baseCluster_)
+// Find the global edge/triangle index from the edge/triangle list
+#define findEdgeIdx(x, e) (std::lower_bound(edgeList_.begin()+hEdgeIntervals_[x-1], edgeList_.begin()+hEdgeIntervals_[x], e) - edgeList_.begin())
+#define findTriangleIdx(x, f) (std::lower_bound(triangleList_.begin()+hTriangleIntervals_[x-1], triangleList_.begin()+hTriangleIntervals_[x], f) - triangleList_.begin())
 
 #define CHECK_CUDA(func)                                                       \
 {                                                                              \
@@ -34,24 +36,6 @@ class AcTopo final : public AbstractTriangulation {
         AcTopo(int tnum = 1, int tnumPerCluster = 1);
         ~AcTopo();
         void initialize(vtkPointSet *pointSet, int numBlocks = 100, int blockSize = 32);
-
-        inline int TTK_TRIANGULATION_INTERNAL(getCellVertex)(
-            const SimplexId &cellId,
-            const int &localVertexId,
-            SimplexId &vertexId) const override {
-            vertexId = hConnectivity_[hOffsets_[cellId] + localVertexId];
-            return 0;
-        }
-
-        inline SimplexId TTK_TRIANGULATION_INTERNAL(getCellVertexNumber)(
-            const SimplexId &cellId) const override {
-            return hOffsets_[cellId + 1] - hOffsets_[cellId];
-        }
-
-
-        int TTK_TRIANGULATION_INTERNAL(getDimensionality)() const override {
-            return cellDimension_;
-        }
         
         // int preconditionBoundaryEdgesInternal() override;
         // int preconditionBoundaryTrianglesInternal() override;
@@ -108,28 +92,184 @@ class AcTopo final : public AbstractTriangulation {
             return 0;
         }
 
-        inline SimplexId
-            TTK_TRIANGULATION_INTERNAL(getNumberOfCells)() const override {
+        inline SimplexId getNumberOfCells() const override {
                 return cellNumber_;
         }
 
-        inline SimplexId
-            TTK_TRIANGULATION_INTERNAL(getNumberOfEdges)() const override {
+        inline SimplexId getNumberOfEdges() const override {
                 return edgeNumber_;
         }
 
-        inline SimplexId
-            TTK_TRIANGULATION_INTERNAL(getNumberOfTriangles)() const override {
+        inline SimplexId getNumberOfTriangles() const override {
                 return triangleNumber_;
         }
 
-        inline SimplexId
-            TTK_TRIANGULATION_INTERNAL(getNumberOfVertices)() const override {
+        inline SimplexId getNumberOfVertices() const override {
                 return vertexNumber_;
         }
 
-        inline int TTK_TRIANGULATION_INTERNAL(getVertexNeighbor)(
-            const SimplexId &vertexId,
+        inline int getCellEdgeInternal(const SimplexId &cellId,
+            const int &localEdgeId,
+            SimplexId &edgeId) const override {
+            
+            std::array<int, 2> edgeIds;
+            switch (localEdgeId) {
+                case 0:     // (v0, v1) 
+                {
+                    edgeIds[0] = hConnectivity_[hOffsets_[cellId]];
+                    edgeIds[1] = hConnectivity_[hOffsets_[cellId] + 1];
+                    SimplexId clusterId = hIndexArray_[edgeIds[0]];
+                    edgeId = findEdgeIdx(clusterId, edgeIds);
+                    break;
+                }
+                case 1:     // (v0, v2) 
+                {
+                    edgeIds[0] = hConnectivity_[hOffsets_[cellId]];
+                    edgeIds[1] = hConnectivity_[hOffsets_[cellId] + 2];
+                    SimplexId clusterId = hIndexArray_[edgeIds[0]];
+                    edgeId = findEdgeIdx(clusterId, edgeIds);
+                    break;
+                }
+                case 2:     // (v0, v3) 
+                {
+                    edgeIds[0] = hConnectivity_[hOffsets_[cellId]];
+                    edgeIds[1] = hConnectivity_[hOffsets_[cellId] + 3];
+                    SimplexId clusterId = hIndexArray_[edgeIds[0]];
+                    edgeId = findEdgeIdx(clusterId, edgeIds);
+                    break;
+                }
+                case 3:     // (v1, v2) 
+                {
+                    edgeIds[0] = hConnectivity_[hOffsets_[cellId] + 1];
+                    edgeIds[1] = hConnectivity_[hOffsets_[cellId] + 2];
+                    SimplexId clusterId = hIndexArray_[edgeIds[0]];
+                    edgeId = findEdgeIdx(clusterId, edgeIds);
+                    break;
+                }
+                case 4:     // (v1, v3) 
+                {
+                    edgeIds[0] = hConnectivity_[hOffsets_[cellId] + 1];
+                    edgeIds[1] = hConnectivity_[hOffsets_[cellId] + 3];
+                    SimplexId clusterId = hIndexArray_[edgeIds[0]];
+                    edgeId = findEdgeIdx(clusterId, edgeIds);
+                    break;
+                }
+                case 5:     // (v2, v3) 
+                {
+                    edgeIds[0] = hConnectivity_[hOffsets_[cellId] + 2];
+                    edgeIds[1] = hConnectivity_[hOffsets_[cellId] + 3];
+                    SimplexId clusterId = hIndexArray_[edgeIds[0]];
+                    edgeId = findEdgeIdx(clusterId, edgeIds);
+                    break;
+                }
+                default:
+                    return -1;
+            }
+            return 0;
+        }
+
+        inline SimplexId getCellEdgeNumberInternal(
+            const SimplexId &cellId) const override {
+            
+            (void) cellId;
+            return 6;
+        }
+
+        template <std::size_t N>
+        inline void convertToVector(
+            const std::vector<std::array<SimplexId, N>> &table,
+            std::vector<std::vector<SimplexId>> &vec) {
+            vec.resize(table.size());
+            for(size_t i = 0; i < table.size(); ++i) {
+                vec[i] = {table[i].begin(), table[i].end()};
+            }
+        }
+
+        inline const std::vector<std::vector<SimplexId>> *
+            getCellEdgesInternal() override {
+            
+            convertToVector(tetraEdgeList_, cellEdgeVector_);
+            return &cellEdgeVector_;
+        }
+
+        inline int getCellTriangleInternal(const SimplexId &cellId,
+            const int &localTriangleId,
+            SimplexId &triangleId) const override {
+            
+            std::array<int, 3> triangleIds;
+            switch (localTriangleId) {
+                case 0:     // (v0, v1, v2) 
+                {
+                    triangleIds[0] = hConnectivity_[hOffsets_[cellId]];
+                    triangleIds[1] = hConnectivity_[hOffsets_[cellId] + 1];
+                    triangleIds[2] = hConnectivity_[hOffsets_[cellId] + 2];
+                    SimplexId clusterId = hIndexArray_[triangleIds[0]];
+                    triangleId = findTriangleIdx(clusterId, triangleIds);
+                    break;
+                }
+                case 1:     // (v0, v1, v3) 
+                {
+                    triangleIds[0] = hConnectivity_[hOffsets_[cellId]];
+                    triangleIds[1] = hConnectivity_[hOffsets_[cellId] + 1];
+                    triangleIds[2] = hConnectivity_[hOffsets_[cellId] + 3];
+                    SimplexId clusterId = hIndexArray_[triangleIds[0]];
+                    triangleId = findTriangleIdx(clusterId, triangleIds);
+                    break;
+                }
+                case 2:     // (v0, v2, v3) 
+                {
+                    triangleIds[0] = hConnectivity_[hOffsets_[cellId]];
+                    triangleIds[1] = hConnectivity_[hOffsets_[cellId] + 2];
+                    triangleIds[2] = hConnectivity_[hOffsets_[cellId] + 3];
+                    SimplexId clusterId = hIndexArray_[triangleIds[0]];
+                    triangleId = findTriangleIdx(clusterId, triangleIds);
+                    break;
+                }
+                case 3:     // (v1, v2, v3) 
+                {
+                    triangleIds[0] = hConnectivity_[hOffsets_[cellId] + 1];
+                    triangleIds[1] = hConnectivity_[hOffsets_[cellId] + 2];
+                    triangleIds[2] = hConnectivity_[hOffsets_[cellId] + 3];
+                    SimplexId clusterId = hIndexArray_[triangleIds[0]];
+                    triangleId = findTriangleIdx(clusterId, triangleIds);
+                    break;
+                }
+                default:
+                    return -1;
+            }
+            return 0;
+        }
+
+        inline SimplexId getCellTriangleNumberInternal(
+            const SimplexId &cellId) const override {
+            
+            return 4;
+        }
+
+        inline const std::vector<std::vector<SimplexId>> *
+            getCellTrianglesInternal() override {
+            
+            convertToVector(tetraTriangleList_, cellTriangleVector_);
+            return &cellTriangleVector_;
+        }
+
+        inline int getCellVertex(const SimplexId &cellId,
+            const int &localVertexId,
+            
+            SimplexId &vertexId) const override {
+            vertexId = hConnectivity_[hOffsets_[cellId] + localVertexId];
+            return 0;
+        }
+
+        inline SimplexId getCellVertexNumber(const SimplexId &cellId) const override {
+            return hOffsets_[cellId + 1] - hOffsets_[cellId];
+        }
+
+        int getDimensionality() const override {
+            return cellDimension_;
+        }
+
+        inline int getVertexNeighbor( const SimplexId &vertexId,
             const int &localNeighborId,
             SimplexId &neighborId) const override {
 
@@ -152,8 +292,7 @@ class AcTopo final : public AbstractTriangulation {
             return 0;
         }
 
-        inline SimplexId TTK_TRIANGULATION_INTERNAL(getVertexNeighborNumber)(
-            const SimplexId &vertexId) const override {
+        inline SimplexId getVertexNeighborNumber(const SimplexId &vertexId) const override {
             
             int tid = omp_get_thread_num();
             currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VVRelation;
@@ -173,15 +312,13 @@ class AcTopo final : public AbstractTriangulation {
             return vertexNeighborList_[vertexId].size();
         }
 
-        inline const std::vector<std::vector<SimplexId>> *
-            TTK_TRIANGULATION_INTERNAL(getVertexNeighbors)() override {
+        inline const std::vector<std::vector<SimplexId>> *getVertexNeighbors() override {
             // vertexNeighborData_.copyTo(vertexNeighborList_);
             // TODO: copy the matrix data back to vector of vector
             return &vertexNeighborList_;
         }
 
-        inline int TTK_TRIANGULATION_INTERNAL(getVertexEdge)(
-            const SimplexId &vertexId,
+        inline int getVertexEdge(const SimplexId &vertexId,
             const int &localEdgeId,
             SimplexId &edgeId) const override {
 
@@ -204,7 +341,7 @@ class AcTopo final : public AbstractTriangulation {
             return 0;
         }
 
-        inline SimplexId TTK_TRIANGULATION_INTERNAL(getVertexEdgeNumber)(
+        inline SimplexId getVertexEdgeNumber(
             const SimplexId &vertexId) const override {
             
             int tid = omp_get_thread_num();
@@ -225,15 +362,12 @@ class AcTopo final : public AbstractTriangulation {
             return vertexEdgeList_[vertexId].size();
         }
 
-        inline const std::vector<std::vector<SimplexId>> *
-            TTK_TRIANGULATION_INTERNAL(getVertexEdges)() override {
-            // vertexNeighborData_.copyTo(vertexNeighborList_);
+        inline const std::vector<std::vector<SimplexId>> *getVertexEdges() override {
             // TODO: copy the matrix data back to vector of vector
             return &vertexEdgeList_;
         }
 
-        inline int TTK_TRIANGULATION_INTERNAL(getVertexStar)(
-            const SimplexId &vertexId,
+        inline int getVertexStar(const SimplexId &vertexId,
             const int &localStarId,
             SimplexId &starId) const override {
             
@@ -256,7 +390,7 @@ class AcTopo final : public AbstractTriangulation {
             return 0;
         }
 
-        inline SimplexId TTK_TRIANGULATION_INTERNAL(getVertexStarNumber)(
+        inline SimplexId getVertexStarNumber(
             const SimplexId &vertexId) const override {
             
             int tid = omp_get_thread_num();
@@ -278,14 +412,12 @@ class AcTopo final : public AbstractTriangulation {
         }
 
         inline const std::vector<std::vector<SimplexId>> *
-            TTK_TRIANGULATION_INTERNAL(getVertexStars)() override {
-            // vertexStarData_.copyTo(vertexStarList_);
+            getVertexStars() override {
             // TODO: copy the matrix data back to vector of vector
             return &vertexStarList_;
         }
 
-        inline int TTK_TRIANGULATION_INTERNAL(getVertexTriangle)(
-            const SimplexId &vertexId,
+        inline int getVertexTriangle(const SimplexId &vertexId,
             const int &localTriangleId,
             SimplexId &triangleId) const override {
 
@@ -308,7 +440,7 @@ class AcTopo final : public AbstractTriangulation {
             return 0;
         }
 
-        inline SimplexId TTK_TRIANGULATION_INTERNAL(getVertexTriangleNumber)(
+        inline SimplexId getVertexTriangleNumber(
             const SimplexId &vertexId) const override {
             
             int tid = omp_get_thread_num();
@@ -330,7 +462,7 @@ class AcTopo final : public AbstractTriangulation {
         }
 
         inline const std::vector<std::vector<SimplexId>> *
-            TTK_TRIANGULATION_INTERNAL(getVertexTriangles)() override {
+            getVertexTriangles() override {
             // vertexNeighborData_.copyTo(vertexNeighborList_);
             // TODO: copy the matrix data back to vector of vector
             return &vertexTriangleList_;
