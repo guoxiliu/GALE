@@ -199,7 +199,7 @@ int ttk::ScalarFieldCriticalPoints::executeLegacy(
 
   std::cout << "Extracting critical points..." << std::endl;
 
-  auto t_start = std::chrono::high_resolution_clock::now();
+  Timer t;
 
   std::vector<char> vertexTypes(vertexNumber_);
 
@@ -300,9 +300,7 @@ int ttk::ScalarFieldCriticalPoints::executeLegacy(
   std::cout << "  #Multi-saddles\t" << monkeySaddleNumber << std::endl;
   std::cout << "  #Maxima\t\t" << maximumNumber << std::endl;
 
-  auto t_end = std::chrono::high_resolution_clock::now();
-  auto t_elapsed = std::chrono::duration<double>(t_end - t_start);
-  std::cout << "[ScalarFieldCriticalPoints] Processed " << vertexNumber_ << " vertices " << t_elapsed.count() << " s." << std::endl;
+  std::cout << "[ScalarFieldCriticalPoints] Processed " << vertexNumber_ << " vertices " << t.getElapsedTime() << " s." << std::endl;
 
   // prepare the output
   criticalPoints_->clear();

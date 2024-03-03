@@ -1,5 +1,6 @@
 #include "ttk/AcTopo.h"
 #include "ttk/ExplicitTriangulation.h"
+#include "ttk/MemoryUsage.h"
 #include "ttk/ScalarFieldCriticalPoints.h"
 #include "ttk/OrderDisambiguation.h"
 #include <vtkSmartPointer.h>
@@ -135,11 +136,12 @@ int main(int argc, char *argv[])
     int blockNumber = 0;
     int blockSize = 0;
     int threadNumber = 4;
+    int numThreadsPerCluster = 1;
     std::string fileName = "";
     std::string inputArrayName = "";
     vtkDataArray *inputScalarField = nullptr;
 
-    while ((c = getopt(argc, argv, "a:b:i:s:t:")) != -1) {
+    while ((c = getopt(argc, argv, "a:b:i:p:s:t:")) != -1) {
         switch (c) {
             case 'i':
                 fileName = optarg;
@@ -149,6 +151,9 @@ int main(int argc, char *argv[])
                 break;
             case 'b':
                 blockNumber = atoi(optarg);
+                break;
+            case 'p':
+                numThreadsPerCluster = atoi(optarg);
                 break;
             case 's':
                 blockSize = atoi(optarg);
@@ -167,6 +172,7 @@ int main(int argc, char *argv[])
     reader->SetFileName(fileName.c_str());
     reader->Update();
     
+    MemoryUsage m;
 
     int scalarFieldIndex = 0;
     vtkUnstructuredGrid *unstructuredGrid = reader->GetOutput();
@@ -197,7 +203,7 @@ int main(int argc, char *argv[])
         std::cout << "Default to array: '" << inputScalarField->GetName() << "'" << std::endl;
     }
 
-    ttk::AcTopo actopo_(threadNumber);
+    ttk::AcTopo actopo_(threadNumber, numThreadsPerCluster);
     if (blockNumber > 0 && blockSize > 0)
         actopo_.initialize(unstructuredGrid, blockNumber, blockSize);
     else if (blockNumber > 0)
@@ -216,6 +222,8 @@ int main(int argc, char *argv[])
     vtkDataArray *offsetField = GetOrderArray(unstructuredGrid, scalarFieldIndex, 1);
 
     int res = cpPlugin.executeLegacy(static_cast<ttk::SimplexId *>(GetVoidPointer(offsetField)), &actopo_);
+
+    std::cout << "[ScalarFieldCriticalPoints] Memory usage: " << m.getValue_in_MB(false) << " MB." << std::endl;
 
     return 0;
 }
