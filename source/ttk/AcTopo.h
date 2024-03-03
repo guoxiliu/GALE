@@ -24,6 +24,8 @@
     }                                                                          \
 }
 
+// const int removalRatio = 0.5;
+
 namespace ttk {
 
 class AcTopo final : public AbstractTriangulation {
@@ -133,13 +135,13 @@ class AcTopo final : public AbstractTriangulation {
 
             if (vertexNeighborList_[vertexId].empty()) {
                 int tid = omp_get_thread_num();
+                timers_[tid].reStart();
                 currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VVRelation;
                 // waitings_[tid] = 1;
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
                 waitingCounts_[tid]++;
-                timers_[tid].reStart();
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VVRelation)]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
@@ -156,12 +158,12 @@ class AcTopo final : public AbstractTriangulation {
             int tid = omp_get_thread_num();
             currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VVRelation;
             if (vertexNeighborList_[vertexId].empty()) {
+                timers_[tid].reStart();
                 // waitings_[tid] = 1;
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
                 waitingCounts_[tid]++;
-                timers_[tid].reStart();
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VVRelation)]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
@@ -185,13 +187,13 @@ class AcTopo final : public AbstractTriangulation {
 
             if (vertexEdgeList_[vertexId].empty()) {
                 int tid = omp_get_thread_num();
+                timers_[tid].reStart();
                 currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VERelation;
                 // waitings_[tid] = 1;
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
                 waitingCounts_[tid]++;
-                timers_[tid].reStart();
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VERelation)]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
@@ -209,11 +211,11 @@ class AcTopo final : public AbstractTriangulation {
             currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VERelation;
             if (vertexEdgeList_[vertexId].empty()) {
                 // waitings_[tid] = 1;
+                timers_[tid].reStart();
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
                 waitingCounts_[tid]++;
-                timers_[tid].reStart();
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VERelation)]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
@@ -237,13 +239,13 @@ class AcTopo final : public AbstractTriangulation {
             
             if (vertexStarList_[vertexId].empty()) {
                 int tid = omp_get_thread_num();
+                timers_[tid].reStart();
                 currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VTRelation;
                 // waitings_[tid] = 1;
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
                 waitingCounts_[tid]++;
-                timers_[tid].reStart();
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VTRelation)]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
@@ -261,11 +263,11 @@ class AcTopo final : public AbstractTriangulation {
             currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VTRelation;
             if (vertexStarList_[vertexId].empty()) {
                 // waitings_[tid] = 1;
+                timers_[tid].reStart();
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
                 waitingCounts_[tid]++;
-                timers_[tid].reStart();
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VTRelation)]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
@@ -289,13 +291,13 @@ class AcTopo final : public AbstractTriangulation {
 
             if (vertexTriangleList_[vertexId].empty()) {
                 int tid = omp_get_thread_num();
+                timers_[tid].reStart();
                 currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VFRelation;
                 // waitings_[tid] = 1;
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
                 waitingCounts_[tid]++;
-                timers_[tid].reStart();
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VFRelation)]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
@@ -313,11 +315,11 @@ class AcTopo final : public AbstractTriangulation {
             currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VFRelation;
             if (vertexTriangleList_[vertexId].empty()) {
                 // waitings_[tid] = 1;
+                timers_[tid].reStart();
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
                 waitingCounts_[tid]++;
-                timers_[tid].reStart();
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VFRelation)]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
