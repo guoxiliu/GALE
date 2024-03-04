@@ -47,8 +47,23 @@ class AcTopo final : public AbstractTriangulation {
 
         int preconditionEdgesInternal() override;
         // int preconditionEdgeLinksInternal() override;
-        // int preconditionEdgeStarsInternal() override;
-        // int preconditionEdgeTrianglesInternal() override;
+        int preconditionEdgeStarsInternal() override {
+            if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
+                std::cerr << "Empty dataset, precondition skipped";
+                return 1;
+            }
+            edgeStarList_ = std::vector<std::vector<int>>(edgeNumber_, std::vector<int>{});
+            return 0;
+        }
+
+        int preconditionEdgeTrianglesInternal() override {
+            if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
+                std::cerr << "Empty dataset, precondition skipped";
+                return 1;
+            }
+            edgeTriangleList_ = std::vector<std::vector<int>>(edgeNumber_, std::vector<int>{});
+            return 0;
+        }
 
         int preconditionTrianglesInternal() override;
         // int preconditionTriangleEdgesInternal() override;
@@ -109,8 +124,7 @@ class AcTopo final : public AbstractTriangulation {
         }
 
         inline int getCellEdgeInternal(const SimplexId &cellId,
-            const int &localEdgeId,
-            SimplexId &edgeId) const override {
+            const int &localEdgeId, SimplexId &edgeId) const override {
             
             std::array<int, 2> edgeIds;
             switch (localEdgeId) {
@@ -193,8 +207,7 @@ class AcTopo final : public AbstractTriangulation {
         }
 
         inline int getCellTriangleInternal(const SimplexId &cellId,
-            const int &localTriangleId,
-            SimplexId &triangleId) const override {
+            const int &localTriangleId, SimplexId &triangleId) const override {
             
             std::array<int, 3> triangleIds;
             switch (localTriangleId) {
@@ -254,14 +267,15 @@ class AcTopo final : public AbstractTriangulation {
         }
 
         inline int getCellVertex(const SimplexId &cellId,
-            const int &localVertexId,
+            const int &localVertexId, SimplexId &vertexId) const override {
             
-            SimplexId &vertexId) const override {
             vertexId = hConnectivity_[hOffsets_[cellId] + localVertexId];
             return 0;
         }
 
-        inline SimplexId getCellVertexNumber(const SimplexId &cellId) const override {
+        inline SimplexId getCellVertexNumber(
+            const SimplexId &cellId) const override {
+            
             return hOffsets_[cellId + 1] - hOffsets_[cellId];
         }
 
@@ -269,9 +283,176 @@ class AcTopo final : public AbstractTriangulation {
             return cellDimension_;
         }
 
+        inline const std::vector<std::array<SimplexId, 2>> *
+            getEdges() override {
+            
+            return &edgeList_;
+        }
+        
+        inline int getEdgeStar(const SimplexId &edgeId,
+            const int &localStarId, SimplexId &starId) const override {
+            
+            if (edgeStarList_[edgeId].empty()) {
+                int tid = omp_get_thread_num();
+                timers_[tid].reStart();
+                currClusters_[tid] = hIndexArray_[edgeList_[edgeId][0]], currRelations_[tid] = RelationType::ETRelation;
+                // waitings_[tid] = 1;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::ETRelation)]);
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                // waitings_[tid] = 0;
+            }
+            starId = edgeStarList_[edgeId][localStarId];
+            return 0;
+        }
+        
+        inline SimplexId getEdgeStarNumber(
+            const SimplexId &edgeId) const override {
+            
+            int tid = omp_get_thread_num();
+            currClusters_[tid] = hIndexArray_[edgeList_[edgeId][0]], currRelations_[tid] = RelationType::ETRelation;
+            if (edgeStarList_[edgeId].empty()) {
+                timers_[tid].reStart();
+                // waitings_[tid] = 1;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::ETRelation)]);
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                // waitings_[tid] = 0;
+            }
+            return edgeStarList_[edgeId].size();
+        }
+        
+        inline const std::vector<std::vector<SimplexId>> *
+            getEdgeStars() override {
+            
+            return &edgeStarList_;
+        }
+        
+        inline int getEdgeTriangleInternal(const SimplexId &edgeId,
+            const int &localTriangleId, SimplexId &triangleId) const override {
+        
+            if (edgeTriangleList_[edgeId].empty()) {
+                int tid = omp_get_thread_num();
+                timers_[tid].reStart();
+                currClusters_[tid] = hIndexArray_[edgeList_[edgeId][0]], currRelations_[tid] = RelationType::EFRelation;
+                // waitings_[tid] = 1;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::EFRelation)]);
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                // waitings_[tid] = 0;
+            }
+            triangleId = edgeTriangleList_[edgeId][localTriangleId];
+            return 0;
+        }
+        
+        inline SimplexId getEdgeTriangleNumberInternal(
+            const SimplexId &edgeId) const override {
+
+            int tid = omp_get_thread_num();
+            currClusters_[tid] = hIndexArray_[edgeList_[edgeId][0]], currRelations_[tid] = RelationType::EFRelation;
+            if (edgeTriangleList_[edgeId].empty()) {
+                timers_[tid].reStart();
+                // waitings_[tid] = 1;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::EFRelation)]);
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                // waitings_[tid] = 0;
+            }
+            return edgeTriangleList_[edgeId].size();
+        }
+        
+        inline const std::vector<std::vector<SimplexId>> *
+            getEdgeTrianglesInternal() override {
+                
+            return &edgeTriangleList_;
+        }
+
+        inline int getEdgeVertexInternal(const SimplexId &edgeId,
+            const int &localVertexId, SimplexId &vertexId) const override {
+            
+            if (localVertexId < 2) {
+                vertexId = edgeList_[edgeId][localVertexId];
+                return 0;
+            }
+            return -1;
+        }
+        
+        inline int getTriangleEdgeInternal(const SimplexId &triangleId,
+            const int &localEdgeId, SimplexId &edgeId) const override {
+            
+            std::array<SimplexId, 2> edgeIds;
+            switch(localEdgeId) {
+                case 0:     // (v0, v1)
+                {
+                    edgeIds[0] = triangleList_[triangleId][0];
+                    edgeIds[1] = triangleList_[triangleId][1];
+                    edgeId = findEdgeIdx(hIndexArray_[edgeIds[0]], edgeIds);
+                    break;
+                }
+                case 1:     // (v0, v2)
+                {
+                    edgeIds[0] = triangleList_[triangleId][0];
+                    edgeIds[1] = triangleList_[triangleId][2];
+                    edgeId = findEdgeIdx(hIndexArray_[edgeIds[0]], edgeIds);
+                    break;
+                }
+                case 2:     // (v1, v2)
+                {
+                    edgeIds[0] = triangleList_[triangleId][1];
+                    edgeIds[1] = triangleList_[triangleId][2];
+                    edgeId = findEdgeIdx(hIndexArray_[edgeIds[0]], edgeIds);
+                    break;
+                }
+                default:
+                    return -1;
+            }
+            return 0;
+        }
+        
+        inline SimplexId getTriangleEdgeNumberInternal(
+            const SimplexId &triangleId) const override {
+            
+            (void)triangleId;
+            return 3;
+        }
+        
+        inline const std::vector<std::vector<SimplexId>> *
+            getTriangleEdgesInternal() override {
+            
+            if(triangleEdgeVector_.empty()) {
+
+            }
+            return &triangleEdgeVector_;
+        }
+
+        inline int getTriangleVertexInternal(const SimplexId &triangleId,
+            const int &localVertexId, SimplexId &vertexId) const override {
+
+            if (localVertexId < 3) {
+                vertexId = triangleList_[triangleId][localVertexId];
+                return 0;
+            }
+            return -1;
+        }
+
         inline int getVertexNeighbor( const SimplexId &vertexId,
-            const int &localNeighborId,
-            SimplexId &neighborId) const override {
+            const int &localNeighborId, SimplexId &neighborId) const override {
 
             if (vertexNeighborList_[vertexId].empty()) {
                 int tid = omp_get_thread_num();
@@ -292,7 +473,8 @@ class AcTopo final : public AbstractTriangulation {
             return 0;
         }
 
-        inline SimplexId getVertexNeighborNumber(const SimplexId &vertexId) const override {
+        inline SimplexId getVertexNeighborNumber(
+            const SimplexId &vertexId) const override {
             
             int tid = omp_get_thread_num();
             currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VVRelation;
@@ -312,15 +494,15 @@ class AcTopo final : public AbstractTriangulation {
             return vertexNeighborList_[vertexId].size();
         }
 
-        inline const std::vector<std::vector<SimplexId>> *getVertexNeighbors() override {
+        inline const std::vector<std::vector<SimplexId>> *
+            getVertexNeighbors() override {
             // vertexNeighborData_.copyTo(vertexNeighborList_);
             // TODO: copy the matrix data back to vector of vector
             return &vertexNeighborList_;
         }
 
         inline int getVertexEdge(const SimplexId &vertexId,
-            const int &localEdgeId,
-            SimplexId &edgeId) const override {
+            const int &localEdgeId, SimplexId &edgeId) const override {
 
             if (vertexEdgeList_[vertexId].empty()) {
                 int tid = omp_get_thread_num();
@@ -362,14 +544,14 @@ class AcTopo final : public AbstractTriangulation {
             return vertexEdgeList_[vertexId].size();
         }
 
-        inline const std::vector<std::vector<SimplexId>> *getVertexEdges() override {
+        inline const std::vector<std::vector<SimplexId>> *
+            getVertexEdges() override {
             // TODO: copy the matrix data back to vector of vector
             return &vertexEdgeList_;
         }
 
         inline int getVertexStar(const SimplexId &vertexId,
-            const int &localStarId,
-            SimplexId &starId) const override {
+            const int &localStarId, SimplexId &starId) const override {
             
             if (vertexStarList_[vertexId].empty()) {
                 int tid = omp_get_thread_num();
@@ -418,8 +600,7 @@ class AcTopo final : public AbstractTriangulation {
         }
 
         inline int getVertexTriangle(const SimplexId &vertexId,
-            const int &localTriangleId,
-            SimplexId &triangleId) const override {
+            const int &localTriangleId, SimplexId &triangleId) const override {
 
             if (vertexTriangleList_[vertexId].empty()) {
                 int tid = omp_get_thread_num();
@@ -509,6 +690,12 @@ class AcTopo final : public AbstractTriangulation {
         int *dExternalCells_, *dExternalCellOffsets_;
 
         // relation matrices
+        int *hEdgeStarSizes_, *hEdgeStarMatrix_;
+        int *dEdgeStarSizes_, *dEdgeStarMatrix_;
+        
+        int *hEdgeTriangleSizes_, *hEdgeTriangleMatrix_;
+        int *dEdgeTriangleSizes_, *dEdgeTriangleMatrix_;
+        
         int *hVertexEdgeSizes_, *hVertexEdgeMatrix_;
         int *dVertexEdgeSizes_, *dVertexEdgeMatrix_;
 
@@ -528,6 +715,7 @@ class AcTopo final : public AbstractTriangulation {
         std::array<std::vector<int>, 25> baseClusters_;
         mutable std::vector<SimplexId> currClusters_;
         mutable std::vector<RelationType> currRelations_;
+        mutable std::mutex EFMutex_, ETMutex_;
         mutable std::mutex VEMutex_, VVMutex_, VTMutex_;
         mutable std::vector<std::vector<sem_t>> relationSems_;
         mutable std::vector<Timer> timers_;

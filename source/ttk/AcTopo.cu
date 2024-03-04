@@ -319,6 +319,137 @@ int AcTopo::computeRelation(const RelationType relation,
     int relationId = static_cast<int>(relation);
 
     switch (relation) {
+        case RelationType::EFRelation:
+        {
+            int totalBlocks = numBlocks_ * blockSize_;
+
+            int edgeIdOffset = hEdgeIntervals_[clusterId - 1];
+            int endCluster = min(clusterId + totalBlocks / threadsPerCluster_, clusterNumber_) - 1;
+            int localEdgeNum = hEdgeIntervals_[endCluster] - edgeIdOffset;
+            int *dEdgeList, *dTriangleList; 
+            CHECK(cudaMalloc((void **)&dEdgeList, sizeof(SimplexId) * localEdgeNum * 2));
+            CHECK(cudaMalloc((void **)&dTriangleList, sizeof(SimplexId) * hTriangleIntervals_[endCluster] * 3));
+            CHECK(cudaMalloc((void **)&dEdgeTriangleSizes_, sizeof(int) * localEdgeNum));
+            CHECK(cudaMalloc((void **)&dEdgeTriangleMatrix_, sizeof(int) * localEdgeNum * efColumnNum));
+            CHECK(cudaMemcpy(dEdgeList, edgeList_.data() + edgeIdOffset, sizeof(SimplexId) * localEdgeNum * 2, cudaMemcpyHostToDevice));
+            CHECK(cudaMemcpy(dTriangleList, triangleList_.data(), sizeof(SimplexId) * hTriangleIntervals_[endCluster] * 3, cudaMemcpyHostToDevice));
+            CHECK(cudaMemset(dEdgeTriangleSizes_, 0, sizeof(int) * localEdgeNum));
+            CHECK(cudaMemset(dEdgeTriangleMatrix_, -1, sizeof(int) * localEdgeNum * efColumnNum));
+
+            precomputeEdgeTriangles<<<numBlocks_, blockSize_>>>(
+                dEdgeList, dTriangleList,
+                dEdgeTriangleMatrix_, dEdgeTriangleSizes_,
+                clusterId, clusterNumber_,
+                dConnectivity_, dOffsets_, dIndexArray_,
+                dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
+                dExternalCells_, dExternalCellOffsets_, 
+                cellDimension_, threadsPerCluster_);
+
+            hEdgeTriangleSizes_ = new int[localEdgeNum];
+            hEdgeTriangleMatrix_ = new int[localEdgeNum * efColumnNum];
+
+            cudaError_t status = cudaDeviceSynchronize();
+            if (status != cudaSuccess) {
+                fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(status),
+                        __FILE__, __LINE__);
+                if (abort)
+                    exit(status);
+            }
+
+            CHECK(cudaMemcpy(hEdgeTriangleSizes_, dEdgeTriangleSizes_, sizeof(int) * localEdgeNum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(hEdgeTriangleMatrix_, dEdgeTriangleMatrix_, sizeof(int) * localEdgeNum * efColumnNum, cudaMemcpyDeviceToHost));
+
+            std::unique_lock<std::mutex> lck(ETMutex_);
+            for (int i = 0; i < localEdgeNum; ++i) {
+                SimplexId vid = edgeIdOffset + i;
+                if (!edgeTriangleList_[vid].empty()) continue;
+                edgeTriangleList_[vid] = std::vector<int>(hEdgeTriangleMatrix_ + i * efColumnNum, hEdgeTriangleMatrix_ + i * efColumnNum + hEdgeTriangleSizes_[i]);
+            }
+            baseClusters_[relationId][threadId] = clusterId;
+
+            lck.unlock();
+            if (signal)
+            {
+                // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+                // else res = 1;
+                sem_post(&relationSems_[threadId][relationId]);
+            }
+
+            CHECK(cudaFree(dEdgeList));
+            CHECK(cudaFree(dEdgeTriangleSizes_));
+            dEdgeTriangleSizes_ = nullptr;
+            CHECK(cudaFree(dEdgeTriangleMatrix_));
+            dEdgeTriangleMatrix_ = nullptr;
+
+            delete[] hEdgeTriangleMatrix_;
+            delete[] hEdgeTriangleSizes_;
+            break;
+        }
+
+        case RelationType::ETRelation:
+        {
+            int totalBlocks = numBlocks_ * blockSize_;
+
+            int edgeIdOffset = hEdgeIntervals_[clusterId - 1];
+            int endCluster = min(clusterId + totalBlocks / threadsPerCluster_, clusterNumber_) - 1;
+            int localEdgeNum = hEdgeIntervals_[endCluster] - edgeIdOffset;
+            int *dEdgeList; 
+            CHECK(cudaMalloc((void **)&dEdgeList, sizeof(SimplexId) * localEdgeNum * 2));
+            CHECK(cudaMalloc((void **)&dEdgeStarSizes_, sizeof(int) * localEdgeNum));
+            CHECK(cudaMalloc((void **)&dEdgeStarMatrix_, sizeof(int) * localEdgeNum * etColumnNum));
+            CHECK(cudaMemcpy(dEdgeList, edgeList_.data() + edgeIdOffset, sizeof(SimplexId) * localEdgeNum * 2, cudaMemcpyHostToDevice));
+            CHECK(cudaMemset(dEdgeStarSizes_, 0, sizeof(int) * localEdgeNum));
+            CHECK(cudaMemset(dEdgeStarMatrix_, -1, sizeof(int) * localEdgeNum * etColumnNum));
+
+            precomputeEdgeStars<<<numBlocks_, blockSize_>>>(
+                dEdgeList, dEdgeStarMatrix_, dEdgeStarSizes_,
+                clusterId, clusterNumber_,
+                dConnectivity_, dOffsets_,
+                dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
+                dExternalCells_, dExternalCellOffsets_, 
+                cellDimension_, threadsPerCluster_);
+
+            hEdgeStarSizes_ = new int[localEdgeNum];
+            hEdgeStarMatrix_ = new int[localEdgeNum * etColumnNum];
+
+            cudaError_t status = cudaDeviceSynchronize();
+            if (status != cudaSuccess) {
+                fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(status),
+                        __FILE__, __LINE__);
+                if (abort)
+                    exit(status);
+            }
+
+            CHECK(cudaMemcpy(hEdgeStarSizes_, dEdgeStarSizes_, sizeof(int) * localEdgeNum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(hEdgeStarMatrix_, dEdgeStarMatrix_, sizeof(int) * localEdgeNum * etColumnNum, cudaMemcpyDeviceToHost));
+
+            std::unique_lock<std::mutex> lck(ETMutex_);
+            for (int i = 0; i < localEdgeNum; ++i) {
+                SimplexId vid = edgeIdOffset + i;
+                if (!edgeStarList_[vid].empty()) continue;
+                edgeStarList_[vid] = std::vector<int>(hEdgeStarMatrix_ + i * etColumnNum, hEdgeStarMatrix_ + i * etColumnNum + hEdgeStarSizes_[i]);
+            }
+            baseClusters_[relationId][threadId] = clusterId;
+
+            lck.unlock();
+            if (signal)
+            {
+                // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+                // else res = 1;
+                sem_post(&relationSems_[threadId][relationId]);
+            }
+
+            CHECK(cudaFree(dEdgeList));
+            CHECK(cudaFree(dEdgeStarSizes_));
+            dEdgeStarSizes_ = nullptr;
+            CHECK(cudaFree(dEdgeStarMatrix_));
+            dEdgeStarMatrix_ = nullptr;
+
+            delete[] hEdgeStarMatrix_;
+            delete[] hEdgeStarSizes_;
+            break;
+        }
+
         case RelationType::VERelation:
         {
             int totalBlocks = numBlocks_ * blockSize_;
@@ -754,7 +885,7 @@ void AcTopo::assistProcedure() {
     volatile RelationType leaderFunc = RelationType::BlankRelation;
 
     /* Job queue version */
-    if (threadNumber_ == 1) {
+    // if (threadNumber_ == 1) {
         while (true) {
             std::unique_lock<std::mutex> qlock(qMutex_);
             int qSize = jobQueue.size();
@@ -775,108 +906,108 @@ void AcTopo::assistProcedure() {
                     leaderCluster = currClusters_[i], leaderFunc = currRelations_[i];
                     if (leaderCluster == -1) return;
                     else if (leaderCluster == 0) continue;
-                    SimplexId diff = leaderCluster - baseClusters_[static_cast<int>(leaderFunc)][i];
-                    // check if the precomputation needs to be performed
-                    if (diff < 0 || diff > numBlocks_ * blockSize_ * 0.6) {
-                        // std::cout << "precomputing for thread " << i << " cluster = " << leaderCluster << " diff = " << diff << std::endl;
-                        computeRelation(leaderFunc, leaderCluster, i, false);
-                    }
+                    // SimplexId diff = leaderCluster - baseClusters_[static_cast<int>(leaderFunc)][i];
+                    // // check if the precomputation needs to be performed
+                    // if (diff < 0 || diff > numBlocks_ * blockSize_ * 0.6) {
+                    //     // std::cout << "precomputing for thread " << i << " cluster = " << leaderCluster << " diff = " << diff << std::endl;
+                    //     computeRelation(leaderFunc, leaderCluster, i, false);
+                    // }
                 }
             }
         }
-    }
+    // }
     
-    else {
-        while (true) {
-            // bool wait = false;
-            // for (int tid = 0; tid < threadNumber_; ++tid) {
-            //     volatile int wval = waitings_[tid];
-            //     if (wval > 0) {
-            //         leaderCluster = currClusters_[tid], leaderFunc = currRelations_[tid];
+    // else {
+    //     while (true) {
+    //         // bool wait = false;
+    //         // for (int tid = 0; tid < threadNumber_; ++tid) {
+    //         //     volatile int wval = waitings_[tid];
+    //         //     if (wval > 0) {
+    //         //         leaderCluster = currClusters_[tid], leaderFunc = currRelations_[tid];
 
-            //         // no need to compute if the relation is already there from another thread
-            //         int baseCluster = baseClusters_[static_cast<int>(leaderFunc)][tid];
-            //         // if (leaderCluster == baseCluster) continue;
-            //         if (baseCluster > 0) {
-            //             SimplexId diff = leaderCluster - baseCluster;
-            //             // check if the precomputation needs to be performed
-            //             if (diff > 0 && diff < numBlocks_ * blockSize_) {
-            //                 sem_post(&relationSems_[tid][static_cast<int>(leaderFunc)]);
-            //                 continue;
-            //             }
-            //         }
+    //         //         // no need to compute if the relation is already there from another thread
+    //         //         int baseCluster = baseClusters_[static_cast<int>(leaderFunc)][tid];
+    //         //         // if (leaderCluster == baseCluster) continue;
+    //         //         if (baseCluster > 0) {
+    //         //             SimplexId diff = leaderCluster - baseCluster;
+    //         //             // check if the precomputation needs to be performed
+    //         //             if (diff > 0 && diff < numBlocks_ * blockSize_) {
+    //         //                 sem_post(&relationSems_[tid][static_cast<int>(leaderFunc)]);
+    //         //                 continue;
+    //         //             }
+    //         //         }
 
-            //         wait = true;
-            //         int res = computeRelation(leaderFunc, leaderCluster, tid, true);
-            //     }
-            // }
+    //         //         wait = true;
+    //         //         int res = computeRelation(leaderFunc, leaderCluster, tid, true);
+    //         //     }
+    //         // }
 
-            /* Job queue version */
-            std::unique_lock<std::mutex> qlock(qMutex_);
-            int qSize = jobQueue.size();
-            qlock.unlock();
-            if (qSize > 0) {
-                std::unordered_map<RelationType, std::vector<std::pair<int,int>>> requestMap;
-                // handle the waiting jobs in the queue
-                // combine the requests from all waiting consumers
-                std::unique_lock<std::mutex> qlock(qMutex_);
-                for (int i = 0; i < qSize; ++i) {
-                    int tid = jobQueue.front();
-                    jobQueue.pop();
-                    requestMap[currRelations_[tid]].push_back(std::make_pair(tid, currClusters_[tid]));
-                }
-                qlock.unlock();
-                for (auto &e : requestMap) {
-                    int res = computeCombinedRelation(e.first, e.second);
-                }
-            }
-            else {
-                // clean the memory storage
-                for (int i = 0; i < threadNumber_; ++i) {
-                    SimplexId endCluster = currClusters_[i];
-                    if (endCluster < 0) return;
-                    else if (endCluster == 0) continue;
-                    if (!jobQueue.empty()) break;
-                    RelationType relation = currRelations_[i];
-                    SimplexId startCluster = baseClusters_[static_cast<int>(relation)][i];
-                    // endCluster = (endCluster - startCluster) * removalRatio + startCluster;
-                    if (startCluster == 0) continue;
-                    // different relations correspond to different vectors
-                    switch (relation)
-                    {
-                        case RelationType::VVRelation:
-                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
-                                vertexNeighborList_[vid].clear(); vertexNeighborList_[vid].shrink_to_fit();
-                            }
-                            break;
+    //         /* Job queue version */
+    //         std::unique_lock<std::mutex> qlock(qMutex_);
+    //         int qSize = jobQueue.size();
+    //         qlock.unlock();
+    //         if (qSize > 0) {
+    //             std::unordered_map<RelationType, std::vector<std::pair<int,int>>> requestMap;
+    //             // handle the waiting jobs in the queue
+    //             // combine the requests from all waiting consumers
+    //             std::unique_lock<std::mutex> qlock(qMutex_);
+    //             for (int i = 0; i < qSize; ++i) {
+    //                 int tid = jobQueue.front();
+    //                 jobQueue.pop();
+    //                 requestMap[currRelations_[tid]].push_back(std::make_pair(tid, currClusters_[tid]));
+    //             }
+    //             qlock.unlock();
+    //             for (auto &e : requestMap) {
+    //                 int res = computeCombinedRelation(e.first, e.second);
+    //             }
+    //         }
+    //         else {
+    //             // clean the memory storage
+    //             for (int i = 0; i < threadNumber_; ++i) {
+    //                 SimplexId endCluster = currClusters_[i];
+    //                 if (endCluster < 0) return;
+    //                 else if (endCluster == 0) continue;
+    //                 if (!jobQueue.empty()) break;
+    //                 RelationType relation = currRelations_[i];
+    //                 SimplexId startCluster = baseClusters_[static_cast<int>(relation)][i];
+    //                 // endCluster = (endCluster - startCluster) * removalRatio + startCluster;
+    //                 if (startCluster == 0) continue;
+    //                 // different relations correspond to different vectors
+    //                 switch (relation)
+    //                 {
+    //                     case RelationType::VVRelation:
+    //                         for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
+    //                             vertexNeighborList_[vid].clear(); vertexNeighborList_[vid].shrink_to_fit();
+    //                         }
+    //                         break;
                     
-                        case RelationType::VERelation:
-                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
-                                vertexEdgeList_[vid].clear(); vertexEdgeList_[vid].shrink_to_fit();
-                            }
-                            break;
+    //                     case RelationType::VERelation:
+    //                         for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
+    //                             vertexEdgeList_[vid].clear(); vertexEdgeList_[vid].shrink_to_fit();
+    //                         }
+    //                         break;
                         
-                        case RelationType::VFRelation:
-                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
-                                vertexTriangleList_[vid].clear(); vertexTriangleList_[vid].shrink_to_fit();
-                            }
-                            break;
+    //                     case RelationType::VFRelation:
+    //                         for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
+    //                             vertexTriangleList_[vid].clear(); vertexTriangleList_[vid].shrink_to_fit();
+    //                         }
+    //                         break;
                         
-                        case RelationType::VTRelation:
-                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
-                                vertexStarList_[vid].clear(); vertexStarList_[vid].shrink_to_fit();
-                            }
-                            break;
+    //                     case RelationType::VTRelation:
+    //                         for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
+    //                             vertexStarList_[vid].clear(); vertexStarList_[vid].shrink_to_fit();
+    //                         }
+    //                         break;
 
-                        default:
-                            break;
-                    }
-                    // reset the base cluster of the thread to 0
-                    baseClusters_[static_cast<int>(relation)][i] = 0;
-                }
-            }
-        }
-    }
+    //                     default:
+    //                         break;
+    //                 }
+    //                 // reset the base cluster of the thread to 0
+    //                 baseClusters_[static_cast<int>(relation)][i] = 0;
+    //             }
+    //         }
+    //     }
+    // }
 }
 
 void AcTopo::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
