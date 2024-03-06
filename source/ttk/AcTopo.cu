@@ -359,7 +359,7 @@ int AcTopo::computeRelation(const RelationType relation,
             CHECK(cudaMemcpy(hEdgeTriangleSizes_, dEdgeTriangleSizes_, sizeof(int) * localEdgeNum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpy(hEdgeTriangleMatrix_, dEdgeTriangleMatrix_, sizeof(int) * localEdgeNum * efColumnNum, cudaMemcpyDeviceToHost));
 
-            std::unique_lock<std::mutex> lck(ETMutex_);
+            std::unique_lock<std::mutex> lck(EFMutex_);
             for (int i = 0; i < localEdgeNum; ++i) {
                 SimplexId vid = edgeIdOffset + i;
                 if (!edgeTriangleList_[vid].empty()) continue;
@@ -447,6 +447,70 @@ int AcTopo::computeRelation(const RelationType relation,
 
             delete[] hEdgeStarMatrix_;
             delete[] hEdgeStarSizes_;
+            break;
+        }
+
+        case RelationType::FTRelation:
+        {
+            int totalBlocks = numBlocks_ * blockSize_;
+
+            int triangleIdOffset = hTriangleIntervals_[clusterId - 1];
+            int endCluster = min(clusterId + totalBlocks / threadsPerCluster_, clusterNumber_) - 1;
+            int localTriangleNum = hTriangleIntervals_[endCluster] - triangleIdOffset;
+            int *dTriangleList; 
+            CHECK(cudaMalloc((void **)&dTriangleList, sizeof(SimplexId) * localTriangleNum * 3));
+            CHECK(cudaMalloc((void **)&dTriangleStarSizes_, sizeof(int) * localTriangleNum));
+            CHECK(cudaMalloc((void **)&dTriangleStarMatrix_, sizeof(int) * localTriangleNum * ftColumnNum));
+            CHECK(cudaMemcpy(dTriangleList, triangleList_.data() + triangleIdOffset, sizeof(SimplexId) * localTriangleNum * 3, cudaMemcpyHostToDevice));
+            CHECK(cudaMemset(dTriangleStarSizes_, 0, sizeof(int) * localTriangleNum));
+            CHECK(cudaMemset(dTriangleStarMatrix_, -1, sizeof(int) * localTriangleNum * ftColumnNum));
+
+            precomputeTriangleStars<<<numBlocks_, blockSize_>>>(
+                dTriangleList, dTriangleStarMatrix_, dTriangleStarSizes_,
+                clusterId, clusterNumber_,
+                dConnectivity_, dOffsets_,
+                dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
+                dExternalCells_, dExternalCellOffsets_, 
+                cellDimension_, threadsPerCluster_);
+
+            hTriangleStarSizes_ = new int[localTriangleNum];
+            hTriangleStarMatrix_ = new int[localTriangleNum * ftColumnNum];
+
+            cudaError_t status = cudaDeviceSynchronize();
+            if (status != cudaSuccess) {
+                fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(status),
+                        __FILE__, __LINE__);
+                if (abort)
+                    exit(status);
+            }
+
+            CHECK(cudaMemcpy(hTriangleStarSizes_, dTriangleStarSizes_, sizeof(int) * localTriangleNum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(hTriangleStarMatrix_, dTriangleStarMatrix_, sizeof(int) * localTriangleNum * ftColumnNum, cudaMemcpyDeviceToHost));
+
+            std::unique_lock<std::mutex> lck(FTMutex_);
+            for (int i = 0; i < localTriangleNum; ++i) {
+                SimplexId vid = triangleIdOffset + i;
+                if (!triangleStarList_[vid].empty()) continue;
+                triangleStarList_[vid] = std::vector<int>(hTriangleStarMatrix_ + i * ftColumnNum, hTriangleStarMatrix_ + i * ftColumnNum + hTriangleStarSizes_[i]);
+            }
+            baseClusters_[relationId][threadId] = clusterId;
+
+            lck.unlock();
+            if (signal)
+            {
+                // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+                // else res = 1;
+                sem_post(&relationSems_[threadId][relationId]);
+            }
+
+            CHECK(cudaFree(dTriangleList));
+            CHECK(cudaFree(dTriangleStarSizes_));
+            dTriangleStarSizes_ = nullptr;
+            CHECK(cudaFree(dTriangleStarMatrix_));
+            dTriangleStarMatrix_ = nullptr;
+
+            delete[] hTriangleStarMatrix_;
+            delete[] hTriangleStarSizes_;
             break;
         }
 

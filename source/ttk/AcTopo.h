@@ -68,7 +68,14 @@ class AcTopo final : public AbstractTriangulation {
         int preconditionTrianglesInternal() override;
         // int preconditionTriangleEdgesInternal() override;
         // int preconditionTriangleLinksInternal() override;
-        // int preconditionTriangleStarsInternal() override;
+        int preconditionTriangleStarsInternal() override {
+            if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
+                std::cerr << "Empty dataset, precondition skipped";
+                return 1;
+            }
+            triangleStarList_ = std::vector<std::vector<int>>(triangleNumber_, std::vector<int>{});
+            return 0;
+        }
 
         inline int preconditionVertexEdgesInternal() override {
             if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
@@ -441,6 +448,53 @@ class AcTopo final : public AbstractTriangulation {
             return &triangleEdgeVector_;
         }
 
+        inline int getTriangleStar(const SimplexId &triangleId,
+            const int &localStarId, SimplexId &starId) const override {
+
+            if (triangleStarList_[triangleId].empty()) {
+                int tid = omp_get_thread_num();
+                timers_[tid].reStart();
+                currClusters_[tid] = hIndexArray_[triangleList_[triangleId][0]], currRelations_[tid] = RelationType::FTRelation;
+                // waitings_[tid] = 1;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::FTRelation)]);
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                // waitings_[tid] = 0;
+            }
+            starId = triangleStarList_[triangleId][localStarId];
+            return 0;
+        }
+
+        inline SimplexId getTriangleStarNumber(
+            const SimplexId &triangleId) const override {
+
+            int tid = omp_get_thread_num();
+            currClusters_[tid] = hIndexArray_[triangleList_[triangleId][0]], currRelations_[tid] = RelationType::FTRelation;
+            if (triangleStarList_[triangleId].empty()) {
+                timers_[tid].reStart();
+                // waitings_[tid] = 1;
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::FTRelation)]);
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                // waitings_[tid] = 0;
+            }
+            return triangleStarList_[triangleId].size();
+        }
+
+        inline const std::vector<std::vector<SimplexId>> *
+            getTriangleStars() override {
+            
+            return &triangleStarList_;
+        }
+
         inline int getTriangleVertexInternal(const SimplexId &triangleId,
             const int &localVertexId, SimplexId &vertexId) const override {
 
@@ -695,7 +749,10 @@ class AcTopo final : public AbstractTriangulation {
         
         int *hEdgeTriangleSizes_, *hEdgeTriangleMatrix_;
         int *dEdgeTriangleSizes_, *dEdgeTriangleMatrix_;
-        
+
+        int *hTriangleStarSizes_, *hTriangleStarMatrix_;
+        int *dTriangleStarSizes_, *dTriangleStarMatrix_;
+
         int *hVertexEdgeSizes_, *hVertexEdgeMatrix_;
         int *dVertexEdgeSizes_, *dVertexEdgeMatrix_;
 
@@ -715,7 +772,7 @@ class AcTopo final : public AbstractTriangulation {
         std::array<std::vector<int>, 25> baseClusters_;
         mutable std::vector<SimplexId> currClusters_;
         mutable std::vector<RelationType> currRelations_;
-        mutable std::mutex EFMutex_, ETMutex_;
+        mutable std::mutex EFMutex_, ETMutex_, FTMutex_;
         mutable std::mutex VEMutex_, VVMutex_, VTMutex_;
         mutable std::vector<std::vector<sem_t>> relationSems_;
         mutable std::vector<Timer> timers_;

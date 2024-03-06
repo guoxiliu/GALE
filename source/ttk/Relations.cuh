@@ -5,6 +5,7 @@
 
 const int efColumnNum = 20;
 const int etColumnNum = 20;
+const int ftColumnNum = 5;
 const int vvColumnNum = 30;
 const int vtColumnNum = 60;
 const int veColumnNum = 30;
@@ -331,6 +332,91 @@ __global__ void precomputeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edg
                         oldVal = atomicCAS(&arr[localSize++], -1, cid);
                     } while (oldVal != -1);
                     atomicAdd(&edgeStarSizes[relativeEid], 1);
+                }
+            }
+        }
+    }
+}
+
+__global__ void precomputeTriangleStars(int *triangleList, int *triangleStarMatrix, int *triangleStarSizes, 
+            const int baseCluster, const int clusterNumber,
+            const vtkIdType *connectivity, const vtkIdType *offsets, 
+            const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
+            const int *externalCells, const int *externalCellOffsets, 
+            const int dimension, const int numThreadsPerCluster) {
+
+    // multiple threads compute one cluster
+    int tid = (blockIdx.x * blockDim.x + threadIdx.x) / numThreadsPerCluster + baseCluster;
+    if (tid >= clusterNumber) return;
+
+    /*
+    * divide the job by clusters
+    */
+    const int startVertexId= vertexIntervals[tid-1];
+    const int endVertexId = vertexIntervals[tid];
+    const int baseTriangleId = triangleIntervals[baseCluster - 1];
+    const int startTriangleId = triangleIntervals[tid-1] - baseTriangleId;
+    const int endTriangleId = triangleIntervals[tid] - baseTriangleId;
+
+    // printf("threadIdx.x: %d, tid: %d, startTriangleId: %d, endTriangleId: %d\n", threadIdx.x, tid, startTriangleId, endTriangleId);
+
+    // determine the range of cells
+    int clusterStartCellId = cellIntervals[tid - 1];
+    int clusterEndCellId = cellIntervals[tid];
+    int cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
+    int startCellId = clusterStartCellId + (threadIdx.x % numThreadsPerCluster) * cellsPerThread;
+    int endCellId = (threadIdx.x % numThreadsPerCluster == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
+
+    // loop through the internal cell list
+    for (int cid = startCellId; cid < endCellId; ++cid) {
+        int cellId = offsets[cid];
+        for (int vi = 0; vi < dimension - 1; ++vi) {
+            int selectedTriangle[3] = {static_cast<int>(connectivity[cellId + vi])};
+            if (selectedTriangle[0] < endVertexId) {
+                for (int vj = vi+1; vj < dimension; ++vj) {
+                    for (int vk = vj+1; vk <= dimension; ++vk) {
+                        selectedTriangle[1] = static_cast<int>(connectivity[cellId + vj]);
+                        selectedTriangle[2] = static_cast<int>(connectivity[cellId + vk]);
+                        int relativeFid = binarySearch<3>(triangleList, startTriangleId, endTriangleId, selectedTriangle);
+                        int *arr = triangleStarMatrix + ftColumnNum * relativeFid;
+                        int localSize = triangleStarSizes[relativeFid];
+                        int oldVal = -1;
+                        do {
+                            oldVal = atomicCAS(&arr[localSize++], -1, cid);
+                        } while (oldVal != -1);
+                        atomicAdd(&triangleStarSizes[relativeFid], 1);
+                    }
+                }
+            }
+        }
+    }
+
+    clusterStartCellId = externalCellOffsets[tid - 1];
+    clusterEndCellId = externalCellOffsets[tid];
+    cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
+    startCellId = clusterStartCellId + (threadIdx.x % numThreadsPerCluster) * cellsPerThread;
+    endCellId = (threadIdx.x % numThreadsPerCluster == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
+
+    // loop through the external cell list
+    for (int i = startCellId; i < endCellId; ++i) {
+        int cid = externalCells[i];
+        int cellId = offsets[cid];
+        for (int vi = 1; vi < dimension; ++vi) {
+            int selectedTriangle[3] = {static_cast<int>(connectivity[cellId + vi])};
+            if (selectedTriangle[0] >= startVertexId && selectedTriangle[0] < endVertexId) {
+                for (int vj = vi+1; vj < dimension; ++vj) {
+                    for (int vk = vj+1; vk <= dimension; ++vk) {
+                        selectedTriangle[1] = static_cast<int>(connectivity[cellId + vj]);
+                        selectedTriangle[2] = static_cast<int>(connectivity[cellId + vk]);
+                        int relativeFid = binarySearch<3>(triangleList, startTriangleId, endTriangleId, selectedTriangle);
+                        int *arr = triangleStarMatrix + ftColumnNum * relativeFid;
+                        int localSize = triangleStarSizes[relativeFid];
+                        int oldVal = -1;
+                        do {
+                            oldVal = atomicCAS(&arr[localSize++], -1, cid);
+                        } while (oldVal != -1);
+                        atomicAdd(&triangleStarSizes[relativeFid], 1);
+                    }
                 }
             }
         }
