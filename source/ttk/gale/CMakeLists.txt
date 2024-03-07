@@ -1,4 +1,4 @@
-add_library(gale SHARED "Gale.cu" "Gale.h" "Relations.cuh" "Utils.cuh")
+add_library(gale SHARED Gale.cu)
 target_include_directories(gale
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>

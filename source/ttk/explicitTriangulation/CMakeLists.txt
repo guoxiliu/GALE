@@ -1,4 +1,4 @@
-add_library(explicitTriangulation SHARED "ExplicitTriangulation.cpp" "ExplicitTriangulation.h")
+add_library(explicitTriangulation SHARED ExplicitTriangulation.cpp)
 target_include_directories(explicitTriangulation
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>

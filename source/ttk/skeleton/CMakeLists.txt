@@ -1,4 +1,4 @@
-add_library(skeleton SHARED "Skeleton.cpp" "Skeleton.h")
+add_library(skeleton SHARED Skeleton.cpp)
 target_include_directories(skeleton
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>

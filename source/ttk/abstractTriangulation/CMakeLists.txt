@@ -1,4 +1,4 @@
-add_library(abstractTriangulation SHARED "AbstractTriangulation.cpp" "AbstractTriangulation.h")
+add_library(abstractTriangulation SHARED AbstractTriangulation.cpp)
 target_include_directories(abstractTriangulation
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
