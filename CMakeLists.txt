@@ -32,25 +32,26 @@ if (NOT VTK_FOUND)
     return()
 endif()
 
-set(VTK_INCLUDE_DIRS "" CACHE PATH "VTK Include Directory")
-if (NOT EXISTS "${VTK_INCLUDE_DIRS}")
-    message(FATAL_ERROR "VTK_INCLUDE_DIRS NOT FOUND!")
-    return()
-endif()
-
 find_package(OpenMP)
 if (NOT OpenMP_CXX_FOUND) 
     message("OpenMP NOT FOUND!")
     return()
 endif()
 
+find_package(Boost)
+if (NOT Boost_FOUND) 
+    message("Boost NOT FOUND!")
+    return()
+endif()
+
 message(STATUS "VTK_VERSION: ${VTK_VERSION}")
 message("VTK_DIR: ${VTK_DIR}")
-message("VTK_INCLUDE_DIRS: ${VTK_INCLUDE_DIRS}")
-message("VTK_LIBRARIES: ${VTK_LIBRARIES}")
+# message("VTK_LIBRARIES: ${VTK_LIBRARIES}")
 
 set(CMAKE_CUDA_ARCHITECTURES 52 60 61 75)
 set(CMAKE_CXX_STANDARD 14)
 
 # add_subdirectory("test")
+
+# Source code
 add_subdirectory("source")

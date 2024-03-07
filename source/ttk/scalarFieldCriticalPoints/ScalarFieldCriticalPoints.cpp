@@ -1,4 +1,4 @@
-#include "ScalarFieldCriticalPoints.h"
+#include <ScalarFieldCriticalPoints.h>
 
 ttk::ScalarFieldCriticalPoints::ScalarFieldCriticalPoints() {
 }

@@ -1,0 +1,3 @@
+add_library(testTopoRelations INTERFACE)
+target_include_directories(testTopoRelations INTERFACE .)
+target_link_libraries(testTopoRelations INTERFACE abstractTriangulation common gale)

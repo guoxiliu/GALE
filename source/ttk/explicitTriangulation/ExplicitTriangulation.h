@@ -9,9 +9,9 @@
 
 #pragma once
 
-#include "AbstractTriangulation.h"
-#include "CellArray.h"
-#include "FlatJaggedArray.h"
+#include <AbstractTriangulation.h>
+#include <CellArray.h>
+#include <FlatJaggedArray.h>
 #include <vtkPointSet.h>
 #include <array>
 #include <memory>

@@ -30,9 +30,9 @@
 #include <map>
 
 // base code includes
-#include "AbstractTriangulation.h"
-#include "Timer.h"
-#include "UnionFind.h"
+#include <AbstractTriangulation.h>
+#include <Timer.h>
+#include <UnionFind.h>
 #include <chrono>
 #include <vector>
 // #include <MemoryUsage.h>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DataTypes.h"
+#include <DataTypes.h>
 #include <fstream>
 #include <string>
 #include <vector>

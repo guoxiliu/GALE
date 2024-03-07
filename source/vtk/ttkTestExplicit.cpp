@@ -1,7 +1,7 @@
-#include "ttk/ExplicitTriangulation.h"
-#include "ttk/TestTopoRelations.h"
-#include "ttk/ScalarFieldCriticalPoints.h"
-#include "ttk/OrderDisambiguation.h"
+#include <ExplicitTriangulation.h>
+#include <TestTopoRelations.h>
+#include <ScalarFieldCriticalPoints.h>
+#include <OrderDisambiguation.h>
 #include <vtkSmartPointer.h>
 #include <vtkXMLUnstructuredGridReader.h>
 #include <vtkUnstructuredGrid.h>

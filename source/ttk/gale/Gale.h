@@ -1,7 +1,7 @@
 #pragma once
 
-#include "AbstractTriangulation.h"
-#include "Timer.h"
+#include <AbstractTriangulation.h>
+#include <Timer.h>
 #include <vtkPointSet.h>
 #include <atomic>
 #include <map>
@@ -30,11 +30,11 @@
 
 namespace ttk {
 
-class AcTopo final : public AbstractTriangulation {
+class Gale final : public AbstractTriangulation {
     public: 
         friend class TestTopoRelations;
-        AcTopo(int tnum = 1, int tnumPerCluster = 1);
-        ~AcTopo();
+        Gale(int tnum = 1, int tnumPerCluster = 1);
+        ~Gale();
         void initialize(vtkPointSet *pointSet, int numBlocks = 100, int blockSize = 32);
         
         // int preconditionBoundaryEdgesInternal() override;

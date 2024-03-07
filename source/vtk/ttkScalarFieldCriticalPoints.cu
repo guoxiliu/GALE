@@ -1,8 +1,7 @@
-#include "ttk/AcTopo.h"
-#include "ttk/ExplicitTriangulation.h"
-#include "ttk/MemoryUsage.h"
-#include "ttk/ScalarFieldCriticalPoints.h"
-#include "ttk/OrderDisambiguation.h"
+#include <Gale.h>
+#include <MemoryUsage.h>
+#include <ScalarFieldCriticalPoints.h>
+#include <OrderDisambiguation.h>
 #include <vtkSmartPointer.h>
 #include <vtkXMLUnstructuredGridReader.h>
 #include <vtkUnstructuredGrid.h>
@@ -203,25 +202,25 @@ int main(int argc, char *argv[])
         std::cout << "Default to array: '" << inputScalarField->GetName() << "'" << std::endl;
     }
 
-    ttk::AcTopo actopo_(threadNumber, numThreadsPerCluster);
+    ttk::Gale gale(threadNumber, numThreadsPerCluster);
     if (blockNumber > 0 && blockSize > 0)
-        actopo_.initialize(unstructuredGrid, blockNumber, blockSize);
+        gale.initialize(unstructuredGrid, blockNumber, blockSize);
     else if (blockNumber > 0)
-        actopo_.initialize(unstructuredGrid, blockNumber);
+        gale.initialize(unstructuredGrid, blockNumber);
     else 
-        actopo_.initialize(unstructuredGrid);
+        gale.initialize(unstructuredGrid);
 
     std::vector<std::pair<ttk::SimplexId, char>> criticalPoints_;
 
     ttk::ScalarFieldCriticalPoints cpPlugin;
-    cpPlugin.preconditionTriangulation(&actopo_);
+    cpPlugin.preconditionTriangulation(&gale);
     cpPlugin.setThreadNumber(threadNumber);
     cpPlugin.setOutput(&criticalPoints_);
 
     
     vtkDataArray *offsetField = GetOrderArray(unstructuredGrid, scalarFieldIndex, 1);
 
-    int res = cpPlugin.executeLegacy(static_cast<ttk::SimplexId *>(GetVoidPointer(offsetField)), &actopo_);
+    int res = cpPlugin.executeLegacy(static_cast<ttk::SimplexId *>(GetVoidPointer(offsetField)), &gale);
 
     std::cout << "[ScalarFieldCriticalPoints] Memory usage: " << m.getValue_in_MB(false) << " MB." << std::endl;
 

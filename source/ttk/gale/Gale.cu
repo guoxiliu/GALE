@@ -1,5 +1,5 @@
-#include "Relations.cuh"
-#include "AcTopo.h"
+#include <Relations.cuh>
+#include <Gale.h>
 #include <vtkPointData.h>
 #include <vtkSmartPointer.h>
 #include <vtkUnstructuredGrid.h>
@@ -9,7 +9,7 @@
 using namespace ttk;
 
 
-AcTopo::AcTopo(int tnum, int tnumPerCluster) {
+Gale::Gale(int tnum, int tnumPerCluster) {
     /* initialize the pointers */
     hConnectivity_ = nullptr;
     hOffsets_ = nullptr;
@@ -48,7 +48,7 @@ AcTopo::AcTopo(int tnum, int tnumPerCluster) {
 }
 
 
-AcTopo::~AcTopo() {
+Gale::~Gale() {
     if (producer_.joinable()) {
         currClusters_[0] = -1;
         producer_.join();
@@ -80,7 +80,7 @@ AcTopo::~AcTopo() {
 }
 
 
-int AcTopo::buildInternalEdgeList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 2>>> &clusterEdges, bool buildBoundary) {
+int Gale::buildInternalEdgeList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 2>>> &clusterEdges, bool buildBoundary) {
 
     if(clusterId <= 0 || clusterId > clusterNumber_)
         return -1;
@@ -197,7 +197,7 @@ int AcTopo::buildInternalEdgeList(const SimplexId &clusterId, std::vector<std::v
     return edgeCount;
 }
 
-int AcTopo::buildInternalTriangleList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 3>>> &clusterTriangles, bool buildBoundary) {
+int Gale::buildInternalTriangleList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 3>>> &clusterTriangles, bool buildBoundary) {
 
     if(clusterId <= 0 || clusterId > clusterNumber_)
         return -1;
@@ -309,7 +309,7 @@ int AcTopo::buildInternalTriangleList(const SimplexId &clusterId, std::vector<st
 
 // Compute relations when there is only one single consumer thread
 // WARNING: will be deprecated later
-int AcTopo::computeRelation(const RelationType relation,
+int Gale::computeRelation(const RelationType relation,
                             const SimplexId clusterId,
                             const int threadId = 0,
                             bool signal = false) {
@@ -779,7 +779,7 @@ int AcTopo::computeRelation(const RelationType relation,
 }
 
 
-int AcTopo::computeCombinedRelation(const RelationType relation,
+int Gale::computeCombinedRelation(const RelationType relation,
                             const std::vector<std::pair<int, int>> requests) {
 
     // std::cout << "computing relation " << static_cast<int>(relation) << " for " << requests.size() << " clusters: ";
@@ -944,7 +944,7 @@ int AcTopo::computeCombinedRelation(const RelationType relation,
 }
 
 
-void AcTopo::assistProcedure() {
+void Gale::assistProcedure() {
     volatile SimplexId leaderCluster = 0;
     volatile RelationType leaderFunc = RelationType::BlankRelation;
 
@@ -1074,7 +1074,7 @@ void AcTopo::assistProcedure() {
     // }
 }
 
-void AcTopo::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
+void Gale::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
     vtkPoints *points = pointSet->GetPoints();
     if(!points) {
         std::cerr << "DataSet has uninitialized `vtkPoints`." << std::endl;
@@ -1132,7 +1132,7 @@ void AcTopo::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
             CHECK(cudaMemcpyAsync(dIndexArray_, hIndexArray_, sizeof(int) * vertexNumber_, cudaMemcpyHostToDevice));
         }
         else {
-            std::cerr << "Cannot detect index array! AcTopo must run with a predefined clustering information!" << std::endl;
+            std::cerr << "Cannot detect index array! Gale must run with a predefined clustering information!" << std::endl;
             exit(EXIT_FAILURE);
         }
     }
@@ -1155,12 +1155,12 @@ void AcTopo::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
     // }
     // std::cout << "thread " << threadNumber_ << ": " << clusterNumber_ << std::endl;
 
-    producer_ = std::thread(&AcTopo::assistProcedure, this);
+    producer_ = std::thread(&Gale::assistProcedure, this);
     printf("Thread num per cluster: %d, Block number: %d, block size: %d, cluster number: %d, cell number: %d, vertex number: %d\n", threadsPerCluster_, numBlocks_, blockSize_, clusterNumber_, cellNumber_, vertexNumber_);
 }
 
 
-void AcTopo::computeCellIntervals() {
+void Gale::computeCellIntervals() {
     std::vector<std::vector<int>> externalCells(clusterNumber_);
     hExternalCellOffsets_ = new int[clusterNumber_];
     hExternalCellOffsets_[0] = 0;
@@ -1211,7 +1211,7 @@ void AcTopo::computeCellIntervals() {
 }
 
 
-void AcTopo::computeVertexIntervals() {
+void Gale::computeVertexIntervals() {
     // int blockSize = 64;
     // int numBlocks = vertexNumber_ / blockSize + 1;
 
@@ -1242,7 +1242,7 @@ void AcTopo::computeVertexIntervals() {
 }
 
 
-int AcTopo::preconditionEdgesInternal() {
+int Gale::preconditionEdgesInternal() {
     if(edgeList_.empty()) {
         Timer t;
         std::vector<std::vector<std::array<SimplexId, 2>>> clusterEdges(clusterNumber_);
@@ -1275,7 +1275,7 @@ int AcTopo::preconditionEdgesInternal() {
     return 0;
 }
 
-int AcTopo::preconditionTrianglesInternal() {
+int Gale::preconditionTrianglesInternal() {
     if(triangleList_.empty()) {
         Timer t;
         std::vector<std::vector<std::array<SimplexId, 3>>> clusterTriangles(clusterNumber_);
@@ -1311,7 +1311,7 @@ int AcTopo::preconditionTrianglesInternal() {
 
 /**
 // GPU version is slower than the CPU version due to the variable size of edge list
-int AcTopo::preconditionEdgesInternal() {
+int Gale::preconditionEdgesInternal() {
     if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
         std::cerr << "Empty dataset, precondition skipped";
         return 1;
@@ -1383,7 +1383,7 @@ int AcTopo::preconditionEdgesInternal() {
 }
 **/
 
-// int AcTopo::preconditionVertexNeighborsInternal() {
+// int Gale::preconditionVertexNeighborsInternal() {
 //     if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
 //         std::cerr << "Empty dataset, precondition skipped";
 //         return 1;
@@ -1433,7 +1433,7 @@ int AcTopo::preconditionEdgesInternal() {
 //     return 0;
 // }
 
-// int AcTopo::preconditionVertexStarsInternal() {
+// int Gale::preconditionVertexStarsInternal() {
 //     if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
 //         std::cerr << "Empty dataset, precondition skipped";
 //         return 1;

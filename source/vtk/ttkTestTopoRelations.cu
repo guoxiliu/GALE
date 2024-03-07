@@ -1,6 +1,5 @@
-#include "ttk/AcTopo.h"
-#include "ttk/ExplicitTriangulation.h"
-#include "ttk/TestTopoRelations.h"
+#include <Gale.h>
+#include <TestTopoRelations.h>
 #include <vtkSmartPointer.h>
 #include <vtkXMLUnstructuredGridReader.h>
 #include <vtkUnstructuredGrid.h>
@@ -52,25 +51,18 @@ int main(int argc, char *argv[])
     reader->SetFileName(fileName.c_str());
     reader->Update();
 
-    // ttk::ExplicitTriangulation explicitTriangulation;
-    // explicitTriangulation.createExplicitTriangulation(reader->GetOutput());
-
-    // ttk::TestTopoRelations testPlugin;
-    // testPlugin.preconditionTriangulation(&explicitTriangulation);
-    // testPlugin.execute(&explicitTriangulation);
-
-    ttk::AcTopo actopo(threadNumber, numThreadsPerCluster);
+    ttk::Gale gale(threadNumber, numThreadsPerCluster);
     if (blockNumber > 0 && blockSize > 0)
-        actopo.initialize(reader->GetOutput(), blockNumber, blockSize);
+        gale.initialize(reader->GetOutput(), blockNumber, blockSize);
     else if (blockNumber > 0)
-        actopo.initialize(reader->GetOutput(), blockNumber);
+        gale.initialize(reader->GetOutput(), blockNumber);
     else 
-        actopo.initialize(reader->GetOutput());
+        gale.initialize(reader->GetOutput());
 
     ttk::TestTopoRelations testPlugin;
-    testPlugin.preconditionTriangulation(&actopo);
+    testPlugin.preconditionTriangulation(&gale);
     testPlugin.setThreadNumber(threadNumber);
-    testPlugin.execute(&actopo);
+    testPlugin.execute(&gale);
 
     return 0;
 }

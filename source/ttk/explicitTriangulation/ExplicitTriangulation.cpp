@@ -1,7 +1,7 @@
-#include "ExplicitTriangulation.h"
-#include "FlatJaggedArray.h"
-#include "Skeleton.h"
-#include "Timer.h"
+#include <ExplicitTriangulation.h>
+#include <FlatJaggedArray.h>
+#include <Skeleton.h>
+#include <Timer.h>
 #include <vtkCellArray.h>
 #include <vtkCellTypes.h>
 #include <vtkPointSet.h>

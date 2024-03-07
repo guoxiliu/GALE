@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Utils.cuh"
+#include <Utils.cuh>
 #include <vtkType.h>
 
 const int efColumnNum = 20;

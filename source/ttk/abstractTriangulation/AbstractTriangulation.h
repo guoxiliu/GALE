@@ -12,8 +12,8 @@
 #pragma once
 // base code includes
 
-#include "DataTypes.h"
-#include "Geometry.h"
+#include <DataTypes.h>
+#include <Geometry.h>
 #include <array>
 #include <iostream>
 #include <vector>

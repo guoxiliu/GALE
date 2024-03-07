@@ -1,4 +1,4 @@
-#include "ttk/Relations.cuh"
+#include <Relations.cuh>
 #include <cstddef>
 #include <iostream>
 #include <set>
@@ -232,8 +232,6 @@ int main(int argc, char const *argv[]) {
     }
     CHECK(cudaMemcpy(dEdgeIntervals, hEdgeIntervals, sizeof(int) * nodeNumber, cudaMemcpyHostToDevice));
 
-    // TODO: compute triangles and triangle intervals
-
     
     /**
      * Testing output goes here
@@ -259,7 +257,7 @@ int main(int argc, char const *argv[]) {
 
 
     int blockSize = 32;
-    int numBlock = 120;
+    int numBlock = 32;
     int baseCluster = 1;
     int numThreads = numBlock * blockSize;
     // int numThreads = numBlock;
@@ -314,12 +312,13 @@ int main(int argc, char const *argv[]) {
     cudaEventRecord(start, 0);
     CHECK(cudaMalloc((void **)&dVertexStarMatrix, sizeof(int) * localVertexNum * vtColumnNum));
     CHECK(cudaMalloc((void **) &dVertexStarSize, sizeof(int) * localVertexNum));
+    CHECK(cudaMemset(dVertexStarMatrix, -1, sizeof(int) * localVertexNum * vtColumnNum));
     CHECK(cudaMemset(dVertexStarSize, 0, sizeof(int) * localVertexNum));
 
     precomputeVertexStars<<<numBlock, blockSize>>>(dVertexStarMatrix, 
             dVertexStarSize, baseCluster, nodeNumber, 
             dConnectitity, dOffsets, dVertexIntervals, 
-            dCellIntervals, dExternalCells, dExternalCellOffsets, 3, 64);
+            dCellIntervals, dExternalCells, dExternalCellOffsets, 3, 1);
 
     // cudaDeviceSynchronize();
     CHECK(cudaMemcpy(hVertexStarSize.data(), dVertexStarSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
@@ -351,23 +350,24 @@ int main(int argc, char const *argv[]) {
     int *dVertexNeighborMatrix;
     int *dVertexNeighborSize;
     std::vector<int> hVertexNeighborSize(localVertexNum);
-    std::vector<int> hVertexNeighborMatrix(localVertexNum * vtColumnNum);
+    std::vector<int> hVertexNeighborMatrix(localVertexNum * vvColumnNum);
 
     // clock_t t = clock();
     cudaEventRecord(start, 0);
-    CHECK(cudaMalloc((void **)&dVertexNeighborMatrix, sizeof(int) * localVertexNum * vtColumnNum));
+    CHECK(cudaMalloc((void **)&dVertexNeighborMatrix, sizeof(int) * localVertexNum * vvColumnNum));
     CHECK(cudaMalloc((void **) &dVertexNeighborSize, sizeof(int) * localVertexNum));
+    CHECK(cudaMemset(dVertexNeighborMatrix, -1, sizeof(int) * localVertexNum * vvColumnNum));
     CHECK(cudaMemset(dVertexNeighborSize, 0, sizeof(int) * localVertexNum));
 
     precomputeVertexNeighbors<<<numBlock, blockSize>>>(
                     dVertexNeighborMatrix, dVertexNeighborSize, 
                     baseCluster, nodeNumber, dConnectitity, dOffsets, 
                     dVertexIntervals, dCellIntervals, 
-                    dExternalCells, dExternalCellOffsets, 3, 64);
+                    dExternalCells, dExternalCellOffsets, 3, 1);
 
     // cudaDeviceSynchronize();
     CHECK(cudaMemcpy(hVertexNeighborSize.data(), dVertexNeighborSize, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
-    CHECK(cudaMemcpy(hVertexNeighborMatrix.data(), dVertexNeighborMatrix, sizeof(int) * localVertexNum * vtColumnNum, cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(hVertexNeighborMatrix.data(), dVertexNeighborMatrix, sizeof(int) * localVertexNum * vvColumnNum, cudaMemcpyDeviceToHost));
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
 
@@ -390,7 +390,7 @@ int main(int argc, char const *argv[]) {
     // for (int i = 0; i < localVertexNum; ++i) {
     //     std::cout << "vertex " << i + hVertexIntervals[baseCluster-1] << ": "  << hVertexNeighborSize[i] << " [";
     //     for (int j = 0; j < hVertexNeighborSize[i]; ++j) {
-    //         std::cout << hVertexNeighborMatrix[i * vtColumnNum + j] << " ";
+    //         std::cout << hVertexNeighborMatrix[i * vvColumnNum + j] << " ";
     //     }
     //     std::cout << "]" << std::endl;
     // }

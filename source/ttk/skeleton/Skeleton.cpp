@@ -1,5 +1,5 @@
-#include "Skeleton.h"
-#include "Timer.h"
+#include <Skeleton.h>
+#include <Timer.h>
 #include <boost/container/small_vector.hpp>
 
 using namespace ttk;
