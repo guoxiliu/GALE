@@ -65,7 +65,7 @@ namespace ttk {
       std::cout << ", triangle num: " << triangleNumber;
       std::cout << std::endl;
 
-      SimplexId verticesPerCell = triangulation->getCellVertexNumber(0);
+      // SimplexId verticesPerCell = triangulation->getCellVertexNumber(0);
       // SimplexId edgesPerCell = triangulation->getCellEdgeNumber(0);
       // SimplexId trianglesPerCell = triangulation->getCellTriangleNumber(0);
 

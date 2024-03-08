@@ -934,7 +934,7 @@ int Skeleton::buildEdgeListOneSkeleton(
   // for each vertex, a vector of EdgeData
   std::vector<small_vector<EdgeData, 8>> edgeTable(vertexNumber);
 
-  const int timeBuckets = std::min<ttk::SimplexId>(10, cellNumber);
+  // const int timeBuckets = std::min<ttk::SimplexId>(10, cellNumber);
   SimplexId edgeCount{};
 
   for(SimplexId cid = 0; cid < cellNumber; cid++) {

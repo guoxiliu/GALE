@@ -221,6 +221,9 @@ int main(int argc, char *argv[])
     vtkDataArray *offsetField = GetOrderArray(unstructuredGrid, scalarFieldIndex, 1);
 
     int res = cpPlugin.executeLegacy(static_cast<ttk::SimplexId *>(GetVoidPointer(offsetField)), &gale);
+    if (res != 0) {
+        std::cerr << "Execution failed, status code: " << res << std::endl;
+    }
 
     std::cout << "[ScalarFieldCriticalPoints] Memory usage: " << m.getValue_in_MB(false) << " MB." << std::endl;
 

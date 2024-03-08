@@ -131,22 +131,18 @@ int main(int argc, char *argv[])
     }
 
     int c;
-    int blockNumber = 0;
     int threadNumber = 4;
     std::string fileName = "";
     std::string inputArrayName = "";
     vtkDataArray *inputScalarField = nullptr;
 
-    while ((c = getopt(argc, argv, "a:b:i:t:")) != -1) {
+    while ((c = getopt(argc, argv, "a:i:t:")) != -1) {
         switch (c) {
             case 'i':
                 fileName = optarg;
                 break;
             case 'a':
                 inputArrayName = optarg;
-                break;
-            case 'b':
-                blockNumber = atoi(optarg);
                 break;
             case 't':
                 threadNumber = atoi(optarg);
@@ -210,6 +206,9 @@ int main(int argc, char *argv[])
     vtkDataArray *offsetField = GetOrderArray(reader->GetOutput(), scalarFieldIndex, 1);
 
     int res = cpPlugin.executeLegacy(static_cast<ttk::SimplexId *>(GetVoidPointer(offsetField)), &explicitTriangulation);
+    if (res != 0) {
+        std::cerr << "Execution failed, status code: " << res << std::endl;
+    }
 
     return 0;
 }
