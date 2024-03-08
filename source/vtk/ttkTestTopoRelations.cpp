@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include "ttkUtils.h"
+
 
 int main(int argc, char *argv[])
 {
