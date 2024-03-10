@@ -1,10 +1,22 @@
 #pragma once
 
 #include <OrderDisambiguation.h>
+#include <vtkCellArray.h>
 #include <vtkCellData.h>
 #include <vtkPointData.h>
 #include <vtkSmartPointer.h>
 #include <vtkType.h>
+
+class vtkIdTypeArray;
+class vtkIntArray;
+class vtkDataArray;
+class vtkCellArray;
+
+#ifdef TTK_ENABLE_64BIT_IDS
+using ttkSimplexIdTypeArray = vtkIdTypeArray;
+#else
+using ttkSimplexIdTypeArray = vtkIntArray;
+#endif
 
 /// Retrieve pointer to the internal data
 /// This method is a workaround to emulate
@@ -28,8 +40,9 @@ std::string GetOrderArrayName(vtkDataArray *const array) {
 }
 
 vtkDataArray *GetOrderArray(vtkDataSet *const inputData,
-                                        const int scalarArrayIdx,
-                                        const int orderArrayIdx = 0) {
+                            const int scalarArrayIdx,
+                            const int orderArrayIdx,
+                            const bool enforceOrderArrayIdx = false) {
 
     auto isValidOrderArray = [](vtkDataArray *const array) {
         if(!array)
@@ -49,6 +62,32 @@ vtkDataArray *GetOrderArray(vtkDataSet *const inputData,
         return 1;
     };
 
+    if(enforceOrderArrayIdx) {
+        auto orderArray = inputData->GetPointData()->GetArray(orderArrayIdx);
+        switch(isValidOrderArray(orderArray)) {
+            case -4: {
+                std::cerr << "Unable to retrieve enforced order array at idx " << orderArrayIdx << std::endl;
+                return nullptr;
+            }
+            case -3: {
+                std::cerr << "Retrieved enforced order array `" << orderArray->GetName() << 
+                             "` has more than one component." << std::endl;
+                return nullptr;
+            }
+            case -2: {
+                std::cerr << "Enforced order array `" << orderArray->GetName() << 
+                             "` is of incorrect type." << std::endl;
+                auto temp = vtkSmartPointer<ttkSimplexIdTypeArray>::New();
+                std::cerr << " -> use `ttkArrayEditor` to convert data type to `" << 
+                             temp->GetDataTypeAsString() << "`." << std::endl;
+                return nullptr;
+            }
+            default: {
+                std::cout << "Retrieved enforced order array `" << orderArray->GetName() << "`." << std::endl;
+                return orderArray;
+            }
+        }
+    }
     auto scalarArray = inputData->GetPointData()->GetArray(scalarArrayIdx);
     if(!scalarArray) {
         std::cerr << "Unable to retrieve input scalar array for idx " << scalarArrayIdx << std::endl;
@@ -83,8 +122,7 @@ vtkDataArray *GetOrderArray(vtkDataSet *const inputData,
             // append order array temporarily to input
             inputData->GetAttributesAsFieldData(scalarArrayIdx)->AddArray(newOrderArray);
 
-            std::cout << "TIP: run `ttkArrayPreconditioning` first" << std::endl;
-            std::cout << "for improved performances :)" << std::endl;
+            std::cout << "TIP: run `ttkArrayPreconditioning` first for improved performances :)" << std::endl;
 
             return newOrderArray;
         }
@@ -116,3 +154,32 @@ vtkDataArray *GetOrderArray(vtkDataSet *const inputData,
     }
 }
 
+vtkDataArray *GetInputArray(std::string arrayName, vtkDataSet *dataSet, int &arrayIndex) {
+    vtkPointData *pointData = dataSet->GetPointData();
+    vtkDataArray *inputArray = nullptr;
+    // get the scalar field array to process 
+    if (!arrayName.empty()) {
+        inputArray = pointData->GetArray(arrayName.c_str());
+        if (inputArray == nullptr) {
+            std::cout << "Cannot find the array '" << arrayName << "' in point data" << std::endl;
+            inputArray = dataSet->GetCellData()->GetArray(arrayName.c_str());
+            if (inputArray == nullptr) {
+                std::cout << "Cannot find the array '" << arrayName << "' in cell data" << std::endl;
+                return inputArray;
+            }
+        }
+        for (int i = 0; i < pointData->GetNumberOfArrays(); ++i) {
+            if (pointData->GetArray(i)->GetName() == arrayName) {
+                arrayIndex = i;
+                break;
+            }
+        }
+        std::cout << "[GetInputArray] Processing array: '" << arrayName << "', array index: " << arrayIndex << std::endl;
+    }
+    // default to the first scalar field array 
+    else {
+        inputArray = pointData->GetArray(arrayIndex);
+        std::cout << "Default to array: '" << inputArray->GetName() << "'" << std::endl;
+    }
+    return inputArray;
+}

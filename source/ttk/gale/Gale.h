@@ -35,7 +35,7 @@ class Gale final : public AbstractTriangulation {
         friend class TestTopoRelations;
         Gale(int tnum = 1, int tnumPerCluster = 1);
         ~Gale();
-        void initialize(vtkPointSet *pointSet, int numBlocks = 100, int blockSize = 32);
+        void initialize(vtkDataSet *dataSet, int numBlocks = 100, int blockSize = 32, bool reorder = false);
         
         // int preconditionBoundaryEdgesInternal() override;
         // int preconditionBoundaryTrianglesInternal() override;
@@ -544,6 +544,13 @@ class Gale final : public AbstractTriangulation {
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
+            // int vnsize = vertexNeighborList_[vertexId].size();
+            // std::cout << "vertex " << reverseVertexMap_[vertexId] << ": " << vnsize << " [";
+            // for (int i = 0; i < vnsize; ++i) {
+            //     std::cout << reverseVertexMap_[vertexNeighborList_[vertexId][i]] << " ";
+            // }
+            // std::cout << "]" << std::endl;
+            // return vnsize;
             // std::lock_guard<std::mutex> lck(VVMutex_);
             return vertexNeighborList_[vertexId].size();
         }
@@ -718,6 +725,12 @@ class Gale final : public AbstractTriangulation {
         /* Compute the interval array for vertices */
         void computeVertexIntervals();
 
+        /* Change the vertex id based on the cluster index */
+        int reorderVertices(std::vector<SimplexId> &vertexMap);
+
+        /* Change the vertex id in the cell array */
+        int reorderCells(const std::vector<SimplexId> &vertexMap);
+
         /* Assisting function used by the producer thread */
         void assistProcedure();
 
@@ -727,15 +740,17 @@ class Gale final : public AbstractTriangulation {
         /* Compute the relations for different starting clusters */
         int computeCombinedRelation(const RelationType relation, const std::vector<std::pair<int, int>> requests);
 
+        bool doublePrecision_;
         int cellDimension_;
         int clusterNumber_;
         int vertexNumber_, edgeNumber_, triangleNumber_, cellNumber_;
 
         // data allocated on host memory
-        volatile int numBlocks_, blockSize_;
+        int numBlocks_, blockSize_;
         int *hIndexArray_, *hExternalCells_, *hExternalCellOffsets_;
         vtkIdType *hConnectivity_, *hOffsets_;
         int *hCellIntervals_, *hTriangleIntervals_, *hEdgeIntervals_, *hVertexIntervals_;
+        void *pointSet_;
 
         // data allocated on device memory
         vtkIdType *dConnectivity_, *dOffsets_;

@@ -1,5 +1,8 @@
 #include <Relations.cuh>
 #include <Gale.h>
+#include <vtkDataArray.h>
+#include <vtkFloatArray.h>
+#include <vtkDoubleArray.h>
 #include <vtkPointData.h>
 #include <vtkSmartPointer.h>
 #include <vtkUnstructuredGrid.h>
@@ -653,6 +656,7 @@ int Gale::computeRelation(const RelationType relation,
             int vertexIdOffset = hVertexIntervals_[clusterId - 1];
             int endCluster = min(clusterId + totalBlocks / threadsPerCluster_, clusterNumber_) - 1;
             int localVertexNum = hVertexIntervals_[endCluster] - hVertexIntervals_[clusterId - 1];
+            // std::cout << "endVertex: " << hVertexIntervals_[endCluster] << ", startVertex: " << hVertexIntervals_[clusterId - 1] << ", localVertexNum: " << localVertexNum << std::endl;
             CHECK(cudaMalloc((void **)&dVertexNeighborSizes_, sizeof(int) * localVertexNum));
             CHECK(cudaMalloc((void **)&dVertexNeighborMatrix_, sizeof(int) * localVertexNum * vvColumnNum));
             CHECK(cudaMemset(dVertexNeighborSizes_, 0, sizeof(int) * localVertexNum));
@@ -1074,7 +1078,12 @@ void Gale::assistProcedure() {
     // }
 }
 
-void Gale::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
+void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reorder) {
+    if (dataSet->GetDataObjectType() != VTK_UNSTRUCTURED_GRID) {
+        std::cerr << "The input dataset is not unstructured grid!" << std::endl;
+        return;
+    }
+    vtkPointSet *pointSet = static_cast<vtkPointSet *>(dataSet);
     vtkPoints *points = pointSet->GetPoints();
     if(!points) {
         std::cerr << "DataSet has uninitialized `vtkPoints`." << std::endl;
@@ -1087,12 +1096,15 @@ void Gale::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
 
     // Points
     auto pointDataType = points->GetDataType();
-    if(pointDataType != VTK_FLOAT && pointDataType != VTK_DOUBLE) {
-        std::cerr << "Unable to initialize 'ttk::Triangulation' for point "
-                                        "precision other than 'float' or 'double'." << std::endl;
+    if (pointDataType == VTK_FLOAT) {
+        doublePrecision_ = false;
+    } else if (pointDataType == VTK_DOUBLE) {
+        doublePrecision_ = true;
+    } else {
+        std::cerr << "Unable to initialize 'ttk::Triangulation' for point: precision other than 'float' or 'double'." << std::endl;
     }
 
-    void *pointDataArray = points->GetData()->GetVoidPointer(0);
+    pointSet_ = points->GetData()->GetVoidPointer(0);
     vertexNumber_ = points->GetNumberOfPoints();
 
     // Cells
@@ -1115,29 +1127,15 @@ void Gale::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
         hOffsets_ = static_cast<vtkIdType *>(cells->GetOffsetsArray()->GetVoidPointer(0));
         cellDimension_ = hOffsets_[1] - hOffsets_[0] - 1;
     }
-
-    CHECK(cudaMallocAsync(&dConnectivity_, sizeof(vtkIdType) * (cellNumber_ * 4), 0));
-    CHECK(cudaMallocAsync(&dOffsets_, sizeof(vtkIdType) * (cellNumber_+1), 0));
-    CHECK(cudaMemcpyAsync(dConnectivity_, hConnectivity_, sizeof(vtkIdType) * (cellNumber_ * 4), cudaMemcpyHostToDevice));
-    CHECK(cudaMemcpyAsync(dOffsets_, hOffsets_, sizeof(vtkIdType) * (cellNumber_+1), cudaMemcpyHostToDevice));
-
+    
     // index array
     hIndexArray_ = nullptr;
-    {
-        int hasIndexArray = pointSet->GetPointData()->HasArray("_index");
-        if (hasIndexArray) {
-            hIndexArray_ = (int *) pointSet->GetPointData()->GetAbstractArray("_index")->GetVoidPointer(0);
-            for (int i = 0; i < vertexNumber_; ++i) hIndexArray_[i] += 1;
-            CHECK(cudaMallocAsync(&dIndexArray_, sizeof(int) * vertexNumber_, 0));
-            CHECK(cudaMemcpyAsync(dIndexArray_, hIndexArray_, sizeof(int) * vertexNumber_, cudaMemcpyHostToDevice));
-        }
-        else {
-            std::cerr << "Cannot detect index array! Gale must run with a predefined clustering information!" << std::endl;
-            exit(EXIT_FAILURE);
-        }
+    int hasIndexArray = pointSet->GetPointData()->HasArray("_index");
+    if (!hasIndexArray) {
+        std::cerr << "Cannot detect index array! Gale must run with a predefined clustering information!" << std::endl;
+        exit(EXIT_FAILURE);
     }
-
-    clusterNumber_ = hIndexArray_[vertexNumber_ - 1] + 1;
+    
     for (int i = 0; i < threadNumber_; ++i) {
         for (int j = 0; j < 25; ++j) {
             sem_init(&relationSems_[i][j], 0, 0);
@@ -1145,8 +1143,149 @@ void Gale::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
     }
     if (blockNum > 0) numBlocks_ = blockNum;
     if (blockSize > 0) blockSize_ = blockSize;
-    computeCellIntervals();
-    computeVertexIntervals();
+
+    if (reorder) {
+        hIndexArray_ = new int[vertexNumber_];
+        vtkDataArray *dataArray = pointSet->GetPointData()->GetArray("_index");
+        memcpy(hIndexArray_, dataArray->GetVoidPointer(0), sizeof(int) * vertexNumber_);
+        clusterNumber_ = 0;
+        for (int i = 0; i < vertexNumber_; ++i) {
+            hIndexArray_[i] += 1;
+            clusterNumber_ = std::max(hIndexArray_[i], clusterNumber_);
+        }
+        clusterNumber_ += 1;
+        
+        std::cout << "[Gale] Reordering vertices and cells..." << std::endl;
+        
+        std::vector<SimplexId> vertexMap;       // old vid : new vid
+        reorderVertices(vertexMap);
+        reorderCells(vertexMap);
+        // change vertex orders of point data arrays
+        int arrNum = pointSet->GetPointData()->GetNumberOfArrays();
+        for (int i = 0; i < arrNum; ++i) {
+            vtkDataArray *dataArray = pointSet->GetPointData()->GetArray(i);
+            vtkFieldData *fieldData = pointSet->GetAttributesAsFieldData(i);
+            vtkDataArray *orderArray = nullptr;
+            if (fieldData != nullptr)
+                orderArray = fieldData->GetArray((std::string(dataArray->GetName()) + "_Order").data());
+
+            if (dataArray->GetName() == "_index") continue;
+            switch(dataArray->GetDataType()) {
+                case VTK_INT:
+                {
+                    vtkIntArray *dataIntArray = vtkIntArray::SafeDownCast(dataArray);
+                    vtkSmartPointer<vtkIntArray> tmpArray = vtkSmartPointer<vtkIntArray>::New();
+                    tmpArray->DeepCopy(dataIntArray);
+                    for (SimplexId vid = 0; vid < vertexNumber_; ++vid) {
+                        dataIntArray->SetValue(vertexMap[vid], tmpArray->GetValue(vid));
+                    }
+                    break;
+                }
+                case VTK_FLOAT:
+                {
+                    vtkFloatArray *dataFloatArray = vtkFloatArray::SafeDownCast(dataArray);
+                    vtkSmartPointer<vtkFloatArray> tmpArray = vtkSmartPointer<vtkFloatArray>::New();
+                    tmpArray->DeepCopy(dataFloatArray);
+                    for (SimplexId vid = 0; vid < vertexNumber_; ++vid) {
+                        dataFloatArray->SetValue(vertexMap[vid], tmpArray->GetValue(vid));
+                    }
+                    break;
+                }
+                case VTK_DOUBLE:
+                {
+                    vtkDoubleArray *dataDoubleArray = vtkDoubleArray::SafeDownCast(dataArray);
+                    vtkSmartPointer<vtkDoubleArray> tmpArray = vtkSmartPointer<vtkDoubleArray>::New();
+                    tmpArray->DeepCopy(dataDoubleArray);
+                    for (SimplexId vid = 0; vid < vertexNumber_; ++vid) {
+                        dataDoubleArray->SetValue(vertexMap[vid], tmpArray->GetValue(vid));
+                    }
+                    break;
+                }
+                case VTK_ID_TYPE:
+                {
+                    vtkIdTypeArray *dataIdTypeArray = vtkIdTypeArray::SafeDownCast(dataArray);
+                    vtkSmartPointer<vtkIdTypeArray> tmpArray = vtkSmartPointer<vtkIdTypeArray>::New();
+                    tmpArray->DeepCopy(dataIdTypeArray);
+                    for (SimplexId vid = 0; vid < vertexNumber_; ++vid) {
+                        dataIdTypeArray->SetValue(vertexMap[vid], tmpArray->GetValue(vid));
+                    }
+                    break;
+                }
+                default:
+                    std::cerr << "[Gale] Not supported data array type: " << dataArray->GetDataType() << std::endl;
+                    break;
+            }
+            if (orderArray != nullptr) {
+                switch(orderArray->GetDataType()) {
+                    case VTK_INT:
+                    {
+                        vtkIntArray *orderIntArray = vtkIntArray::SafeDownCast(orderArray);
+                        vtkSmartPointer<vtkIntArray> tmpArray = vtkSmartPointer<vtkIntArray>::New();
+                        tmpArray->DeepCopy(orderIntArray);
+                        for (SimplexId vid = 0; vid < vertexNumber_; ++vid) {
+                            orderIntArray->SetValue(vertexMap[vid], tmpArray->GetValue(vid));
+                        }
+                        break;
+                    }
+                    case VTK_ID_TYPE:
+                    {
+                        vtkIdTypeArray *orderIdTypeArray = vtkIdTypeArray::SafeDownCast(orderArray);
+                        vtkSmartPointer<vtkIdTypeArray> tmpArray = vtkSmartPointer<vtkIdTypeArray>::New();
+                        tmpArray->DeepCopy(orderIdTypeArray);
+                        for (SimplexId vid = 0; vid < vertexNumber_; ++vid) {
+                            orderIdTypeArray->SetValue(vertexMap[vid], tmpArray->GetValue(vid));
+                        }
+                        break;
+                    }
+                    default:
+                        std::cerr << "[Gale] Not supported data array type: " << orderArray->GetDataType() << std::endl;
+                        break;
+                }
+            }
+        }
+    }
+    else {
+        hIndexArray_ = (int *) pointSet->GetPointData()->GetArray("_index")->GetVoidPointer(0);
+        clusterNumber_ = 0;
+        for (int i = 0; i < vertexNumber_; ++i) {
+            hIndexArray_[i] += 1;
+            clusterNumber_ = std::max(hIndexArray_[i], clusterNumber_);
+        }
+        clusterNumber_ += 1;
+        computeCellIntervals();
+        computeVertexIntervals();
+    }
+    
+    // print vertex and cell interval array
+    // print external cell array
+    // for (int clusterId = 1; clusterId < clusterNumber_; ++clusterId) {
+    // //     std::cout << "cluster " << clusterId << ": " << hVertexIntervals_[clusterId] << ", " << hCellIntervals_[clusterId] << std::endl;
+    //     std::cout << "cluster " << clusterId << ": " << hExternalCellOffsets_[clusterId] - hExternalCellOffsets_[clusterId - 1] << " [";
+    //     for (int j = hExternalCellOffsets_[clusterId - 1]; j < hExternalCellOffsets_[clusterId]; ++j) {
+    //         std::cout << hExternalCells_[j] << " ";
+    //     }
+    //     std::cout << "]" << std::endl;
+    // }
+
+    // std::cout << "[After reordering] printing cell array: " << std::endl;
+    // for (int i = 0; i < vertexNumber_; ++i) {
+    //     std::cout << "cell " << i << ": [";
+    //     std::string cellVertex = "[", vertexCid = "[";
+    //     for (int j = hOffsets_[i]; j < hOffsets_[i+1]; ++j) {
+    //         cellVertex += (std::to_string(hConnectivity_[j]) + " ");
+    //         vertexCid += (std::to_string(hIndexArray_[hConnectivity_[j]]) + " ");
+    //     }
+    //     std::cout << cellVertex << "], " << vertexCid << "]" << std::endl;
+    // }
+
+    // copy input mesh arrays to the GPU     
+    CHECK(cudaMallocAsync(&dConnectivity_, sizeof(vtkIdType) * (cellNumber_ * 4), 0));
+    CHECK(cudaMemcpyAsync(dConnectivity_, hConnectivity_, sizeof(vtkIdType) * (cellNumber_ * 4), cudaMemcpyHostToDevice));
+    CHECK(cudaMallocAsync(&dOffsets_, sizeof(vtkIdType) * (cellNumber_+1), 0));
+    CHECK(cudaMemcpyAsync(dOffsets_, hOffsets_, sizeof(vtkIdType) * (cellNumber_+1), cudaMemcpyHostToDevice));
+    CHECK(cudaMallocAsync(&dIndexArray_, sizeof(int) * vertexNumber_, 0));
+    CHECK(cudaMemcpyAsync(dIndexArray_, hIndexArray_, sizeof(int) * vertexNumber_, cudaMemcpyHostToDevice));
+
 
     // // Compute cluster numbers of each thread
     // int verticesPerThread = vertexNumber_ / threadNumber_;
@@ -1156,7 +1295,7 @@ void Gale::initialize(vtkPointSet *pointSet, int blockNum, int blockSize) {
     // std::cout << "thread " << threadNumber_ << ": " << clusterNumber_ << std::endl;
 
     producer_ = std::thread(&Gale::assistProcedure, this);
-    printf("Thread num per cluster: %d, Block number: %d, block size: %d, cluster number: %d, cell number: %d, vertex number: %d\n", threadsPerCluster_, numBlocks_, blockSize_, clusterNumber_, cellNumber_, vertexNumber_);
+    printf("[Gale] Thread num per cluster: %d, Block number: %d, block size: %d, cluster number: %d, cell number: %d, vertex number: %d\n", threadsPerCluster_, numBlocks_, blockSize_, clusterNumber_, cellNumber_, vertexNumber_);
 }
 
 
@@ -1173,7 +1312,7 @@ void Gale::computeCellIntervals() {
         int clusterId = hIndexArray_[hConnectivity_[hOffsets_[cid]]];
         for (int j = 1; j <= cellDimension_; ++j) {
             int tmpCluster = hIndexArray_[hConnectivity_[hOffsets_[cid] + j]];
-            if (tmpCluster > clusterId) {
+            if (tmpCluster > clusterId && tmpCluster < clusterNumber_) {
                 if (externalCells[tmpCluster].empty() || externalCells[tmpCluster].back() != cid) {
                     externalCells[tmpCluster].push_back(cid);
                 }
@@ -1222,23 +1361,155 @@ void Gale::computeVertexIntervals() {
     // hVertexIntervals_ = (int *) malloc(sizeof(int) * (clusterNumber_+1));
     // cudaMemcpy(hVertexIntervals_, dVertexIntervals_, sizeof(int) * (clusterNumber_+1), cudaMemcpyDeviceToHost);
     // hVertexIntervals_[0] = -1;
-    // for (int i = 1; i <= clusterNumber_; ++i) hVertexIntervals_[i] = hVertexIntervals_[i-1] + hVertexIntervals_[i];
+    // for (int i = 1; i < clusterNumber_; ++i) hVertexIntervals_[i] = hVertexIntervals_[i-1] + hVertexIntervals_[i];
 
     CHECK(cudaMallocAsync(&dVertexIntervals_, sizeof(int) * clusterNumber_, 0));
 
-    int curCluster = 1;
-    hVertexIntervals_ = (int *) malloc(sizeof(int) * clusterNumber_);
-    hVertexIntervals_[0] = 0;
+    hVertexIntervals_ = (int *) calloc(clusterNumber_, sizeof(int));
     for (int vid = 0; vid < vertexNumber_; ++vid) {
         int clusterId = hIndexArray_[vid];
-        if (curCluster != clusterId) {
-            hVertexIntervals_[curCluster] = vid;
-            curCluster = clusterId;
+        hVertexIntervals_[clusterId]++;
+    }
+    for (int cid = 1; cid < clusterNumber_; ++cid) {
+        hVertexIntervals_[cid] += hVertexIntervals_[cid-1];
+    }
+
+    CHECK(cudaMemcpyAsync(dVertexIntervals_, hVertexIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice, 0));
+}
+
+
+int Gale::reorderVertices(std::vector<SimplexId> &vertexMap) {
+    CHECK(cudaMallocAsync(&dVertexIntervals_, sizeof(int) * clusterNumber_, 0));
+    std::vector<std::vector<SimplexId>> clusterVertices(clusterNumber_);
+    for(SimplexId vid = 0; vid < vertexNumber_; ++vid) {
+        clusterVertices[hIndexArray_[vid]].push_back(vid);
+    }
+
+    // update the vertex intervals and vertex mapping
+    vertexMap.resize(vertexNumber_);
+    hVertexIntervals_ = new int[clusterNumber_];
+    hVertexIntervals_[0] = 0;
+    SimplexId vertexCount = 0;
+    for(SimplexId nid = 1; nid < clusterNumber_; ++nid) {
+        for(SimplexId &vid : clusterVertices[nid]) {
+            vertexMap[vid] = vertexCount++;
+        }
+        hVertexIntervals_[nid] = vertexCount;
+    }
+    CHECK(cudaMemcpyAsync(dVertexIntervals_, hVertexIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice, 0));
+
+    // rearange the vertex coordinate values
+    if(doublePrecision_) {
+        double *newPointSet = new double[3 * vertexNumber_];
+        mempcpy(newPointSet, pointSet_, sizeof(double) * 3 * vertexNumber_);
+        // for(SimplexId vid = 0; vid < vertexNumber_; vid++) {
+        //     for(int j = 0; j < 3; j++) {
+        //         newPointSet[3 * vertexMap[vid] + j]
+        //         = ((double *)pointSet_)[3 * vid + j];
+        //     }
+        // }
+        for(SimplexId vid = 0; vid < vertexNumber_; vid++) {
+            for(int j = 0; j < 3; j++) {
+                ((double *)pointSet_)[3 * vertexMap[vid] + j] = newPointSet[3 * vid + j];
+            }
+        }
+        delete[] newPointSet;
+    } else {
+        float *newPointSet = new float[3 * vertexNumber_];
+        mempcpy(newPointSet, pointSet_, sizeof(float) * 3 * vertexNumber_);
+        // for(SimplexId vid = 0; vid < vertexNumber_; vid++) {
+        //     for(int j = 0; j < 3; j++) {
+        //     newPointSet[3 * vertexMap[vid] + j]
+        //         = ((float *)pointSet_)[3 * vid + j];
+        //     }
+        // }
+        for(SimplexId vid = 0; vid < vertexNumber_; vid++) {
+            for(int j = 0; j < 3; j++) {
+                ((float *)pointSet_)[3 * vertexMap[vid] + j] = newPointSet[3 * vid + j];
+            }
+        }
+        delete[] newPointSet;
+    }
+
+    // change the vertex indices
+    for(SimplexId nid = 1; nid < clusterNumber_; nid++) {
+        for(SimplexId vid = hVertexIntervals_[nid - 1];
+            vid < hVertexIntervals_[nid]; ++vid) {
+                hIndexArray_[vid] = nid;
         }
     }
-    hVertexIntervals_[curCluster] = vertexNumber_;
 
-    CHECK(cudaMemcpyAsync(dVertexIntervals_, hVertexIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
+    return 0;
+}
+
+int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
+    // change the indices in cell array
+    SimplexId cellCount = 0, verticesPerCell = hOffsets_[1] - hOffsets_[0];
+    std::vector<std::vector<SimplexId>> clusterCells(clusterNumber_ + 1);
+
+    for(SimplexId cid = 0; cid < cellNumber_; cid++) {
+        SimplexId cellId = hOffsets_[cid];
+        for(int j = 0; j < verticesPerCell; j++) {
+            hConnectivity_[cellId + j] = vertexMap[hConnectivity_[cellId + j]];
+        }
+        std::sort(hConnectivity_ + cellId, hConnectivity_ + cellId + verticesPerCell);
+        clusterCells[hIndexArray_[hConnectivity_[cellId]]].push_back(cid);
+    }
+
+    // rearange the cell std::array
+    hCellIntervals_ = new int[clusterNumber_];
+    std::vector<std::vector<int>> externalCells(clusterNumber_);
+    hCellIntervals_[0] = 0;
+
+    vtkIdType *newCellArray
+    = new vtkIdType[verticesPerCell * cellNumber_];
+    for(SimplexId clusterId = 1; clusterId < clusterNumber_; ++clusterId) {
+        for(SimplexId cid : clusterCells[clusterId]) {
+            SimplexId cellId = verticesPerCell * cid;
+            SimplexId newCellId = verticesPerCell * cellCount;
+            for(int j = 0; j < verticesPerCell; j++) {
+                newCellArray[newCellId + j] = hConnectivity_[cellId + j];
+                if(newCellArray[newCellId + j] >= hVertexIntervals_[clusterId]) {
+                    SimplexId nodeNum = hIndexArray_[newCellArray[newCellId + j]];
+                    if(externalCells[nodeNum].empty()
+                        || externalCells[nodeNum].back() != cid) {
+                        externalCells[nodeNum].push_back(cid);
+                    }
+                }
+            }
+            cellCount++;
+        }
+        hCellIntervals_[clusterId] = cellCount;
+    }
+
+    hExternalCellOffsets_ = new int[clusterNumber_];
+    hExternalCellOffsets_[0] = 0;
+    for (int i = 1; i < clusterNumber_; ++i) {
+        hExternalCellOffsets_[i] = hExternalCellOffsets_[i-1] + externalCells[i].size();
+    }
+    
+
+    CHECK(cudaMallocAsync(&dCellIntervals_, sizeof(int) * clusterNumber_, 0));
+    CHECK(cudaMemcpyAsync(dCellIntervals_, hCellIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
+
+    CHECK(cudaMallocAsync(&dExternalCellOffsets_, sizeof(int) * clusterNumber_, 0));
+    CHECK(cudaMemcpyAsync(dExternalCellOffsets_, hExternalCellOffsets_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
+
+    // Convert the 2D vector to 1D flat vector
+    hExternalCells_ = new int[hExternalCellOffsets_[clusterNumber_-1]];
+    int *tmp = hExternalCells_;
+    CHECK(cudaMallocAsync((void **) &dExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], 0));
+    for (int i = 1; i < externalCells.size(); ++i) {
+        std::copy(externalCells[i].begin(), externalCells[i].end(), tmp);
+        tmp += externalCells[i].size();
+    }
+    CHECK(cudaMemcpyAsync(dExternalCells_, hExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], cudaMemcpyHostToDevice));
+    
+    // copy the new cell array back to original one
+    memcpy(hConnectivity_, newCellArray, sizeof(vtkIdType) * cellNumber_ * verticesPerCell);
+    delete[] newCellArray;
+
+    return 0;
 }
 
 

@@ -50,6 +50,15 @@ namespace ttk {
   /// \brief Identifier type for tasks (i.e. with OpenMP).
   using TaskId = int;
 
+  /// default name for mask scalar field
+  const char MaskScalarFieldName[] = "ttkMaskScalarField";
+
+  /// default name for vertex scalar field
+  const char VertexScalarFieldName[] = "ttkVertexScalarField";
+
+  /// default name for offset scalar field
+  const char OffsetScalarFieldName[] = "ttkOffsetScalarField";
+
   /// default value for critical index
   enum class CriticalType {
     Local_minimum = 0,
