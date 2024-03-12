@@ -37,9 +37,61 @@ class Gale final : public AbstractTriangulation {
         ~Gale();
         void initialize(vtkDataSet *dataSet, int numBlocks = 100, int blockSize = 32, bool reorder = false);
         
-        // int preconditionBoundaryEdgesInternal() override;
-        // int preconditionBoundaryTrianglesInternal() override;
-        // int preconditionBoundaryVerticesInternal() override;
+        
+        inline int preconditionBoundaryEdgesInternal() override {
+            if(cellDimension_ == 2) {
+                #ifdef TTK_ENABLE_OPENMP
+                #pragma omp parallel for num_threads(threadNumber_)
+                #endif
+                for(SimplexId clusterId = 1; clusterId < clusterNumber_; ++clusterId) {
+                    // buildBoundaryTopCellList(clusterId);
+                }
+            } else if(cellDimension_ == 3) {
+                preconditionBoundaryTrianglesInternal();
+                clusterBoundaryEdges_ = std::vector<std::vector<bool>>(clusterNumber_, std::vector<bool>());
+            } else {
+                // unsupported dimension
+                printErr("Unsupported dimension for boundary precondition.");
+                return -1;
+            }
+            return 0;
+        }
+
+        inline int preconditionBoundaryTrianglesInternal() override {
+            if(cellDimension_ == 2) {
+                return 0;
+            } else if(cellDimension_ == 3) {
+                boundaryTriangles_ = std::vector<bool>(triangleNumber_, false);
+                computeRelation(RelationType::BFRelation, 1, 0, false);
+                // use the producer threads to compute boundary triangles
+                // #ifdef TTK_ENABLE_OPENMP
+                // #pragma omp parallel for num_threads(threadNumber_)
+                // #endif
+                // for(SimplexId clusterId = 1; clusterId < clusterNumber_; ++clusterId) {
+                //     // buildBoundaryTopCellList(clusterId);
+                // }
+                // printMsg("Boundary triangles preconditioned in " + std::to_string(t.getElapsedTime()) + "s.");
+            } else {
+                // unsupported dimension
+                printErr("Unsupported dimension for boundary precondition.");
+                return -1;
+            }
+            return 0;
+        }
+
+        inline int preconditionBoundaryVerticesInternal() override {
+            if(cellDimension_ == 2) {
+                if(!hasPreconditionedBoundaryEdges_) {
+                    preconditionBoundaryEdges();
+                }
+            } else if(cellDimension_ == 3) {
+                if(!hasPreconditionedBoundaryTriangles_) {
+                    preconditionBoundaryTriangles();
+                }
+            }
+            clusterBoundaryVertices_ = std::vector<std::vector<bool>>(clusterNumber_, std::vector<bool>());
+            return 0;
+        }
 
         // int preconditionCellEdgesInternal() override;
         // int preconditionCellNeighborsInternal() override;
@@ -309,7 +361,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::ETRelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -330,7 +382,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::ETRelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -356,7 +408,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::EFRelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -377,7 +429,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::EFRelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -461,7 +513,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::FTRelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -482,7 +534,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::FTRelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -518,7 +570,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VVRelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -540,7 +592,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VVRelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -575,7 +627,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VERelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -597,7 +649,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VERelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -624,7 +676,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VTRelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -646,7 +698,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VTRelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -673,7 +725,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VFRelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -695,7 +747,7 @@ class Gale final : public AbstractTriangulation {
                 qlock.unlock();
                 waitingCounts_[tid]++;
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid][static_cast<int>(RelationType::VFRelation)]);
+                sem_wait(&relationSems_[tid]);
                 waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 // waitings_[tid] = 0;
             }
@@ -708,6 +760,73 @@ class Gale final : public AbstractTriangulation {
             // vertexNeighborData_.copyTo(vertexNeighborList_);
             // TODO: copy the matrix data back to vector of vector
             return &vertexTriangleList_;
+        }
+
+
+        inline bool isEdgeOnBoundary(const SimplexId &edgeId) const override {
+            #ifndef TTK_ENABLE_KAMIKAZE
+                if((edgeId < 0) || (edgeId >= edgeNumber_))
+                    return false;
+            #endif
+
+            if (cellDimension_ == 2) {
+                return boundaryEdges_[edgeId];
+            }
+
+            int tid = omp_get_thread_num();
+            currClusters_[tid] = hIndexArray_[edgeList_[edgeId][0]], currRelations_[tid] = RelationType::BERelation;
+            if (clusterBoundaryEdges_[currClusters_[tid]].empty()) {
+                // waitings_[tid] = 1;
+                timers_[tid].reStart();
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid]);
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                // waitings_[tid] = 0;
+            }
+            return clusterBoundaryEdges_[currClusters_[tid]][edgeId - hEdgeIntervals_[currClusters_[tid] - 1]];
+        }
+
+        inline bool isEmpty() const override {
+            return !vertexNumber_;
+        }
+
+        inline bool isTriangleOnBoundary(const SimplexId &triangleId) const override {
+            if(cellDimension_ == 2)
+                return false;
+
+            #ifndef TTK_ENABLE_KAMIKAZE
+                if((triangleId < 0) || (triangleId >= triangleNumber_))
+                    return false;
+            #endif
+
+            return boundaryTriangles_[triangleId];
+        }
+
+        inline bool isVertexOnBoundary(const SimplexId &vertexId) const override {
+            #ifndef TTK_ENABLE_KAMIKAZE
+                if((vertexId < 0) || (vertexId >= vertexNumber_))
+                    return false;
+            #endif
+
+            int tid = omp_get_thread_num();
+            currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::BVRelation;
+            if (clusterBoundaryVertices_[currClusters_[tid]].empty()) {
+                // waitings_[tid] = 1;
+                timers_[tid].reStart();
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                jobQueue.push(tid);
+                qlock.unlock();
+                waitingCounts_[tid]++;
+                // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid]);
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                // waitings_[tid] = 0;
+            }
+            return clusterBoundaryVertices_[currClusters_[tid]][vertexId - hVertexIntervals_[currClusters_[tid] - 1]];
         }
 
 
@@ -744,21 +863,24 @@ class Gale final : public AbstractTriangulation {
         int cellDimension_;
         int clusterNumber_;
         int vertexNumber_, edgeNumber_, triangleNumber_, cellNumber_;
+        std::vector<std::vector<bool>> clusterBoundaryVertices_, clusterBoundaryEdges_;
 
         // data allocated on host memory
+        // pointers will be initialized to nullptr directly
         int numBlocks_, blockSize_;
-        int *hIndexArray_, *hExternalCells_, *hExternalCellOffsets_;
-        vtkIdType *hConnectivity_, *hOffsets_;
-        int *hCellIntervals_, *hTriangleIntervals_, *hEdgeIntervals_, *hVertexIntervals_;
+        int *hIndexArray_{}, *hExternalCells_{}, *hExternalCellOffsets_{};
+        vtkIdType *hConnectivity_{}, *hOffsets_{};
+        int *hCellIntervals_{}, *hTriangleIntervals_{}, *hEdgeIntervals_{}, *hVertexIntervals_{};
         void *pointSet_;
 
         // data allocated on device memory
-        vtkIdType *dConnectivity_, *dOffsets_;
-        int *dIndexArray_;
-        int *dCellIntervals_, *dTriangleIntervals_, *dEdgeIntervals_, *dVertexIntervals_;
-        int *dExternalCells_, *dExternalCellOffsets_;
+        vtkIdType *dConnectivity_{}, *dOffsets_{};
+        int *dIndexArray_{};
+        int *dCellIntervals_{}, *dTriangleIntervals_{}, *dEdgeIntervals_{}, *dVertexIntervals_{};
+        int *dExternalCells_{}, *dExternalCellOffsets_{};
 
         // relation matrices
+        bool *dBoundaryTriangles_;
         int *hEdgeStarSizes_, *hEdgeStarMatrix_;
         int *dEdgeStarSizes_, *dEdgeStarMatrix_;
         
@@ -782,14 +904,14 @@ class Gale final : public AbstractTriangulation {
 
         // multithreading support
         std::thread producer_;
-        int threadNumber_;
         int threadsPerCluster_;
         std::array<std::vector<int>, 25> baseClusters_;
         mutable std::vector<SimplexId> currClusters_;
         mutable std::vector<RelationType> currRelations_;
+        mutable std::mutex BVMutex_, BEMutex_;
         mutable std::mutex EFMutex_, ETMutex_, FTMutex_;
         mutable std::mutex VEMutex_, VVMutex_, VTMutex_;
-        mutable std::vector<std::vector<sem_t>> relationSems_;
+        mutable std::vector<sem_t> relationSems_;
         mutable std::vector<Timer> timers_;
         // mutable std::vector<int> waitings_;
         mutable std::vector<double> waitingTimes_;
