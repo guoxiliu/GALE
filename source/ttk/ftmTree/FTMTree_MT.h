@@ -40,7 +40,7 @@
 
 #include <AbstractTriangulation.h>
 #include <Geometry.h>
-#include <Timer.h>
+#include <Wrapper.h>
 
 #include "FTMAtomicUF.h"
 #include "FTMAtomicVector.h"
@@ -424,10 +424,8 @@ namespace ttk {
       inline idNode getLeave(const idNode id) const {
 #ifndef TTK_ENABLE_KAMIKAZE
         if(id > mt_data_.leaves->size()) {
-          std::stringstream msg;
-          msg << "[MergTree] getLeaves out of bounds : " << id << std::endl;
-          // err(msg.str(), fatalMsg);
-          return (*mt_data_.leaves)[0];
+          this->printErr("getLeaves out of bounds: " + std::to_string(id));
+          return mt_data_.leaves->at(0);
         }
 #endif
         return (*mt_data_.leaves)[id];
@@ -473,11 +471,11 @@ namespace ttk {
       inline idNode getCorrespondingNodeId(const SimplexId val) const {
 #ifndef TTK_ENABLE_KAMIKAZE
         if(!isCorrespondingNode(val)) {
-          std::stringstream debug;
-          debug << "[FTMTree_MT] : getCorrespondingNode, ";
-          debug << "Vertex :" << val << " is not a node :";
-          debug << (*mt_data_.vert2tree)[val] << std::endl;
-          // err(debug.str(), fatalMsg);
+          if(!isCorrespondingNode(val)) {
+          this->printErr("getCorrespondingNode, Vertex: " + std::to_string(val)
+                         + " is not a node: "
+                         + std::to_string(mt_data_.vert2tree->at(val)));
+        }
         }
 #endif
         return corr2idNode(val);
@@ -486,11 +484,9 @@ namespace ttk {
       inline idSuperArc getCorrespondingSuperArcId(const SimplexId val) const {
 #ifndef TTK_ENABLE_KAMIKAZE
         if(!isCorrespondingArc(val)) {
-          std::stringstream debug;
-          debug << "[FTMTree_MT] : getCorrespondingSuperArcId, ";
-          debug << "Vertex :" << val << " is not on an arc :";
-          debug << (*mt_data_.vert2tree)[val] << std::endl;
-          // err(debug.str(), fatalMsg);
+          this->printErr(
+            "getCorrespondingSuperArcId, Vertex: " + std::to_string(val)
+            + " is not on an arc: " + std::to_string(mt_data_.vert2tree->at(val)));
         }
 #endif
         return (*mt_data_.vert2tree)[val];

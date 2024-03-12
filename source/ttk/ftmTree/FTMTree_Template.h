@@ -49,7 +49,7 @@ void ttk::ftm::FTMTree::build(const triangulationType *mesh) {
   // INIT
   // ----
 
-  // setDebugLevel(debugLevel_);
+  setDebugLevel(debugLevel_);
   initNbScalars(mesh);
 
   // This section is aimed to prevent un-deterministic results if the data-set
@@ -65,7 +65,6 @@ void ttk::ftm::FTMTree::build(const triangulationType *mesh) {
       if(::std::isnan((double)(((scalarType *)scalars_->values)[i]))) {
         ((scalarType *)scalars_->values)[i] = 0;
       }
-      // std::cout << "vertex " << i << ": " << ((scalarType *)scalars_->values)[i] << std::endl;
     }
   }
 
@@ -183,22 +182,22 @@ void ttk::ftm::FTMTree::build(const triangulationType *mesh) {
     }
   }
 
-  // if(debugLevel_ > 4) {
-  //   switch(params_->treeType) {
-  //     case TreeType::Join:
-  //       jt_->printTree2();
-  //       break;
-  //     case TreeType::Split:
-  //       st_->printTree2();
-  //       break;
-  //     case TreeType::Join_Split:
-  //       jt_->printTree2();
-  //       st_->printTree2();
-  //       break;
-  //     default:
-  //       printTree2();
-  //   }
-  // }
+  if(debugLevel_ > 4) {
+    switch(params_->treeType) {
+      case TreeType::Join:
+        jt_->printTree2();
+        break;
+      case TreeType::Split:
+        st_->printTree2();
+        break;
+      case TreeType::Join_Split:
+        jt_->printTree2();
+        st_->printTree2();
+        break;
+      default:
+        printTree2();
+    }
+  }
 }
 
 #endif /* end of include guard: FTMTREE_TPL_H */

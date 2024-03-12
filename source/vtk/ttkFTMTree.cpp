@@ -261,6 +261,7 @@ int main(int argc, char *argv[])
 
     // Build tree
     for(int cc = 0; cc < nbCC_; cc++) {
+        ftmTree_[cc].tree.setDebugLevel(3);
         ftmTree_[cc].tree.setVertexScalars(
             GetVoidPointer(inputScalars_[cc]));
         ftmTree_[cc].tree.setVertexSoSoffsets(offsets_[cc].data());

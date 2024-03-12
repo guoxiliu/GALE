@@ -20,7 +20,6 @@
 
 // base code includes
 #include <Geometry.h>
-#include <AbstractTriangulation.h>
 
 #include "FTMDataTypes.h"
 #include "FTMTree_MT.h"
@@ -76,15 +75,15 @@ namespace ttk {
         st_->preconditionTriangulation(tri, false);
       }
 
-      // inline int setDebugLevel(const int &d) {
-      //   Debug::setDebugLevel(d);
-      //   jt_->setDebugLevel(d);
-      //   st_->setDebugLevel(d);
-      //   return 0;
-      // }
+      inline int setDebugLevel(const int &d) {
+        Debug::setDebugLevel(d);
+        jt_->setDebugLevel(d);
+        st_->setDebugLevel(d);
+        return 0;
+      }
 
       inline int setThreadNumber(const int n) {
-        threadNumber_ = n;
+        Debug::setThreadNumber(n);
         jt_->setThreadNumber(n);
         st_->setThreadNumber(n);
         return 0;

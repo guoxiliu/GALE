@@ -81,25 +81,25 @@ namespace ttk {
         printTime(combineTime, "combine trees", -1, 4);
         printTime(combineFullTime, "combine full", -1, 3);
       }
-      // // Debug
-      // if(debugLevel_ > 3) {
-      //   std::string nbNodes;
-      //   switch(tt) {
-      //     case TreeType::Join:
-      //       nbNodes = std::to_string(jt_->getNumberOfNodes());
-      //       break;
-      //     case TreeType::Split:
-      //       nbNodes = std::to_string(st_->getNumberOfNodes());
-      //       break;
-      //     case TreeType::Join_Split:
-      //       nbNodes
-      //         = std::to_string(jt_->getNumberOfNodes() + st_->getNumberOfNodes());
-      //       break;
-      //     default:
-      //       nbNodes = std::to_string(getNumberOfNodes());
-      //   }
-      //   std::cout << "[FTMTree_CT] - final number of nodes :" << nbNodes << std::endl;
-      // }
+      // Debug
+      if(debugLevel_ > 3) {
+        std::string nbNodes;
+        switch(tt) {
+          case TreeType::Join:
+            nbNodes = std::to_string(jt_->getNumberOfNodes());
+            break;
+          case TreeType::Split:
+            nbNodes = std::to_string(st_->getNumberOfNodes());
+            break;
+          case TreeType::Join_Split:
+            nbNodes
+              = std::to_string(jt_->getNumberOfNodes() + st_->getNumberOfNodes());
+            break;
+          default:
+            nbNodes = std::to_string(getNumberOfNodes());
+        }
+        this->printMsg({"- final number of nodes :", nbNodes});
+      }
   }
 // clang-format on
 // clang format fail to use the right indentation level

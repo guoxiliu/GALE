@@ -103,7 +103,6 @@ namespace ttk {
             const SimplexId lowerBound = chunkId * chunkSize;
             const SimplexId upperBound
               = std::min(nbScalars, (chunkId + 1) * chunkSize);
-            
             for(SimplexId v = lowerBound; v < upperBound; ++v) {
               const auto &neighNumb = mesh->getVertexNeighborNumber(v);
               valence val = 0;
@@ -135,9 +134,9 @@ namespace ttk {
       mt_data_.leaves->resize(nbLeaves);
       std::iota(mt_data_.leaves->begin(), mt_data_.leaves->end(), 0);
 
-      // if(debugLevel_ >= 4) {
-      //   this->printMsg("found " + std::to_string(nbLeaves) + " leaves");
-      // }
+      if(debugLevel_ >= 4) {
+        this->printMsg("found " + std::to_string(nbLeaves) + " leaves");
+      }
 
       // Reserve Arcs
       mt_data_.superArcs->reserve(nbLeaves * 2 + 1);

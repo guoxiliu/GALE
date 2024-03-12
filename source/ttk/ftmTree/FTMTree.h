@@ -17,7 +17,6 @@
 
 // base code includes
 #include <Geometry.h>
-#include <AbstractTriangulation.h>
 
 #include "FTMDataTypes.h"
 #include "FTMTree_CT.h"

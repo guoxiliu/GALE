@@ -13,6 +13,7 @@
 
 #include <vector>
 
+#include <Debug.h>
 #include <functional>
 
 #include "FTMDataTypes.h"

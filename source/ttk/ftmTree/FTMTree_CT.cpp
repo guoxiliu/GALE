@@ -27,7 +27,7 @@ FTMTree_CT::FTMTree_CT(Params *const params,
   : FTMTree_MT(params, scalars, TreeType::Contour),
     jt_(new FTMTree_MT(params, scalars, TreeType::Join)),
     st_(new FTMTree_MT(params, scalars, TreeType::Split)) {
-  // this->setDebugMsgPrefix("FTMTree_CT");
+  this->setDebugMsgPrefix("FTMTree_CT");
 }
 
 FTMTree_CT::~FTMTree_CT() {

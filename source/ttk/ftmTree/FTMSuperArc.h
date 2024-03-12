@@ -16,6 +16,8 @@
 #include <list>
 #include <vector>
 
+#include <Debug.h>
+
 #include "FTMDataTypes.h"
 #include "FTMSegmentation.h"
 #include "FTMStructures.h"

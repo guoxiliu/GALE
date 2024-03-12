@@ -41,7 +41,7 @@ FTMTree_MT::FTMTree_MT(Params *const params,
                        TreeType type)
   : params_(params), scalars_(scalars) {
 
-  // this->setDebugMsgPrefix("FTMtree_MT");
+  this->setDebugMsgPrefix("FTMtree_MT");
 
   mt_data_.treeType = type;
 }
@@ -496,14 +496,14 @@ idSuperArc FTMTree_MT::insertNode(Node *node, const bool segm) {
 }
 
 idNode FTMTree_MT::makeNode(SimplexId vertexId, SimplexId term) {
-// #ifndef TTK_ENABLE_KAMIKAZE
-//   if(vertexId < 0 || vertexId >= scalars_->size) {
-//     this->printMsg({{"make node, wrong vertex :", std::to_string(vertexId)},
-//                     {" on ", std::to_string(scalars_->size)}},
-//                    debug::Priority::ERROR);
-//     return -1;
-//   }
-// #endif
+#ifndef TTK_ENABLE_KAMIKAZE
+  if(vertexId < 0 || vertexId >= scalars_->size) {
+    this->printMsg({{"make node, wrong vertex :", std::to_string(vertexId)},
+                    {" on ", std::to_string(scalars_->size)}},
+                   debug::Priority::ERROR);
+    return -1;
+  }
+#endif
 
   if(isCorrespondingNode(vertexId)) {
     return getCorrespondingNodeId(vertexId);
@@ -636,24 +636,24 @@ void FTMTree_MT::normalizeIds(void) {
     }
   }
 
-// #ifndef TTK_ENABLE_KAMIKAZE
-//   if(std::abs((long)nIdMax - (long)nIdMin) > 1) {
-//     this->printMsg({"error during normalize, tree compromized: ",
-//                     std::to_string(nIdMin), " ", std::to_string(nIdMax)},
-//                    debug::Priority::ERROR);
-//   }
-// #endif
+#ifndef TTK_ENABLE_KAMIKAZE
+  if(std::abs((long)nIdMax - (long)nIdMin) > 1) {
+    this->printMsg({"error during normalize, tree compromized: ",
+                    std::to_string(nIdMin), " ", std::to_string(nIdMax)},
+                   debug::Priority::ERROR);
+  }
+#endif
 
   printTime(normTime, "normalize ids", -1, 4);
 }
 
 idSuperArc FTMTree_MT::openSuperArc(idNode downNodeId) {
-// #ifndef TTK_ENABLE_KAMIKAZE
-//   if(downNodeId >= getNumberOfNodes()) {
-//     this->printErr("openSuperArc on a inexisting node !");
-//     return -2;
-//   }
-// #endif
+#ifndef TTK_ENABLE_KAMIKAZE
+  if(downNodeId >= getNumberOfNodes()) {
+    this->printErr("openSuperArc on a inexisting node !");
+    return -2;
+  }
+#endif
 
   idSuperArc newSuperArcId = mt_data_.superArcs->getNext();
   (*mt_data_.superArcs)[newSuperArcId].setDownNodeId(downNodeId);
@@ -724,13 +724,13 @@ string FTMTree_MT::printNode(idNode n) {
 }
 
 void FTMTree_MT::printParams(void) const {
-  // if(debugLevel_ > 1) {
-  //   if(debugLevel_ > 2) {
-  //     this->printMsg(ttk::debug::Separator::L1);
-  //   }
-  //   this->printMsg("number of threads : " + std::to_string(threadNumber_));
-  //   if(debugLevel_ > 2) {
-      // this->printMsg("* debug lvl  : " + std::to_string(debugLevel_));
+  if(debugLevel_ > 1) {
+    if(debugLevel_ > 2) {
+      this->printMsg(ttk::debug::Separator::L1);
+    }
+    this->printMsg("number of threads : " + std::to_string(threadNumber_));
+    if(debugLevel_ > 2) {
+      this->printMsg("* debug lvl  : " + std::to_string(debugLevel_));
       string tt;
       if(params_->treeType == TreeType::Contour) {
         tt = "Contour";
@@ -741,10 +741,10 @@ void FTMTree_MT::printParams(void) const {
       } else if(params_->treeType == TreeType::Join_Split) {
         tt = "Join + Split";
       }
-      std::cout << "[FTMTree] * tree type  : " << tt << endl;
-      // this->printMsg(ttk::debug::Separator::L1);
-    // }
-  // }
+      this->printMsg("* tree type  : " + tt);
+      this->printMsg(ttk::debug::Separator::L1);
+    }
+  }
 }
 
 int FTMTree_MT::printTime(Timer &t,
@@ -752,12 +752,12 @@ int FTMTree_MT::printTime(Timer &t,
                           SimplexId nbScalars,
                           const int debugLevel) const {
 
-  if(3 >= debugLevel) {
-  //   stringstream st;
+  if(this->debugLevel_ >= debugLevel) {
+    stringstream st;
 
-    // for(int i = 3; i < debugLevel; i++)
-    //   st << "-";
-    // st << s;
+    for(int i = 3; i < debugLevel; i++)
+      st << "-";
+    st << s;
 
 #ifdef TTK_ENABLE_FTM_TREE_PROCESS_SPEED
     if(nbScalars == -1) {
@@ -766,10 +766,8 @@ int FTMTree_MT::printTime(Timer &t,
     int speed = nbScalars / t.getElapsedTime();
     st << " at " << speed << " vert/s";
 #endif
-    // this->printMsg(st.str(), 1, t.getElapsedTime(), this->threadNumber_);
 
-    std::cout << "[FTMTree_MT]" << s << ": " << t.getElapsedTime() << 
-                 ", thread number: " << threadNumber_ << std::endl;
+    this->printMsg(st.str(), 1, t.getElapsedTime(), this->threadNumber_);
   }
   return 1;
 }

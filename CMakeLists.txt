@@ -32,6 +32,8 @@ if(NOT VTK_FOUND)
     return()
 endif()
 
+option(TTK_ENABLE_KAMIKAZE "Enable Kamikaze compilation mode" ON)
+
 option(TTK_ENABLE_OPENMP "Enable OpenMP support" TRUE)
 if(TTK_ENABLE_OPENMP)
     find_package(OpenMP)
