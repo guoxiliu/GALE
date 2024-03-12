@@ -5,3 +5,4 @@ target_include_directories(explicitTriangulation
         # $<INSTALL_INTERFACE:include/ttk/base>
 )
 target_link_libraries(explicitTriangulation PUBLIC abstractTriangulation skeleton VTK::CommonDataModel)
+set_compile_options(explicitTriangulation)

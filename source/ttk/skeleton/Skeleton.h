@@ -12,15 +12,19 @@
 #pragma once
 
 // base code includes
-#include "DataTypes.h"
-#include "CellArray.h"
-#include "FlatJaggedArray.h"
+#include <DataTypes.h>
+#include <Debug.h>
+#include <CellArray.h>
+#include <FlatJaggedArray.h>
 #include <algorithm>
 #include <array>
+#ifdef TTK_ENABLE_OPENMP
+#include <omp.h>
+#endif
 
 namespace ttk {
 
-  class Skeleton {
+  class Skeleton : public Debug {
 
   public:
     Skeleton() {}

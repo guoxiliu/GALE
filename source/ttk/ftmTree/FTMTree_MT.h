@@ -101,7 +101,7 @@ namespace ttk {
 #endif
     };
 
-    class FTMTree_MT {
+    class FTMTree_MT : virtual public Debug {
     protected:
       // global
       Params *const params_;
@@ -110,7 +110,6 @@ namespace ttk {
       // local
       TreeData mt_data_;
       Comparison comp_;
-      int threadNumber_;
 
     public:
       // -----------
@@ -324,10 +323,6 @@ namespace ttk {
 
       inline void setTreeType(const int local_treeType) {
         params_->treeType = static_cast<TreeType>(local_treeType);
-      }
-
-      inline void setThreadNumber(const int threadNumber) {
-        threadNumber_ = threadNumber;
       }
 
       inline void setSegmentation(const bool segm) {

@@ -39,14 +39,12 @@
 
 namespace ttk {
 
-  class ScalarFieldCriticalPoints {
+  class ScalarFieldCriticalPoints : virtual public Debug {
 
   public:
     ScalarFieldCriticalPoints();
 
     enum class BACKEND { GENERIC = 0, PROGRESSIVE_TOPOLOGY = 1 };
-
-    inline void setThreadNumber(int tnum) { threadNumber_ = tnum; }
 
     /**
      * Execute the package.
@@ -135,7 +133,6 @@ namespace ttk {
 
   protected:
     int dimension_{};
-    int threadNumber_{1};
     SimplexId vertexNumber_{};
     const std::vector<std::vector<std::pair<SimplexId, SimplexId>>>
       *vertexLinkEdgeLists_{};

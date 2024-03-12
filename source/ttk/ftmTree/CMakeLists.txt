@@ -5,3 +5,4 @@ target_include_directories(ftmTree
         # $<INSTALL_INTERFACE:include/ttk/base>
 )
 target_link_libraries(ftmTree PUBLIC abstractTriangulation geometry Boost::boost Boost::system)
+set_compile_options(ftmTree)

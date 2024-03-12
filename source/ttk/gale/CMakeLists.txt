@@ -9,6 +9,5 @@ target_link_libraries(gale PUBLIC VTK::CommonDataModel)
 set_property(TARGET gale PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 
 if (TTK_ENABLE_OPENMP)
-    target_compile_definitions(gale PUBLIC TTK_ENABLE_OPENMP)
-    target_link_libraries(gale PUBLIC OpenMP::OpenMP_CXX)
+    target_compile_options(gale PRIVATE $<$<COMPILE_LANGUAGE:CUDA>: -Xcompiler=-fopenmp>)
 endif()

@@ -6,3 +6,4 @@ target_include_directories(skeleton
 )
 target_link_libraries(skeleton PUBLIC common)
 target_link_libraries(skeleton PRIVATE Boost::boost)
+set_compile_options(skeleton)

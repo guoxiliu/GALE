@@ -14,6 +14,7 @@
 
 #include <DataTypes.h>
 #include <Geometry.h>
+#include <Wrapper.h>
 #include <array>
 #include <iostream>
 #include <vector>
@@ -24,27 +25,9 @@
 #define TTK_TRIANGULATION_INTERNAL(NAME) NAME##Internal
 #endif // TTK_ENABLE_KAMIKAZE
 
-#define ttkTemplateMacroCase(triangulationType, triangulationClass, call) \
-  case triangulationType: {                                               \
-    using TTK_TT = triangulationClass;                                    \
-    call;                                                                 \
-  }; break
-
-#define ttkTemplateMacro(triangulationType, call)                            \
-  switch(triangulationType) {                                                \
-    ttkTemplateMacroCase(                                                    \
-      ttk::Triangulation::Type::EXPLICIT, ttk::ExplicitTriangulation, call); \
-    ttkTemplateMacroCase(                                                    \
-      ttk::Triangulation::Type::IMPLICIT, ttk::ImplicitTriangulation, call); \
-    ttkTemplateMacroCase(ttk::Triangulation::Type::PERIODIC,                 \
-                         ttk::PeriodicImplicitTriangulation, call);          \
-    ttkTemplateMacroCase(                                                    \
-      ttk::Triangulation::Type::COMPACT, ttk::CompactTriangulation, call);   \
-  }
-
 namespace ttk {
 
-  class AbstractTriangulation {
+  class AbstractTriangulation : virtual public Debug {
 
   public:
     AbstractTriangulation();

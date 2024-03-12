@@ -7,15 +7,12 @@
 #include <iostream>
 
 namespace ttk {
-    class TestTopoRelations {
-    protected:
-      int threadNumber_;
+    class TestTopoRelations : virtual public Debug {
     public:
-      TestTopoRelations() { threadNumber_ = 10; }
+      TestTopoRelations() {}
       ~TestTopoRelations() {}
 
       int execute(AbstractTriangulation *triangulation) const;
-      inline void setThreadNumber(int tnum) { threadNumber_ = tnum; }
       inline int preconditionTriangulation(AbstractTriangulation *triangulation){
         if(triangulation){
           Timer t;
@@ -27,10 +24,10 @@ namespace ttk {
           // triangulation->preconditionBoundaryEdges();
           // triangulation->preconditionBoundaryTriangles();
           // vertex related relations
-          // triangulation->preconditionVertexEdges();
-          // triangulation->preconditionVertexNeighbors();
-          // triangulation->preconditionVertexStars();
-          // triangulation->preconditionVertexTriangles();
+          triangulation->preconditionVertexEdges();
+          triangulation->preconditionVertexNeighbors();
+          triangulation->preconditionVertexStars();
+          triangulation->preconditionVertexTriangles();
           // edge related relations
           triangulation->preconditionEdgeStars();
           triangulation->preconditionEdgeTriangles();
@@ -90,39 +87,41 @@ namespace ttk {
         gale->computeRelation(RelationType::FTRelation, 1, 0, false);
         std::cout << "[TestTopoRelations] Time usage for FT: " << t.getElapsedTime() << " s.\n";
         
-        // t.reStart();
-        // gale->computeRelation(RelationType::VTRelation, 1, 0, false);
-        // std::cout << "[TestTopoRelations] Time usage for VT: " << t.getElapsedTime() << " s.\n";
+        t.reStart();
+        gale->computeRelation(RelationType::VTRelation, 1, 0, false);
+        std::cout << "[TestTopoRelations] Time usage for VT: " << t.getElapsedTime() << " s.\n";
         
-        // t.reStart();
-        // gale->computeRelation(RelationType::VVRelation, 1, 0, false);
-        // std::cout << "[TestTopoRelations] Time usage for VV: " << t.getElapsedTime() << " s.\n";
+        t.reStart();
+        gale->computeRelation(RelationType::VVRelation, 1, 0, false);
+        std::cout << "[TestTopoRelations] Time usage for VV: " << t.getElapsedTime() << " s.\n";
 
-        // t.reStart();
-        // gale->computeRelation(RelationType::VERelation, 1, 0, false);
-        // std::cout << "[TestTopoRelations] Time usage for VE: " << t.getElapsedTime() << " s.\n";
+        t.reStart();
+        gale->computeRelation(RelationType::VERelation, 1, 0, false);
+        std::cout << "[TestTopoRelations] Time usage for VE: " << t.getElapsedTime() << " s.\n";
 
-        // t.reStart();
-        // gale->computeRelation(RelationType::VFRelation, 1, 0, false);
-        // std::cout << "[TestTopoRelations] Time usage for VF: " << t.getElapsedTime() << " s.\n";
+        t.reStart();
+        gale->computeRelation(RelationType::VFRelation, 1, 0, false);
+        std::cout << "[TestTopoRelations] Time usage for VF: " << t.getElapsedTime() << " s.\n";
       }
 
 
       // Vertex neighbor relation
       // std::mutex ioMutex;
       // t.reStart();
+      // #ifdef TTK_ENABLE_OPENMP
       // #pragma omp parallel for num_threads(threadNumber_)
+      // #endif
       // for(SimplexId vid = 0; vid < vertexNumber; vid++) {
       //   SimplexId neighborNum = triangulation->getVertexNeighborNumber(vid);
       //   SimplexId neighborId;
-      //   // std::unique_lock<std::mutex> ioLock(ioMutex);
-      //   // std::cout << "vertex " << vid << ": " << neighborNum << " [";
+      //   std::unique_lock<std::mutex> ioLock(ioMutex);
+      //   std::cout << "vertex " << vid << ": " << neighborNum << " [";
       //   for(int j = 0; j < neighborNum; j++) {
       //     triangulation->getVertexNeighbor(vid, j, neighborId);
-      //     // std::cout << neighborId << " ";
+      //     std::cout << neighborId << " ";
       //   }
-      //   // std::cout << "]" << std::endl;
-      //   // ioLock.unlock();
+      //   std::cout << "]" << std::endl;
+      //   ioLock.unlock();
       // }
       // std::cout << "[TestTopoRelations] Time usage for VN: " << t.getElapsedTime() << " s." << std::endl;
 

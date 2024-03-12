@@ -595,7 +595,6 @@ namespace ttk {
 
   private:
     bool doublePrecision_;
-    int threadNumber_{};
     SimplexId cellNumber_, vertexNumber_;
     const void *pointSet_;
     int maxCellDim_;

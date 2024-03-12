@@ -5,4 +5,4 @@ target_include_directories(scalarFieldCriticalPoints
         # $<INSTALL_INTERFACE:include/ttk/base>
 )
 target_link_libraries(scalarFieldCriticalPoints PUBLIC abstractTriangulation common)
-target_link_libraries(scalarFieldCriticalPoints PUBLIC )
+set_compile_options(scalarFieldCriticalPoints)

@@ -5,3 +5,4 @@ target_include_directories(abstractTriangulation
         # $<INSTALL_INTERFACE:include/ttk/base>
 )
 target_link_libraries(abstractTriangulation PUBLIC common geometry)
+set_compile_options(abstractTriangulation)
