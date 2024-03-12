@@ -159,7 +159,7 @@ __global__ void computeVertexCells(int *vertexCellSize, const vtkIdType *connect
 }
 
 
-__global__ void precomputeEdgeTriangles(int *edgeList, int *triangleList,
+__global__ void computeEdgeTriangles(int *edgeList, int *triangleList,
             int *edgeTriangleMatrix, int *edgeTriangleSizes, 
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
@@ -259,7 +259,7 @@ __global__ void precomputeEdgeTriangles(int *edgeList, int *triangleList,
     }
 }
 
-__global__ void precomputeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeStarSizes, 
+__global__ void computeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeStarSizes, 
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
             const int *vertexIntervals, const int *edgeIntervals, const int *cellIntervals,
@@ -338,7 +338,7 @@ __global__ void precomputeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edg
     }
 }
 
-__global__ void precomputeTriangleStars(int *triangleList, int *triangleStarMatrix, int *triangleStarSizes, 
+__global__ void computeTriangleStars(int *triangleList, int *triangleStarMatrix, int *triangleStarSizes, 
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
@@ -423,7 +423,7 @@ __global__ void precomputeTriangleStars(int *triangleList, int *triangleStarMatr
     }
 }
 
-__global__ void precomputeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int *vertexEdgeSizes, 
+__global__ void computeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int *vertexEdgeSizes, 
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *edgeIntervals, const int *cellIntervals,
@@ -527,7 +527,7 @@ __global__ void precomputeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int 
     }
 }
 
-__global__ void precomputeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNeighborSizes, 
+__global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNeighborSizes, 
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
             const int *vertexIntervals, const int *cellIntervals, 
@@ -680,7 +680,7 @@ __global__ void precomputeVertexNeighbors(int *vertexNeighborMatrix, int *vertex
 }
 
 
-__global__ void precomputeVertexStars(int *vertexStarMatrix, int *vertexStarSizes, 
+__global__ void computeVertexStars(int *vertexStarMatrix, int *vertexStarSizes, 
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
             const int *vertexIntervals, const int *cellIntervals, 
@@ -755,7 +755,7 @@ __global__ void precomputeVertexStars(int *vertexStarMatrix, int *vertexStarSize
 }
 
 
-__global__ void precomputeVertexTriangles(int *triangleList, int *vertexTriangleMatrix, int *vertexTriangleSizes, 
+__global__ void computeVertexTriangles(int *triangleList, int *vertexTriangleMatrix, int *vertexTriangleSizes, 
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
@@ -894,7 +894,7 @@ __global__ void precomputeVertexTriangles(int *triangleList, int *vertexTriangle
 }
 
 
-__global__ void precomputeMultiVertexNeighbors(int *vertexNeighborMatrix, int *vertexNeighborSizes, 
+__global__ void computeMultiVertexNeighbors(int *vertexNeighborMatrix, int *vertexNeighborSizes, 
             const int clusterNumber, const int *baseClusters, const int *vertexOffsets,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
             const int *vertexIntervals, const int *cellIntervals, 
@@ -1039,7 +1039,7 @@ __global__ void precomputeMultiVertexNeighbors(int *vertexNeighborMatrix, int *v
 }
 
 
-__global__ void precomputeMultiVertexStars(int *vertexStarMatrix, int *vertexStarSizes, 
+__global__ void computeMultiVertexStars(int *vertexStarMatrix, int *vertexStarSizes, 
             const int clusterNumber, const int *baseClusters, const int *vertexOffsets,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
             const int *vertexIntervals, const int *cellIntervals, 

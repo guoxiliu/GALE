@@ -13,6 +13,7 @@ using namespace ttk;
 
 
 Gale::Gale(int tnum, int tnumPerCluster) {
+    this->setDebugMsgPrefix("Gale");
     /* initialize the pointers */
     hConnectivity_ = nullptr;
     hOffsets_ = nullptr;
@@ -339,7 +340,7 @@ int Gale::computeRelation(const RelationType relation,
             CHECK(cudaMemset(dEdgeTriangleSizes_, 0, sizeof(int) * localEdgeNum));
             CHECK(cudaMemset(dEdgeTriangleMatrix_, -1, sizeof(int) * localEdgeNum * efColumnNum));
 
-            precomputeEdgeTriangles<<<numBlocks_, blockSize_>>>(
+            computeEdgeTriangles<<<numBlocks_, blockSize_>>>(
                 dEdgeList, dTriangleList,
                 dEdgeTriangleMatrix_, dEdgeTriangleSizes_,
                 clusterId, clusterNumber_,
@@ -404,7 +405,7 @@ int Gale::computeRelation(const RelationType relation,
             CHECK(cudaMemset(dEdgeStarSizes_, 0, sizeof(int) * localEdgeNum));
             CHECK(cudaMemset(dEdgeStarMatrix_, -1, sizeof(int) * localEdgeNum * etColumnNum));
 
-            precomputeEdgeStars<<<numBlocks_, blockSize_>>>(
+            computeEdgeStars<<<numBlocks_, blockSize_>>>(
                 dEdgeList, dEdgeStarMatrix_, dEdgeStarSizes_,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_,
@@ -468,7 +469,7 @@ int Gale::computeRelation(const RelationType relation,
             CHECK(cudaMemset(dTriangleStarSizes_, 0, sizeof(int) * localTriangleNum));
             CHECK(cudaMemset(dTriangleStarMatrix_, -1, sizeof(int) * localTriangleNum * ftColumnNum));
 
-            precomputeTriangleStars<<<numBlocks_, blockSize_>>>(
+            computeTriangleStars<<<numBlocks_, blockSize_>>>(
                 dTriangleList, dTriangleStarMatrix_, dTriangleStarSizes_,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_,
@@ -533,7 +534,7 @@ int Gale::computeRelation(const RelationType relation,
             CHECK(cudaMemset(dVertexEdgeSizes_, 0, sizeof(int) * localVertexNum));
             CHECK(cudaMemset(dVertexEdgeMatrix_, -1, sizeof(int) * localVertexNum * veColumnNum));
 
-            precomputeVertexEdges<<<numBlocks_, blockSize_>>>(
+            computeVertexEdges<<<numBlocks_, blockSize_>>>(
                 dEdgeList, dVertexEdgeMatrix_, dVertexEdgeSizes_,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_, dIndexArray_,
@@ -598,7 +599,7 @@ int Gale::computeRelation(const RelationType relation,
             CHECK(cudaMemset(dVertexTriangleSizes_, 0, sizeof(int) * localVertexNum));
             CHECK(cudaMemset(dVertexTriangleMatrix_, -1, sizeof(int) * localVertexNum * vfColumnNum));
 
-            precomputeVertexTriangles<<<numBlocks_, blockSize_>>>(
+            computeVertexTriangles<<<numBlocks_, blockSize_>>>(
                 dTriangleList, dVertexTriangleMatrix_, dVertexTriangleSizes_,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_, dIndexArray_,
@@ -664,7 +665,7 @@ int Gale::computeRelation(const RelationType relation,
             
             // CHECK(cudaMemset(dVertexNeighborMatrix_, -1, sizeof(int) * localVertexNum * vvColumnNum));
 
-            precomputeVertexNeighbors<<<numBlocks_, blockSize_>>>(
+            computeVertexNeighbors<<<numBlocks_, blockSize_>>>(
                 dVertexNeighborMatrix_, dVertexNeighborSizes_,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_,
@@ -732,7 +733,7 @@ int Gale::computeRelation(const RelationType relation,
             CHECK(cudaMemset(dVertexStarSizes_, 0, sizeof(int) * localVertexNum));
             CHECK(cudaMemset(dVertexStarMatrix_, -1, sizeof(int) * localVertexNum * vtColumnNum));
 
-            precomputeVertexStars<<<numBlocks_, blockSize_>>>(
+            computeVertexStars<<<numBlocks_, blockSize_>>>(
                 dVertexStarMatrix_, dVertexStarSizes_,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_,
@@ -793,14 +794,14 @@ int Gale::computeCombinedRelation(const RelationType relation,
     int res = 0;
     int relationId = static_cast<int>(relation);
 
+    int threadNum = requests.size();
+    int gpuBlocks = numBlocks_ / threadNum;
+    int gpuThreads = blockSize_ / threadsPerCluster_ * gpuBlocks;
+
     switch (relation) {
         case RelationType::VVRelation:
         {
-            int threadNum = requests.size();
-            int gpuBlocks = numBlocks_ / threadNum;
-            int gpuThreads = gpuBlocks * blockSize_ / threadsPerCluster_;
             // int totalBlocks = numBlocks_ * blockSize_;
-
             int localVertexSum = 0;
             int localVertexNums[threadNum];
             int hVertexOffsets[threadNum];
@@ -824,7 +825,7 @@ int Gale::computeCombinedRelation(const RelationType relation,
             CHECK(cudaMemset(dVertexNeighborMatrix_, -1, sizeof(int) * localVertexSum * vvColumnNum));
 
             dim3 dimBlock(threadNum, gpuBlocks);
-            precomputeMultiVertexNeighbors<<<dimBlock, blockSize_>>>(
+            computeMultiVertexNeighbors<<<dimBlock, blockSize_>>>(
                 dVertexNeighborMatrix_, dVertexNeighborSizes_,
                 clusterNumber_, dClusterIds, dVertexOffsets,
                 dConnectivity_, dOffsets_,
@@ -851,6 +852,9 @@ int Gale::computeCombinedRelation(const RelationType relation,
                     SimplexId vid = hVertexIntervals_[hClusterIds[i]-1] + j;
                     if (!vertexNeighborList_[vid].empty()) continue;
                     int rj = j + hVertexOffsets[i]; // relative j value in the large matrix
+                    if (hVertexNeighborSizes_[rj] == 0) {
+                        std::cerr << "size of vertex " << rj << " is 0" << std::endl;
+                    }
                     vertexNeighborList_[vid] = std::vector<int>(hVertexNeighborMatrix_ + rj * vvColumnNum, hVertexNeighborMatrix_ + rj * vvColumnNum + hVertexNeighborSizes_[rj]);
                 }
                 if (baseClusters_[relationId][requests[i].first] == 0)
@@ -869,11 +873,6 @@ int Gale::computeCombinedRelation(const RelationType relation,
 
         case RelationType::VTRelation:
         {
-            int threadNum = requests.size();
-            int gpuBlocks = numBlocks_ / threadNum;
-            int gpuThreads = gpuBlocks * blockSize_ / threadsPerCluster_;
-            // int totalBlocks = numBlocks_ * blockSize_;
-
             int localVertexSum = 0;
             int localVertexNums[threadNum];
             int hVertexOffsets[threadNum];
@@ -897,7 +896,7 @@ int Gale::computeCombinedRelation(const RelationType relation,
             CHECK(cudaMemset(dVertexStarMatrix_, -1, sizeof(int) * localVertexSum * vtColumnNum));
 
             dim3 dimBlock(threadNum, gpuBlocks);
-            precomputeMultiVertexStars<<<dimBlock, blockSize_>>>(
+            computeMultiVertexStars<<<dimBlock, blockSize_>>>(
                 dVertexStarMatrix_, dVertexStarSizes_,
                 clusterNumber_, dClusterIds, dVertexOffsets,
                 dConnectivity_, dOffsets_,
@@ -953,7 +952,7 @@ void Gale::assistProcedure() {
     volatile RelationType leaderFunc = RelationType::BlankRelation;
 
     /* Job queue version */
-    // if (threadNumber_ == 1) {
+    if (threadNumber_ == 1) {
         while (true) {
             std::unique_lock<std::mutex> qlock(qMutex_);
             int qSize = jobQueue.size();
@@ -983,99 +982,99 @@ void Gale::assistProcedure() {
                 }
             }
         }
-    // }
+    }
     
-    // else {
-    //     while (true) {
-    //         // bool wait = false;
-    //         // for (int tid = 0; tid < threadNumber_; ++tid) {
-    //         //     volatile int wval = waitings_[tid];
-    //         //     if (wval > 0) {
-    //         //         leaderCluster = currClusters_[tid], leaderFunc = currRelations_[tid];
+    else {
+        while (true) {
+            // bool wait = false;
+            // for (int tid = 0; tid < threadNumber_; ++tid) {
+            //     volatile int wval = waitings_[tid];
+            //     if (wval > 0) {
+            //         leaderCluster = currClusters_[tid], leaderFunc = currRelations_[tid];
 
-    //         //         // no need to compute if the relation is already there from another thread
-    //         //         int baseCluster = baseClusters_[static_cast<int>(leaderFunc)][tid];
-    //         //         // if (leaderCluster == baseCluster) continue;
-    //         //         if (baseCluster > 0) {
-    //         //             SimplexId diff = leaderCluster - baseCluster;
-    //         //             // check if the precomputation needs to be performed
-    //         //             if (diff > 0 && diff < numBlocks_ * blockSize_) {
-    //         //                 sem_post(&relationSems_[tid][static_cast<int>(leaderFunc)]);
-    //         //                 continue;
-    //         //             }
-    //         //         }
+            //         // no need to compute if the relation is already there from another thread
+            //         int baseCluster = baseClusters_[static_cast<int>(leaderFunc)][tid];
+            //         // if (leaderCluster == baseCluster) continue;
+            //         if (baseCluster > 0) {
+            //             SimplexId diff = leaderCluster - baseCluster;
+            //             // check if the precomputation needs to be performed
+            //             if (diff > 0 && diff < numBlocks_ * blockSize_) {
+            //                 sem_post(&relationSems_[tid][static_cast<int>(leaderFunc)]);
+            //                 continue;
+            //             }
+            //         }
 
-    //         //         wait = true;
-    //         //         int res = computeRelation(leaderFunc, leaderCluster, tid, true);
-    //         //     }
-    //         // }
+            //         wait = true;
+            //         int res = computeRelation(leaderFunc, leaderCluster, tid, true);
+            //     }
+            // }
 
-    //         /* Job queue version */
-    //         std::unique_lock<std::mutex> qlock(qMutex_);
-    //         int qSize = jobQueue.size();
-    //         qlock.unlock();
-    //         if (qSize > 0) {
-    //             std::unordered_map<RelationType, std::vector<std::pair<int,int>>> requestMap;
-    //             // handle the waiting jobs in the queue
-    //             // combine the requests from all waiting consumers
-    //             std::unique_lock<std::mutex> qlock(qMutex_);
-    //             for (int i = 0; i < qSize; ++i) {
-    //                 int tid = jobQueue.front();
-    //                 jobQueue.pop();
-    //                 requestMap[currRelations_[tid]].push_back(std::make_pair(tid, currClusters_[tid]));
-    //             }
-    //             qlock.unlock();
-    //             for (auto &e : requestMap) {
-    //                 int res = computeCombinedRelation(e.first, e.second);
-    //             }
-    //         }
-    //         else {
-    //             // clean the memory storage
-    //             for (int i = 0; i < threadNumber_; ++i) {
-    //                 SimplexId endCluster = currClusters_[i];
-    //                 if (endCluster < 0) return;
-    //                 else if (endCluster == 0) continue;
-    //                 if (!jobQueue.empty()) break;
-    //                 RelationType relation = currRelations_[i];
-    //                 SimplexId startCluster = baseClusters_[static_cast<int>(relation)][i];
-    //                 // endCluster = (endCluster - startCluster) * removalRatio + startCluster;
-    //                 if (startCluster == 0) continue;
-    //                 // different relations correspond to different vectors
-    //                 switch (relation)
-    //                 {
-    //                     case RelationType::VVRelation:
-    //                         for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
-    //                             vertexNeighborList_[vid].clear(); vertexNeighborList_[vid].shrink_to_fit();
-    //                         }
-    //                         break;
+            /* Job queue version */
+            std::unique_lock<std::mutex> qlock(qMutex_);
+            int qSize = jobQueue.size();
+            qlock.unlock();
+            if (qSize > 0) {
+                std::unordered_map<RelationType, std::vector<std::pair<int,int>>> requestMap;
+                // handle the waiting jobs in the queue
+                // combine the requests from all waiting consumers
+                std::unique_lock<std::mutex> qlock(qMutex_);
+                for (int i = 0; i < qSize; ++i) {
+                    int tid = jobQueue.front();
+                    jobQueue.pop();
+                    requestMap[currRelations_[tid]].push_back(std::make_pair(tid, currClusters_[tid]));
+                }
+                qlock.unlock();
+                for (auto &e : requestMap) {
+                    int res = computeCombinedRelation(e.first, e.second);
+                }
+            }
+            else {
+                // clean the memory storage
+                for (int i = 0; i < threadNumber_; ++i) {
+                    SimplexId endCluster = currClusters_[i];
+                    if (endCluster < 0) return;
+                    else if (endCluster == 0) continue;
+                    if (!jobQueue.empty()) break;
+                    RelationType relation = currRelations_[i];
+                    SimplexId startCluster = baseClusters_[static_cast<int>(relation)][i];
+                    // endCluster = (endCluster - startCluster) * removalRatio + startCluster;
+                    if (startCluster == 0) continue;
+                    // different relations correspond to different vectors
+                    switch (relation)
+                    {
+                        case RelationType::VVRelation:
+                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
+                                vertexNeighborList_[vid].clear(); vertexNeighborList_[vid].shrink_to_fit();
+                            }
+                            break;
                     
-    //                     case RelationType::VERelation:
-    //                         for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
-    //                             vertexEdgeList_[vid].clear(); vertexEdgeList_[vid].shrink_to_fit();
-    //                         }
-    //                         break;
+                        case RelationType::VERelation:
+                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
+                                vertexEdgeList_[vid].clear(); vertexEdgeList_[vid].shrink_to_fit();
+                            }
+                            break;
                         
-    //                     case RelationType::VFRelation:
-    //                         for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
-    //                             vertexTriangleList_[vid].clear(); vertexTriangleList_[vid].shrink_to_fit();
-    //                         }
-    //                         break;
+                        case RelationType::VFRelation:
+                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
+                                vertexTriangleList_[vid].clear(); vertexTriangleList_[vid].shrink_to_fit();
+                            }
+                            break;
                         
-    //                     case RelationType::VTRelation:
-    //                         for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
-    //                             vertexStarList_[vid].clear(); vertexStarList_[vid].shrink_to_fit();
-    //                         }
-    //                         break;
+                        case RelationType::VTRelation:
+                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
+                                vertexStarList_[vid].clear(); vertexStarList_[vid].shrink_to_fit();
+                            }
+                            break;
 
-    //                     default:
-    //                         break;
-    //                 }
-    //                 // reset the base cluster of the thread to 0
-    //                 baseClusters_[static_cast<int>(relation)][i] = 0;
-    //             }
-    //         }
-    //     }
-    // }
+                        default:
+                            break;
+                    }
+                    // reset the base cluster of the thread to 0
+                    baseClusters_[static_cast<int>(relation)][i] = 0;
+                }
+            }
+        }
+    }
 }
 
 void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reorder) {
@@ -1142,7 +1141,13 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
         }
     }
     if (blockNum > 0) numBlocks_ = blockNum;
-    if (blockSize > 0) blockSize_ = blockSize;
+    if (blockSize > 0) {
+        blockSize_ = blockSize;
+        if (blockSize % threadsPerCluster_ != 0) {
+            std::cerr << "Block size " << blockSize << " is not divisible by threads per cluster " << threadsPerCluster_ << std::endl;
+            exit(EXIT_FAILURE); 
+        }
+    }
 
     if (reorder) {
         hIndexArray_ = new int[vertexNumber_];
@@ -1295,7 +1300,7 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
     // std::cout << "thread " << threadNumber_ << ": " << clusterNumber_ << std::endl;
 
     producer_ = std::thread(&Gale::assistProcedure, this);
-    printf("[Gale] Thread num per cluster: %d, Block number: %d, block size: %d, cluster number: %d, cell number: %d, vertex number: %d\n", threadsPerCluster_, numBlocks_, blockSize_, clusterNumber_, cellNumber_, vertexNumber_);
+    printf("[Gale] GPU threads per cluster: %d, thread num: %d, block number: %d, block size: %d, cluster number: %d, cell number: %d, vertex number: %d\n", threadsPerCluster_, threadNumber_, numBlocks_, blockSize_, clusterNumber_, cellNumber_, vertexNumber_);
 }
 
 
@@ -1417,12 +1422,6 @@ int Gale::reorderVertices(std::vector<SimplexId> &vertexMap) {
     } else {
         float *newPointSet = new float[3 * vertexNumber_];
         mempcpy(newPointSet, pointSet_, sizeof(float) * 3 * vertexNumber_);
-        // for(SimplexId vid = 0; vid < vertexNumber_; vid++) {
-        //     for(int j = 0; j < 3; j++) {
-        //     newPointSet[3 * vertexMap[vid] + j]
-        //         = ((float *)pointSet_)[3 * vid + j];
-        //     }
-        // }
         for(SimplexId vid = 0; vid < vertexNumber_; vid++) {
             for(int j = 0; j < 3; j++) {
                 ((float *)pointSet_)[3 * vertexMap[vid] + j] = newPointSet[3 * vid + j];
@@ -1519,8 +1518,9 @@ int Gale::preconditionEdgesInternal() {
         std::vector<std::vector<std::array<SimplexId, 2>>> clusterEdges(clusterNumber_);
         hEdgeIntervals_ = new int[clusterNumber_];
         hEdgeIntervals_[0] = 0;
-
+#ifdef TTK_ENABLE_OPENMP
 #pragma omp parallel for num_threads(threadNumber_)
+#endif
         for(SimplexId nid = 1; nid < clusterNumber_; nid++) {
             hEdgeIntervals_[nid] = buildInternalEdgeList(nid, clusterEdges);
         }
@@ -1554,7 +1554,9 @@ int Gale::preconditionTrianglesInternal() {
         hTriangleIntervals_[0] = 0;
 
         // use the producer threads to compute the triangles
+#ifdef TTK_ENABLE_OPENMP
 #pragma omp parallel for num_threads(threadNumber_)
+#endif
         for(SimplexId nid = 1; nid < clusterNumber_; nid++) {
             hTriangleIntervals_[nid] = buildInternalTriangleList(nid, clusterTriangles);
         }
@@ -1669,7 +1671,7 @@ int Gale::preconditionEdgesInternal() {
     // CHECK(cudaMalloc((void **) &dVertexNeighborSizes_, sizeof(int) * computedVertexNum));
     // CHECK(cudaMalloc((void **) &dVertexNeighborMatrix_, sizeof(int) * computedVertexNum * vvColumnNum));
 
-    // precomputeVertexNeighbors<<<numBlocks_, blockSize_>>>(
+    // computeVertexNeighbors<<<numBlocks_, blockSize_>>>(
     //     dVertexNeighborMatrix_, dVertexNeighborSizes_,
     //     1, clusterNumber_,
     //     dConnectivity_, dOffsets_, dIndexArray_,
@@ -1719,7 +1721,7 @@ int Gale::preconditionEdgesInternal() {
     // CHECK(cudaMalloc((void **) &dVertexStarSizes_, sizeof(int) * computedVertexNum));
     // CHECK(cudaMalloc((void **) &dVertexStarMatrix_, sizeof(int) * computedVertexNum * vvColumnNum));
 
-    // precomputeVertexStars<<<numBlocks_, blockSize_>>>(
+    // computeVertexStars<<<numBlocks_, blockSize_>>>(
     //     dVertexStarMatrix_, dVertexStarSizes_,
     //     1, clusterNumber_,
     //     dConnectivity_, dOffsets_, dIndexArray_,

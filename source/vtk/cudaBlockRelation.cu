@@ -275,7 +275,7 @@ int main(int argc, char const *argv[]) {
     // CHECK(cudaMalloc((void **)&dVertexEdgeMatrix, sizeof(int) * localVertexNum * veColumnNum));
     // CHECK(cudaMalloc((void **) &dVertexEdgeSize, sizeof(int) * localVertexNum));
 
-    // precomputeVertexEdges<<<numBlock, blockSize>>>(dVertexEdgeMatrix, dVertexEdgeSize, baseCluster, dConnectitity, dOffsets, dIndexArray, 
+    // computeVertexEdges<<<numBlock, blockSize>>>(dVertexEdgeMatrix, dVertexEdgeSize, baseCluster, dConnectitity, dOffsets, dIndexArray, 
     //                             dVertexIntervals, dCellIntervals, dExternalCells, dExternalCellOffsets, 3);
 
     // // cudaDeviceSynchronize();
@@ -315,7 +315,7 @@ int main(int argc, char const *argv[]) {
     CHECK(cudaMemset(dVertexStarMatrix, -1, sizeof(int) * localVertexNum * vtColumnNum));
     CHECK(cudaMemset(dVertexStarSize, 0, sizeof(int) * localVertexNum));
 
-    precomputeVertexStars<<<numBlock, blockSize>>>(dVertexStarMatrix, 
+    computeVertexStars<<<numBlock, blockSize>>>(dVertexStarMatrix, 
             dVertexStarSize, baseCluster, nodeNumber, 
             dConnectitity, dOffsets, dVertexIntervals, 
             dCellIntervals, dExternalCells, dExternalCellOffsets, 3, 1);
@@ -359,7 +359,7 @@ int main(int argc, char const *argv[]) {
     CHECK(cudaMemset(dVertexNeighborMatrix, -1, sizeof(int) * localVertexNum * vvColumnNum));
     CHECK(cudaMemset(dVertexNeighborSize, 0, sizeof(int) * localVertexNum));
 
-    precomputeVertexNeighbors<<<numBlock, blockSize>>>(
+    computeVertexNeighbors<<<numBlock, blockSize>>>(
                     dVertexNeighborMatrix, dVertexNeighborSize, 
                     baseCluster, nodeNumber, dConnectitity, dOffsets, 
                     dVertexIntervals, dCellIntervals, 
