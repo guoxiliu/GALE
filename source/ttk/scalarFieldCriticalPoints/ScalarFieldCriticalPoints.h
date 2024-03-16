@@ -69,7 +69,7 @@ namespace ttk {
     int executeProgressive(const SimplexId *const offsets,
                            const triangulationType *triangulation);
 
-    template <class triangulationType>
+    template <class triangulationType = AbstractTriangulation>
     void checkProgressivityRequirement(const triangulationType *triangulation);
 
     template <class triangulationType = AbstractTriangulation>

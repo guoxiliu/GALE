@@ -6,7 +6,7 @@
 namespace ttk {
   namespace ftm {
 
-    template <class triangulationType>
+    template <class triangulationType = AbstractTriangulation>
     void FTMTree_CT::build(const triangulationType *mesh, TreeType tt) {
       Timer mergeTreesTime;
 
@@ -107,7 +107,7 @@ namespace ttk {
 
 // ------------------------------------------------------------------------
 
-template <class triangulationType>
+template <class triangulationType = AbstractTriangulation>
 int FTMTree_CT::leafSearch(const triangulationType *mesh) {
   const auto nbScalars = scalars_->size;
   const auto chunkSize = getChunkSize();

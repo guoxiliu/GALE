@@ -204,38 +204,38 @@ int main(int argc, char *argv[])
     // We then reconstruct the global tree using an offest mecanism
     identify(inputDataSet);
 
-    // vtkNew<vtkConnectivityFilter> connectivity{};
-    // connectivity->SetInputData(inputDataSet);
-    // connectivity->SetExtractionModeToAllRegions();
-    // connectivity->ColorRegionsOn();
-    // connectivity->Update();
+    vtkNew<vtkConnectivityFilter> connectivity{};
+    connectivity->SetInputData(inputDataSet);
+    connectivity->SetExtractionModeToAllRegions();
+    connectivity->ColorRegionsOn();
+    connectivity->Update();
 
-    // nbCC_ = connectivity->GetOutput()
-    //           ->GetCellData()
-    //           ->GetArray("RegionId")
-    //           ->GetRange()[1]
-    //         + 1;
-    nbCC_ = 1;      // force the contour tree computation on the entire dataset
+    nbCC_ = connectivity->GetOutput()
+              ->GetCellData()
+              ->GetArray("RegionId")
+              ->GetRange()[1]
+            + 1;
     connected_components_.resize(nbCC_);
+    std::cout << "nbCC_: " << nbCC_ << std::endl;
 
-    // if(nbCC_ > 1) {
-    //   // Warning, in case of several connected components, the ids seen by
-    //   // the base code will not be consistent with those of the original
-    //   // mesh
-    //   for(int cc = 0; cc < nbCC_; cc++) {
-    //     vtkNew<vtkThreshold> threshold{};
-    //     threshold->SetInputConnection(connectivity->GetOutputPort());
-    //     threshold->SetInputArrayToProcess(
-    //       0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_CELLS, "RegionId");
-    //     threshold->ThresholdBetween(cc, cc);
-    //     threshold->Update();
-    //     connected_components_[cc] = vtkSmartPointer<vtkUnstructuredGrid>::New();
-    //     connected_components_[cc]->ShallowCopy(threshold->GetOutput());
-    //   }
-    // } else {
+    if(nbCC_ > 1) {
+      // Warning, in case of several connected components, the ids seen by
+      // the base code will not be consistent with those of the original
+      // mesh
+      for(int cc = 0; cc < nbCC_; cc++) {
+        vtkNew<vtkThreshold> threshold{};
+        threshold->SetInputConnection(connectivity->GetOutputPort());
+        threshold->SetInputArrayToProcess(
+          0, 0, 0, vtkDataObject::FIELD_ASSOCIATION_CELLS, "RegionId");
+        threshold->ThresholdBetween(cc, cc);
+        threshold->Update();
+        connected_components_[cc] = vtkSmartPointer<vtkUnstructuredGrid>::New();
+        connected_components_[cc]->ShallowCopy(threshold->GetOutput());
+      }
+    } else {
         connected_components_[0] = vtkSmartPointer<vtkUnstructuredGrid>::New();
         connected_components_[0]->ShallowCopy(inputDataSet);
-    // }
+    }
 
     setOrderArrays();
     // std::cout << "[FTMTree] Memory usage before preconditioning triangulation: " << m.getValue_in_MB(false) << " MB." << std::endl;

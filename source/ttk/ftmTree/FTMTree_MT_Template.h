@@ -36,7 +36,7 @@
 namespace ttk {
   namespace ftm {
 
-    template <class triangulationType>
+    template <class triangulationType = AbstractTriangulation>
     void FTMTree_MT::build(const triangulationType *mesh, const bool ct) {
       std::string treeString;
       // Comparator init (template)
@@ -85,7 +85,7 @@ namespace ttk {
 
     // ------------------------------------------------------------------------
 
-    template <class triangulationType>
+    template <class triangulationType = AbstractTriangulation>
     int FTMTree_MT::leafSearch(const triangulationType *mesh) {
       int ret = 0;
       // if not already computed by CT
@@ -150,7 +150,7 @@ namespace ttk {
 
     // ------------------------------------------------------------------------
 
-    template <class triangulationType>
+    template <class triangulationType = AbstractTriangulation>
     void FTMTree_MT::leafGrowth(const triangulationType *mesh) {
       _launchGlobalTime.reStart();
 
@@ -199,7 +199,7 @@ namespace ttk {
 
     // ------------------------------------------------------------------------
 
-    template <class triangulationType>
+    template <class triangulationType = AbstractTriangulation>
     void FTMTree_MT::arcGrowth(const triangulationType *mesh,
                                const SimplexId startVert,
                                const SimplexId orig) {
@@ -345,7 +345,7 @@ namespace ttk {
 
     // ------------------------------------------------------------------------
 
-    template <class triangulationType>
+    template <class triangulationType = AbstractTriangulation>
     std::tuple<bool, bool> FTMTree_MT::propage(const triangulationType *mesh,
                                                CurrentState &currentState,
                                                UF curUF) {
@@ -398,7 +398,7 @@ namespace ttk {
 
     // ------------------------------------------------------------------------
 
-    template <class triangulationType>
+    template <class triangulationType = AbstractTriangulation>
     SimplexId FTMTree_MT::trunk(const triangulationType *mesh, const bool ct) {
       Timer bbTimer;
 
@@ -457,7 +457,7 @@ namespace ttk {
 
     // ------------------------------------------------------------------------
 
-    template <class triangulationType>
+    template <class triangulationType = AbstractTriangulation>
     void FTMTree_MT::closeAndMergeOnSaddle(const triangulationType *mesh,
                                            SimplexId saddleVert) {
       idNode closeNode = makeNode(saddleVert);
@@ -486,7 +486,7 @@ namespace ttk {
 
     // ------------------------------------------------------------------------
 
-    template <class triangulationType>
+    template <class triangulationType = AbstractTriangulation>
     void FTMTree_MT::closeOnBackBone(const triangulationType *mesh,
                                      SimplexId saddleVert) {
       idNode closeNode = makeNode(saddleVert);

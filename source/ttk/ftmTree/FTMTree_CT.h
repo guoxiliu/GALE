@@ -93,10 +93,10 @@ namespace ttk {
       // PROCESS
       // -----------------
 
-      template <class triangulationType>
+      template <class triangulationType = AbstractTriangulation>
       int leafSearch(const triangulationType *mesh);
 
-      template <class triangulationType>
+      template <class triangulationType = AbstractTriangulation>
       void build(const triangulationType *mesh, TreeType tt);
 
       void insertNodes();

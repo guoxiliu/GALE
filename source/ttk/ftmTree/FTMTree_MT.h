@@ -125,7 +125,7 @@ namespace ttk {
       // Init
       // --------------------
 
-      template <class triangulationType>
+      template <class triangulationType = AbstractTriangulation>
       void initNbScalars(const triangulationType *triangulation) {
         scalars_->size = triangulation->getNumberOfVertices();
       }
@@ -223,39 +223,39 @@ namespace ttk {
       // -------------------
 
       /// \brief Compute the merge
-      template <class triangulationType>
+      template <class triangulationType = AbstractTriangulation>
       void build(const triangulationType *mesh, const bool ct);
 
       // extrema
 
-      template <class triangulationType>
+      template <class triangulationType = AbstractTriangulation>
       int leafSearch(const triangulationType *mesh);
 
       // skeleton
 
-      template <class triangulationType>
+      template <class triangulationType = AbstractTriangulation>
       void leafGrowth(const triangulationType *mesh);
 
-      template <class triangulationType>
+      template <class triangulationType = AbstractTriangulation>
       void arcGrowth(const triangulationType *mesh,
                      const SimplexId startVert,
                      const SimplexId orig);
 
-      template <class triangulationType>
+      template <class triangulationType = AbstractTriangulation>
       std::tuple<bool, bool> propage(const triangulationType *mesh,
                                      CurrentState &currentState,
                                      UF curUF);
 
-      template <class triangulationType>
+      template <class triangulationType = AbstractTriangulation>
       void closeAndMergeOnSaddle(const triangulationType *mesh,
                                  SimplexId saddleVert);
 
-      template <class triangulationType>
+      template <class triangulationType = AbstractTriangulation>
       void closeOnBackBone(const triangulationType *mesh, SimplexId saddleVert);
 
       void closeArcsUF(idNode closeNode, UF uf);
 
-      template <class triangulationType>
+      template <class triangulationType = AbstractTriangulation>
       SimplexId trunk(const triangulationType *mesh, const bool ct);
 
       virtual SimplexId
