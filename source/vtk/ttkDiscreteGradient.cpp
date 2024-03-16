@@ -58,8 +58,6 @@ int main(int argc, char *argv[])
     reader->SetFileName(fileName.c_str());
     reader->Update();
     
-    MemoryUsage m;
-
     int scalarFieldIndex = 0;
     vtkDataObject *inputDataObject = reader->GetOutput();
     if(!inputDataObject) {
@@ -94,6 +92,8 @@ int main(int argc, char *argv[])
         std::cout << "Default to array: '" << inputScalarField->GetName() << "'" << std::endl;
     }
 
+    MemoryUsage m;
+
     ttk::Gale gale(threadNumber, numThreadsPerCluster);
     if (blockNumber > 0 && blockSize > 0)
         gale.initialize(inputDataSet, blockNumber, blockSize);
@@ -102,9 +102,8 @@ int main(int argc, char *argv[])
     else 
         gale.initialize(inputDataSet);
 
-    std::vector<std::pair<ttk::SimplexId, char>> criticalPoints_;
-
     ttk::dcg::DiscreteGradient dgPlugin;
+    dgPlugin.setDebugLevel(3);
     dgPlugin.setThreadNumber(threadNumber);
     dgPlugin.preconditionTriangulation(&gale);
     
