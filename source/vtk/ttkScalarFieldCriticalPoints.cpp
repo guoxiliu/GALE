@@ -70,7 +70,7 @@ int main(int argc, char *argv[])
 
     ttk::Gale gale(threadNumber, numThreadsPerCluster);
     if (blockNumber > 0 && blockSize > 0)
-        gale.initialize(inputDataSet, blockNumber, blockSize, true);
+        gale.initialize(inputDataSet, blockNumber, blockSize, false);
     else if (blockNumber > 0)
         gale.initialize(inputDataSet, blockNumber);
     else 

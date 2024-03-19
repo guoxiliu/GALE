@@ -46,6 +46,8 @@ Gale::~Gale() {
     if (hTriangleIntervals_ != nullptr) free(hTriangleIntervals_);
     if (hEdgeIntervals_ != nullptr) free(hEdgeIntervals_);
     if (hVertexIntervals_ != nullptr) free(hVertexIntervals_);
+    if (hExternalCells_ != nullptr) delete[] hExternalCells_;
+    if (hExternalCellOffsets_ != nullptr) delete[] hExternalCellOffsets_;
 
     // relation matrices on host and device memory get freed during the computation
 
@@ -303,11 +305,73 @@ int Gale::computeRelation(const RelationType relation,
     int totalBlocks = numBlocks_ * blockSize_;
 
     switch (relation) {
+        case RelationType::BERelation: 
+        {
+            int edgeIdOffset = hEdgeIntervals_[clusterId - 1];
+            int endCluster = std::min(clusterId + totalBlocks / threadsPerCluster_, clusterNumber_) - 1;
+            int localEdgeNum = hEdgeIntervals_[endCluster] - edgeIdOffset;
+            bool *dBoundaryEdgeList;
+            int *dEdgeList, *dTriangleList; 
+            CHECK(cudaMalloc((void **)&dEdgeList, sizeof(SimplexId) * localEdgeNum * 2));
+            CHECK(cudaMalloc((void **)&dTriangleList, sizeof(SimplexId) * hTriangleIntervals_[endCluster] * 3));
+            CHECK(cudaMalloc((void **)&dBoundaryEdgeList, sizeof(bool) * localEdgeNum));
+            CHECK(cudaMemcpy(dEdgeList, edgeList_.data() + edgeIdOffset, sizeof(SimplexId) * localEdgeNum * 2, cudaMemcpyHostToDevice));
+            CHECK(cudaMemcpy(dTriangleList, triangleList_.data(), sizeof(SimplexId) * hTriangleIntervals_[endCluster] * 3, cudaMemcpyHostToDevice));
+            CHECK(cudaMemset(dBoundaryEdgeList, false, sizeof(bool) * localEdgeNum));
+
+            computeBoundaryEdges<<<numBlocks_, blockSize_>>>(
+                dEdgeList, dTriangleList, 
+                dBoundaryEdgeList, dBoundaryTriangles_,
+                clusterId, clusterNumber_,
+                dConnectivity_, dOffsets_, dIndexArray_,
+                dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
+                dExternalCells_, dExternalCellOffsets_, 
+                cellDimension_, threadsPerCluster_);
+
+            bool *hBoundaryEdgeList = new bool[localEdgeNum];
+
+            cudaError_t status = cudaDeviceSynchronize();
+            if (status != cudaSuccess) {
+                fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(status),
+                        __FILE__, __LINE__);
+                if (abort)
+                    exit(status);
+            }
+
+            CHECK(cudaMemcpy(hBoundaryEdgeList, dBoundaryEdgeList, sizeof(bool) * localEdgeNum, cudaMemcpyDeviceToHost));
+
+            std::unique_lock<std::mutex> lck(BEMutex_);
+            for (int i = clusterId; i <= endCluster; ++i) {
+                if (clusterBoundaryEdges_[i].empty()) {
+                    clusterBoundaryEdges_[i].resize(hEdgeIntervals_[i] - hEdgeIntervals_[i-1]);
+                    int idOffset = hEdgeIntervals_[i-1] - edgeIdOffset;
+                    for (int j = 0; j < clusterBoundaryEdges_[i].size(); ++j) {
+                        clusterBoundaryEdges_[i][j] = hBoundaryEdgeList[j + idOffset];
+                    }
+                }
+            }
+            baseClusters_[relationId][threadId] = clusterId;
+
+            lck.unlock();
+            if (signal) {
+                // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+                // else res = 1;
+                sem_post(&relationSems_[threadId]);
+            }
+
+            CHECK(cudaFree(dEdgeList));
+            CHECK(cudaFree(dTriangleList));
+            CHECK(cudaFree(dBoundaryEdgeList));
+
+            delete[] hBoundaryEdgeList;
+            break;
+        }
+
         case RelationType::BVRelation: 
         {
             int vertexIdOffset = hVertexIntervals_[clusterId - 1];
             int endCluster = std::min(clusterId + totalBlocks / threadsPerCluster_, clusterNumber_) - 1;
-            int localVertexNum = hVertexIntervals_[endCluster] - hVertexIntervals_[clusterId - 1];
+            int localVertexNum = hVertexIntervals_[endCluster] - vertexIdOffset;
             bool *dBoundaryVertexList;
             int *dTriangleList; 
             CHECK(cudaMalloc((void **)&dTriangleList, sizeof(SimplexId) * hTriangleIntervals_[endCluster] * 3));
@@ -322,7 +386,6 @@ int Gale::computeRelation(const RelationType relation,
                 dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
-            // }
 
             bool *hBoundaryVertexList = new bool[localVertexNum];
 
@@ -683,7 +746,6 @@ int Gale::computeRelation(const RelationType relation,
                 dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
-            // }
 
             hVertexTriangleSizes_ = new int[localVertexNum];
             hVertexTriangleMatrix_ = new int[localVertexNum * vfColumnNum];
@@ -853,6 +915,81 @@ int Gale::computeCombinedRelation(const RelationType relation,
     int gpuThreads = blockSize_ / threadsPerCluster_ * gpuBlocks;
 
     switch (relation) {
+
+        case RelationType::BERelation:
+        {
+            int localEdgeSum = 0;
+            int hEdgeOffsets[threadNum];
+            int hClusterIds[threadNum];
+            int endClusters[threadNum];
+            int maxEndCluster = 0;
+            for (int i = 0; i < threadNum; ++i) {
+                hEdgeOffsets[i] = localEdgeSum;
+                hClusterIds[i] = requests[i].second;
+                endClusters[i] = std::min(hClusterIds[i] + gpuThreads, clusterNumber_) - 1;
+                maxEndCluster = std::max(endClusters[i], maxEndCluster);
+                int localEdgeNum = hEdgeIntervals_[endClusters[i]] - hEdgeIntervals_[hClusterIds[i] - 1];
+                localEdgeSum += localEdgeNum;
+            }
+            bool *dBoundaryEdgeList;
+            int *dEdgeList, *dTriangleList, *dClusterIds, *dEdgeOffsets; 
+            CHECK(cudaMalloc((void **)&dEdgeList, sizeof(SimplexId) * hEdgeIntervals_[maxEndCluster] * 2));
+            CHECK(cudaMalloc((void **)&dTriangleList, sizeof(SimplexId) * hTriangleIntervals_[maxEndCluster] * 3));
+            CHECK(cudaMalloc((void **)&dClusterIds, sizeof(int) * threadNum));
+            CHECK(cudaMalloc((void **)&dEdgeOffsets, sizeof(int) * threadNum));
+            CHECK(cudaMalloc((void **)&dBoundaryEdgeList, sizeof(bool) * localEdgeSum));
+            CHECK(cudaMemcpy(dEdgeList, edgeList_.data(), sizeof(SimplexId) * hEdgeIntervals_[maxEndCluster] * 2, cudaMemcpyHostToDevice));
+            CHECK(cudaMemcpy(dTriangleList, triangleList_.data(), sizeof(SimplexId) * hTriangleIntervals_[maxEndCluster] * 3, cudaMemcpyHostToDevice));
+            CHECK(cudaMemcpy(dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice));
+            CHECK(cudaMemcpy(dEdgeOffsets, hEdgeOffsets, sizeof(int) * threadNum, cudaMemcpyHostToDevice));
+            CHECK(cudaMemset(dBoundaryEdgeList, false, sizeof(bool) * localEdgeSum));
+
+            dim3 dimBlock(threadNum, gpuBlocks);
+            computeMultiBoundaryEdges<<<dimBlock, blockSize_>>>(
+                dEdgeList, dTriangleList,
+                dBoundaryEdgeList, dBoundaryTriangles_,
+                clusterNumber_, dClusterIds, dEdgeOffsets,
+                dConnectivity_, dOffsets_, dIndexArray_,
+                dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
+                dExternalCells_, dExternalCellOffsets_, 
+                cellDimension_, threadsPerCluster_);
+
+            bool *hBoundaryEdgeList = new bool[localEdgeSum];
+
+            cudaError_t status = cudaDeviceSynchronize();
+            if (status != cudaSuccess) {
+                fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(status),
+                        __FILE__, __LINE__);
+                if (abort)
+                    exit(status);
+            }
+
+            CHECK(cudaMemcpy(hBoundaryEdgeList, dBoundaryEdgeList, sizeof(bool) * localEdgeSum, cudaMemcpyDeviceToHost));
+
+            for (int i = 0; i < threadNum; ++i) {
+                for (int j = hClusterIds[i]; j <= endClusters[i]; ++j) {
+                    if (!clusterBoundaryEdges_[j].empty()) continue;
+                    int localEdgeNum = hEdgeIntervals_[j] - hEdgeIntervals_[j-1];
+                    int relativeEid= hEdgeIntervals_[j - 1] - hEdgeIntervals_[hClusterIds[i] - 1] + hEdgeOffsets[i];
+                    for (int vid = 0; vid < localEdgeNum; ++vid) {
+                        clusterBoundaryEdges_[j].push_back(hBoundaryEdgeList[relativeEid++]);
+                    }
+                }
+                if (baseClusters_[relationId][requests[i].first] == 0)
+                    baseClusters_[relationId][requests[i].first] = hClusterIds[i];
+                sem_post(&relationSems_[requests[i].first]);
+            }
+
+            CHECK(cudaFree(dEdgeList));
+            CHECK(cudaFree(dTriangleList));
+            CHECK(cudaFree(dClusterIds));
+            CHECK(cudaFree(dEdgeOffsets));
+            CHECK(cudaFree(dBoundaryEdgeList));
+
+            delete[] hBoundaryEdgeList;
+            break;
+        }
+
         case RelationType::BVRelation: 
         {
             int localVertexSum = 0;
@@ -888,7 +1025,6 @@ int Gale::computeCombinedRelation(const RelationType relation,
                 dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
-            // }
 
             bool *hBoundaryVertexList = new bool[localVertexSum];
 
@@ -1491,6 +1627,90 @@ void Gale::assistProcedure() {
                     //     // std::cout << "precomputing for thread " << i << " cluster = " << leaderCluster << " diff = " << diff << std::endl;
                     //     computeRelation(leaderFunc, leaderCluster, i, false);
                     // }
+                    
+                    SimplexId startCluster = baseClusters_[static_cast<int>(leaderFunc)][0];
+                    if (startCluster == 0) continue;
+                    SimplexId endCluster = std::max(leaderCluster - 5, 1);
+                    // different relations correspond to different vectors
+                    switch (leaderFunc)
+                    {
+                        case RelationType::BVRelation:
+                        {
+                            for (int cid = startCluster; cid <= endCluster; ++cid) {
+                                std::vector<bool>().swap(clusterBoundaryVertices_[cid]);
+                            }
+                            break;
+                        }
+
+                        case RelationType::BERelation:
+                        {
+                            for (int cid = startCluster; cid <= endCluster; ++cid) {
+                                std::vector<bool>().swap(clusterBoundaryEdges_[cid]);
+                            }
+                            break;
+                        }
+                        
+                        case RelationType::EFRelation:
+                        {
+                            for (int eid = hEdgeIntervals_[startCluster-1]; eid < hEdgeIntervals_[endCluster]; ++eid) {
+                                edgeTriangleList_[eid].clear(); edgeTriangleList_[eid].shrink_to_fit();
+                            }
+                            break;
+                        }
+                        
+                        case RelationType::ETRelation:
+                        {
+                            for (int eid = hEdgeIntervals_[startCluster-1]; eid < hEdgeIntervals_[endCluster]; ++eid) {
+                                edgeStarList_[eid].clear(); edgeStarList_[eid].shrink_to_fit();
+                            }
+                            break;
+                        }
+                        
+                        case RelationType::FTRelation:
+                        {
+                            for (int fid = hTriangleIntervals_[startCluster-1]; fid < hTriangleIntervals_[endCluster]; ++fid) {
+                                triangleStarList_[fid].clear(); triangleStarList_[fid].shrink_to_fit();
+                            }
+                            break;
+                        }
+
+                        case RelationType::VVRelation:
+                        {
+                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster]; ++vid) {
+                                vertexNeighborList_[vid].clear(); vertexNeighborList_[vid].shrink_to_fit();
+                            }
+                            break;
+                        }
+                        
+                        case RelationType::VERelation:
+                        {
+                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster]; ++vid) {
+                                vertexEdgeList_[vid].clear(); vertexEdgeList_[vid].shrink_to_fit();
+                            }
+                            break;
+                        }
+
+                        case RelationType::VFRelation:
+                        {
+                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster]; ++vid) {
+                                vertexTriangleList_[vid].clear(); vertexTriangleList_[vid].shrink_to_fit();
+                            }
+                            break;
+                        }
+
+                        case RelationType::VTRelation:
+                        {
+                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster]; ++vid) {
+                                vertexStarList_[vid].clear(); vertexStarList_[vid].shrink_to_fit();
+                            }
+                            break;
+                        }
+
+                        default:
+                            break;
+                    }
+                    // reset the base cluster of the thread to 0
+                    baseClusters_[static_cast<int>(leaderFunc)][0] = 0;
             }
         }
     }
@@ -1523,42 +1743,92 @@ void Gale::assistProcedure() {
                     if (endCluster < 0) return;
                     else if (endCluster == 0) continue;
                     if (!jobQueue.empty()) break;
-                    RelationType relation = currRelations_[i];
-                    SimplexId startCluster = baseClusters_[static_cast<int>(relation)][i];
-                    // endCluster = (endCluster - startCluster) * removalRatio + startCluster;
-                    if (startCluster == 0) continue;
-                    // different relations correspond to different vectors
-                    switch (relation)
-                    {
-                        case RelationType::VVRelation:
-                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
-                                vertexNeighborList_[vid].clear(); vertexNeighborList_[vid].shrink_to_fit();
+                    for (RelationType &relation : preconditionedRelations_) {
+                        SimplexId startCluster = baseClusters_[static_cast<int>(relation)][i];
+                        // endCluster = (endCluster - startCluster) * removalRatio + startCluster;
+                        if (startCluster == 0) continue;
+                        // different relations correspond to different vectors
+                        switch (relation)
+                        {
+                            case RelationType::BVRelation:
+                            {
+                                for (int cid = startCluster; cid < endCluster - 5; ++cid) {
+                                    std::vector<bool>().swap(clusterBoundaryVertices_[cid]);
+                                }
+                                break;
                             }
-                            break;
-                    
-                        case RelationType::VERelation:
-                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
-                                vertexEdgeList_[vid].clear(); vertexEdgeList_[vid].shrink_to_fit();
-                            }
-                            break;
-                        
-                        case RelationType::VFRelation:
-                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
-                                vertexTriangleList_[vid].clear(); vertexTriangleList_[vid].shrink_to_fit();
-                            }
-                            break;
-                        
-                        case RelationType::VTRelation:
-                            for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
-                                vertexStarList_[vid].clear(); vertexStarList_[vid].shrink_to_fit();
-                            }
-                            break;
 
-                        default:
-                            break;
+                            case RelationType::BERelation:
+                            {
+                                for (int cid = startCluster; cid < endCluster - 5; ++cid) {
+                                    std::vector<bool>().swap(clusterBoundaryEdges_[cid]);
+                                }
+                                break;
+                            }
+                            
+                            case RelationType::EFRelation:
+                            {
+                                for (int eid = hEdgeIntervals_[startCluster-1]; eid < hEdgeIntervals_[endCluster-5]; ++eid) {
+                                    std::vector<int>().swap(edgeTriangleList_[eid]);
+                                }
+                                break;
+                            }
+                            
+                            case RelationType::ETRelation:
+                            {
+                                for (int eid = hEdgeIntervals_[startCluster-1]; eid < hEdgeIntervals_[endCluster-5]; ++eid) {
+                                    std::vector<int>().swap(edgeStarList_[eid]);
+                                }
+                                break;
+                            }
+                            
+                            case RelationType::FTRelation:
+                            {
+                                for (int fid = hTriangleIntervals_[startCluster-1]; fid < hTriangleIntervals_[endCluster-5]; ++fid) {
+                                    std::vector<int>().swap(triangleStarList_[fid]);
+                                }
+                                break;
+                            }
+
+                            case RelationType::VVRelation:
+                            {
+                                for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
+                                    std::vector<int>().swap(vertexNeighborList_[vid]);
+                                }
+                                break;
+                            }
+                        
+                            case RelationType::VERelation:
+                            {
+                                for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
+                                    std::vector<int>().swap(vertexEdgeList_[vid]);
+                                }
+                                break;
+                            }
+
+                            case RelationType::VFRelation:
+                            {
+                                for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
+                                    std::vector<int>().swap(vertexTriangleList_[vid]);
+                                }
+                                break;
+                            }
+
+                            case RelationType::VTRelation:
+                            {
+                                for (int vid = hVertexIntervals_[startCluster-1]; vid < hVertexIntervals_[endCluster-5]; ++vid) {
+                                    std::vector<int>().swap(vertexStarList_[vid]);
+                                }
+                                break;
+                            }
+                            
+                            default:
+                                break;
+                            
+                            // reset the base cluster of the thread to 0
+                            baseClusters_[static_cast<int>(relation)][i] = 0;
+                        }
                     }
-                    // reset the base cluster of the thread to 0
-                    baseClusters_[static_cast<int>(relation)][i] = 0;
                 }
             }
         }
@@ -2005,7 +2275,7 @@ int Gale::preconditionEdgesInternal() {
         hEdgeIntervals_ = new int[clusterNumber_];
         hEdgeIntervals_[0] = 0;
 #ifdef TTK_ENABLE_OPENMP
-#pragma omp parallel for num_threads(threadNumber_)
+#pragma omp parallel for num_threads(threadNumber_) schedule(dynamic)
 #endif
         for(SimplexId nid = 1; nid < clusterNumber_; nid++) {
             hEdgeIntervals_[nid] = buildInternalEdgeList(nid, clusterEdges);
@@ -2041,7 +2311,7 @@ int Gale::preconditionTrianglesInternal() {
 
         // use the producer threads to compute the triangles
 #ifdef TTK_ENABLE_OPENMP
-#pragma omp parallel for num_threads(threadNumber_)
+#pragma omp parallel for num_threads(threadNumber_) schedule(dynamic)
 #endif
         for(SimplexId nid = 1; nid < clusterNumber_; nid++) {
             hTriangleIntervals_[nid] = buildInternalTriangleList(nid, clusterTriangles);

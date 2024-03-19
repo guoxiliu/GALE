@@ -24,7 +24,7 @@ using ttkSimplexIdTypeArray = vtkIntArray;
 void *GetVoidPointer(vtkDataArray *array, vtkIdType start = 0) {
     void *outPtr = nullptr;
     if(array == nullptr)
-    return outPtr;
+        return outPtr;
 
     switch(array->GetDataType()) {
     vtkTemplateMacro(
@@ -34,6 +34,19 @@ void *GetVoidPointer(vtkDataArray *array, vtkIdType start = 0) {
     return outPtr;
 }
 
+void SetVoidArray(vtkDataArray *array,
+                    void *data,
+                    vtkIdType size,
+                    int save) {
+  switch(array->GetDataType()) {
+    vtkTemplateMacro(
+      auto *aosArray = vtkAOSDataArrayTemplate<VTK_TT>::FastDownCast(array);
+      if(aosArray) { aosArray->SetVoidArray(data, size, save); } else {
+        std::cerr << "SetVoidArray on incompatible vtkDataArray:" << endl;
+        array->Print(std::cerr);
+      });
+  }
+}
 
 std::string GetOrderArrayName(vtkDataArray *const array) {
     return std::string(array->GetName()) + "_Order";
@@ -97,7 +110,7 @@ vtkDataArray *GetOrderArray(vtkDataSet *const inputData,
         return scalarArray;
     }
 
-    auto orderArray = inputData->GetAttributesAsFieldData(scalarArrayIdx)
+    auto orderArray = inputData->GetAttributesAsFieldData(vtkDataObject::AttributeTypes::POINT)
                                 ->GetArray(GetOrderArrayName(scalarArray).data());
 
     switch(isValidOrderArray(orderArray)) {
@@ -120,7 +133,7 @@ vtkDataArray *GetOrderArray(vtkDataSet *const inputData,
             }
 
             // append order array temporarily to input
-            inputData->GetAttributesAsFieldData(scalarArrayIdx)->AddArray(newOrderArray);
+            inputData->GetAttributesAsFieldData(vtkDataObject::AttributeTypes::POINT)->AddArray(newOrderArray);
 
             std::cout << "TIP: run `ttkArrayPreconditioning` first for improved performances :)" << std::endl;
 

@@ -26,7 +26,7 @@ using ttk::dcg::DiscreteGradient;
 using ttk::dcg::SaddleSaddleVPathComparator;
 using ttk::dcg::VPath;
 
-template <typename dataType, typename triangulationType>
+template <typename dataType, typename triangulationType = AbstractTriangulation>
 dataType DiscreteGradient::getPersistence(
   const Cell &up,
   const Cell &down,
@@ -46,11 +46,11 @@ int DiscreteGradient::buildGradient(const triangulationType &triangulation) {
 
   this->printMsg(
     "Built discrete gradient", 1.0, t.getElapsedTime(), this->threadNumber_);
-
+  
   return 0;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::setCriticalPoints(
   const std::vector<Cell> &criticalPoints,
   std::vector<size_t> &nCriticalPointsByDim,
@@ -112,7 +112,7 @@ int DiscreteGradient::setCriticalPoints(
   return 0;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::setCriticalPoints(
   std::vector<std::array<float, 3>> &points,
   std::vector<char> &cellDimensions,
@@ -131,7 +131,7 @@ int DiscreteGradient::setCriticalPoints(
   return 0;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::getCriticalPoints(
   std::vector<Cell> &criticalPoints,
   const triangulationType &triangulation) const {
@@ -154,7 +154,7 @@ int DiscreteGradient::getCriticalPoints(
   return 0;
 }
 
-template <typename dataType, typename triangulationType>
+template <typename dataType, typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::getRemovableMaxima(
   const std::vector<std::pair<SimplexId, char>> &criticalPoints,
   const bool allowBoundary,
@@ -221,7 +221,7 @@ int DiscreteGradient::getRemovableMaxima(
   return 0;
 }
 
-template <typename dataType, typename triangulationType>
+template <typename dataType, typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::getRemovableSaddles1(
   const std::vector<std::pair<SimplexId, char>> &criticalPoints,
   const bool allowBoundary,
@@ -284,7 +284,7 @@ int DiscreteGradient::getRemovableSaddles1(
   return 0;
 }
 
-template <typename dataType, typename triangulationType>
+template <typename dataType, typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::getRemovableSaddles2(
   const std::vector<std::pair<SimplexId, char>> &criticalPoints,
   const bool allowBoundary,
@@ -347,7 +347,7 @@ int DiscreteGradient::getRemovableSaddles2(
   return 0;
 }
 
-template <typename dataType, typename triangulationType>
+template <typename dataType, typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::initializeSaddleSaddleConnections1(
   const std::vector<char> &isRemovableSaddle1,
   const std::vector<char> &isRemovableSaddle2,
@@ -502,7 +502,7 @@ int DiscreteGradient::orderSaddleSaddleConnections1(
   return 0;
 }
 
-template <typename dataType, typename triangulationType>
+template <typename dataType, typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::processSaddleSaddleConnections1(
   const int iterationThreshold,
   const std::vector<char> &isPL,
@@ -888,7 +888,7 @@ int DiscreteGradient::processSaddleSaddleConnections1(
   return 0;
 }
 
-template <typename dataType, typename triangulationType>
+template <typename dataType, typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::simplifySaddleSaddleConnections1(
   const std::vector<std::pair<SimplexId, char>> &criticalPoints,
   const std::vector<char> &isPL,
@@ -941,7 +941,7 @@ int DiscreteGradient::simplifySaddleSaddleConnections1(
   return 0;
 }
 
-template <typename dataType, typename triangulationType>
+template <typename dataType, typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::initializeSaddleSaddleConnections2(
   const std::vector<char> &isRemovableSaddle1,
   const std::vector<char> &isRemovableSaddle2,
@@ -1095,7 +1095,7 @@ int DiscreteGradient::orderSaddleSaddleConnections2(
   return 0;
 }
 
-template <typename dataType, typename triangulationType>
+template <typename dataType, typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::processSaddleSaddleConnections2(
   const int iterationThreshold,
   const std::vector<char> &isPL,
@@ -1481,7 +1481,7 @@ int DiscreteGradient::processSaddleSaddleConnections2(
   return 0;
 }
 
-template <typename dataType, typename triangulationType>
+template <typename dataType, typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::simplifySaddleSaddleConnections2(
   const std::vector<std::pair<SimplexId, char>> &criticalPoints,
   const std::vector<char> &isPL,
@@ -1534,7 +1534,7 @@ int DiscreteGradient::simplifySaddleSaddleConnections2(
   return 0;
 }
 
-template <typename dataType, typename triangulationType>
+template <typename dataType, typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::filterSaddleConnectors(
   const bool allowBoundary, const triangulationType &triangulation) {
 
@@ -1603,10 +1603,11 @@ int DiscreteGradient::filterSaddleConnectors(
   return 0;
 }
 
-template <typename dataType, typename triangulationType>
+template <typename dataType, typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::reverseGradient(const triangulationType &triangulation,
                                       bool detectCriticalPoints) {
 
+  std::cout << "In reverse gradient" << std::endl;
   std::vector<std::pair<SimplexId, char>> criticalPoints{};
 
   if(detectCriticalPoints) {
@@ -1683,7 +1684,7 @@ int DiscreteGradient::reverseGradient(const triangulationType &triangulation,
   return 0;
 }
 
-template <typename dataType, typename triangulationType>
+template <typename dataType, typename triangulationType = AbstractTriangulation>
 void DiscreteGradient::computeSaddleSaddlePersistencePairs(
   std::vector<std::tuple<SimplexId, SimplexId, dataType>> &pl_saddleSaddlePairs,
   const triangulationType &triangulation) {
@@ -1718,7 +1719,7 @@ void DiscreteGradient::computeSaddleSaddlePersistencePairs(
   }
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 SimplexId DiscreteGradient::getNumberOfCells(
   const int dimension, const triangulationType &triangulation) const {
 
@@ -1747,7 +1748,7 @@ SimplexId DiscreteGradient::getNumberOfCells(
   return -1;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 inline void
   DiscreteGradient::lowerStar(lowerStarType &ls,
                               const SimplexId a,
@@ -1908,7 +1909,7 @@ inline void
   return;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 inline void DiscreteGradient::pairCells(
   CellExt &alpha, CellExt &beta, const triangulationType &triangulation) {
 #ifdef TTK_ENABLE_DCG_OPTIMIZE_MEMORY
@@ -1973,12 +1974,11 @@ inline void DiscreteGradient::pairCells(
   beta.paired_ = true;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::processLowerStars(
   const SimplexId *const offsets, const triangulationType &triangulation) {
 
   /* Compute gradient */
-
   auto nverts = triangulation.getNumberOfVertices();
 
   // Comparison function for Cells inside priority queues
@@ -2122,7 +2122,7 @@ int DiscreteGradient::processLowerStars(
   return 0;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 bool DiscreteGradient::isBoundary(
   const Cell &cell, const triangulationType &triangulation) const {
 
@@ -2173,7 +2173,7 @@ bool DiscreteGradient::isBoundary(
   return false;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 SimplexId
   DiscreteGradient::getPairedCell(const Cell &cell,
                                   const triangulationType &triangulation,
@@ -2250,7 +2250,7 @@ SimplexId
   return id;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::getDescendingPath(
   const Cell &cell,
   std::vector<Cell> &vpath,
@@ -2298,7 +2298,7 @@ int DiscreteGradient::getDescendingPath(
   return 0;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 bool DiscreteGradient::getDescendingPathThroughWall(
   const Cell &saddle2,
   const Cell &saddle1,
@@ -2404,7 +2404,7 @@ bool DiscreteGradient::getDescendingPathThroughWall(
   return false;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::getAscendingPath(const Cell &cell,
                                        std::vector<Cell> &vpath,
                                        const triangulationType &triangulation,
@@ -2523,7 +2523,7 @@ int DiscreteGradient::getAscendingPath(const Cell &cell,
   return 0;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 bool DiscreteGradient::getAscendingPathThroughWall(
   const Cell &saddle1,
   const Cell &saddle2,
@@ -2634,7 +2634,7 @@ bool DiscreteGradient::getAscendingPathThroughWall(
   return false;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::getDescendingWall(
   const Cell &cell,
   VisitedMask &mask,
@@ -2687,7 +2687,7 @@ int DiscreteGradient::getDescendingWall(
   return 0;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::getAscendingWall(
   const Cell &cell,
   VisitedMask &mask,
@@ -2742,7 +2742,7 @@ int DiscreteGradient::getAscendingWall(
   return 0;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::reverseAscendingPath(
   const std::vector<Cell> &vpath, const triangulationType &triangulation) {
 
@@ -2810,7 +2810,7 @@ int DiscreteGradient::reverseAscendingPath(
   return 0;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::reverseDescendingPath(
   const std::vector<Cell> &vpath, const triangulationType &triangulation) {
 
@@ -2848,7 +2848,7 @@ int DiscreteGradient::reverseDescendingPath(
   return 0;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::reverseAscendingPathOnWall(
   const std::vector<Cell> &vpath, const triangulationType &triangulation) {
 
@@ -2887,7 +2887,7 @@ int DiscreteGradient::reverseAscendingPathOnWall(
   return 0;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::reverseDescendingPathOnWall(
   const std::vector<Cell> &vpath, const triangulationType &triangulation) {
 
@@ -2926,7 +2926,7 @@ int DiscreteGradient::reverseDescendingPathOnWall(
   return 0;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 ttk::SimplexId DiscreteGradient::getCellGreaterVertex(
   const Cell c, const triangulationType &triangulation) const {
 
@@ -2989,7 +2989,7 @@ ttk::SimplexId DiscreteGradient::getCellGreaterVertex(
   return vertexId;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 ttk::SimplexId DiscreteGradient::getCellLowerVertex(
   const Cell c, const triangulationType &triangulation) const {
 
@@ -3052,7 +3052,7 @@ ttk::SimplexId DiscreteGradient::getCellLowerVertex(
   return vertexId;
 }
 
-template <typename triangulationType>
+template <typename triangulationType = AbstractTriangulation>
 int DiscreteGradient::setGradientGlyphs(
   std::vector<std::array<float, 3>> &points,
   std::vector<char> &points_pairOrigins,

@@ -159,6 +159,89 @@ __global__ void computeVertexCells(int *vertexCellSize, const vtkIdType *connect
 }
 
 /**
+ * Compute the boundary edge list
+*/
+__global__ void computeBoundaryEdges(int *edgeList, int *triangleList,
+            bool *boundaryEdges, bool *boundaryTriangles, 
+            const int baseCluster, const int clusterNumber,
+            const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
+            const int *vertexIntervals, const int *edgeIntervals, const int *triangleIntervals,
+            const int *externalCells, const int *externalCellOffsets, 
+            const int dimension, const int numThreadsPerCluster) {
+
+    // multiple threads compute one cluster
+    int tid = (blockIdx.x * blockDim.x + threadIdx.x) / numThreadsPerCluster + baseCluster;
+    if (tid >= clusterNumber) return;
+
+    /*
+    * divide the job by clusters
+    */
+    const int startVertexId= vertexIntervals[tid-1];
+    const int endVertexId = vertexIntervals[tid];
+    const int baseEdgeId = edgeIntervals[baseCluster - 1];
+    const int startEdgeId = edgeIntervals[tid-1] - baseEdgeId;
+    const int endEdgeId = edgeIntervals[tid] - baseEdgeId;
+
+    // printf("threadIdx.x: %d, tid: %d, startEdgeId: %d, endEdgeId: %d\n", threadIdx.x, tid, startEdgeId, endEdgeId);
+
+    // loop through the external cell list
+    int clusterStartCellId = externalCellOffsets[tid - 1];
+    int clusterEndCellId = externalCellOffsets[tid];
+    int cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
+    int startCellId = clusterStartCellId + (threadIdx.x % numThreadsPerCluster) * cellsPerThread;
+    int endCellId = (threadIdx.x % numThreadsPerCluster == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
+
+    for (int i = startCellId; i < endCellId; ++i) {
+        int cid = externalCells[i];
+        int cellId = offsets[cid];
+        for (int vi = 0; vi < dimension - 1; ++vi) {
+            int selectedTriangle[3] = {static_cast<int>(connectivity[cellId + vi])};
+            if (selectedTriangle[0] < startVertexId) {
+                for (int vj = vi+1; vj < dimension; ++vj) {
+                    selectedTriangle[1] = static_cast<int>(connectivity[cellId + vj]);
+                    if (selectedTriangle[1] >= startVertexId && selectedTriangle[1] < endVertexId) {
+                        for (int vk = vj+1; vk <= dimension; ++vk) {
+                            selectedTriangle[2] = static_cast<int>(connectivity[cellId + vk]);
+                            int exCluster = indexArray[selectedTriangle[0]];
+                            int triangleId = binarySearch<3>(triangleList, triangleIntervals[exCluster-1], triangleIntervals[exCluster], selectedTriangle);
+                            if (boundaryTriangles[triangleId]) {
+                                int selectedEdge[2] = {selectedTriangle[1], selectedTriangle[2]};
+                                int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge);
+                                boundaryEdges[relativeEid] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // determine the range of internal triangles
+    clusterStartCellId = triangleIntervals[tid - 1];
+    clusterEndCellId = triangleIntervals[tid];
+    cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
+    startCellId = clusterStartCellId + (threadIdx.x % numThreadsPerCluster) * cellsPerThread;
+    endCellId = (threadIdx.x % numThreadsPerCluster == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
+
+    // loop through the internal cell list
+    for (int triangleId = startCellId; triangleId < endCellId; ++triangleId) {
+        if (boundaryTriangles[triangleId]) {
+            int cellId = triangleId * 3;
+            for (int vi = 0; vi < 2; ++vi) {
+                int selectedEdge[2] = {triangleList[cellId + vi]};
+                if (selectedEdge[0] < endVertexId) {
+                    for (int vj = vi+1; vj < 3; ++vj) {
+                        selectedEdge[1] = triangleList[cellId + vj];
+                        int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge);
+                        boundaryEdges[relativeEid] = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
  * Compute the boundary triangle list.
 */
 __global__ void computeBoundaryTriangles(int *triangleList, int *triangleStarMatrix, 
@@ -265,9 +348,6 @@ __global__ void computeBoundaryVertices(int *triangleList, bool *boundaryTriangl
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
-
-    // each block thread computes one cluster
-    // int tid = blockIdx.x * blockDim.x + threadIdx.x + baseCluster;
 
     // multiple block threads compute one cluster
     int tid = (blockIdx.x * blockDim.x + threadIdx.x) / numThreadsPerCluster + baseCluster;
@@ -412,8 +492,8 @@ __global__ void computeEdgeTriangles(int *edgeList, int *triangleList,
     endCellId = (threadIdx.x % numThreadsPerCluster == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
 
     // loop through the internal cell list
-    for (int cid = startCellId; cid < endCellId; ++cid) {
-        int cellId = cid * 3;
+    for (int triangleId = startCellId; triangleId < endCellId; ++triangleId) {
+        int cellId = triangleId * 3;
         for (int vi = 0; vi < 2; ++vi) {
             int selectedEdge[2] = {triangleList[cellId + vi]};
             if (selectedEdge[0] < endVertexId) {
@@ -424,7 +504,7 @@ __global__ void computeEdgeTriangles(int *edgeList, int *triangleList,
                     int localSize = edgeTriangleSizes[relativeEid];
                     int oldVal = -1;
                     do {
-                        oldVal = atomicCAS(&arr[localSize++], -1, cid);
+                        oldVal = atomicCAS(&arr[localSize++], -1, triangleId);
                     } while (oldVal != -1);
                     atomicAdd(&edgeTriangleSizes[relativeEid], 1);
                 }
@@ -1067,6 +1147,88 @@ __global__ void computeVertexTriangles(int *triangleList, int *vertexTriangleMat
     }
 }
 
+__global__ void computeMultiBoundaryEdges(int *edgeList, int *triangleList,
+            bool *boundaryEdges, bool *boundaryTriangles, 
+            const int clusterNumber, const int *baseClusters, const int *edgeOffsets,
+            const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
+            const int *vertexIntervals, const int *edgeIntervals, const int *triangleIntervals,
+            const int *externalCells, const int *externalCellOffsets, 
+            const int dimension, const int numThreadsPerCluster) {
+
+    // multiple threads compute one cluster
+    int baseCluster = baseClusters[blockIdx.x];
+    int edgeOffset = edgeOffsets[blockIdx.x];
+    int tid = (blockIdx.y * blockDim.x + threadIdx.x) / numThreadsPerCluster + baseCluster;
+    if (tid >= clusterNumber) return;
+
+    /*
+    * divide the job by clusters
+    */
+    const int startVertexId= vertexIntervals[tid-1];
+    const int endVertexId = vertexIntervals[tid];
+    const int baseEdgeId = edgeIntervals[baseCluster - 1];
+    const int startEdgeId = edgeIntervals[tid-1];
+    const int endEdgeId = edgeIntervals[tid];
+
+    // printf("threadIdx.x: %d, tid: %d, startEdgeId: %d, endEdgeId: %d\n", threadIdx.x, tid, startEdgeId, endEdgeId);
+
+    // loop through the external cell list
+    int clusterStartCellId = externalCellOffsets[tid - 1];
+    int clusterEndCellId = externalCellOffsets[tid];
+    int cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
+    int startCellId = clusterStartCellId + (threadIdx.x % numThreadsPerCluster) * cellsPerThread;
+    int endCellId = (threadIdx.x % numThreadsPerCluster == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
+
+    for (int i = startCellId; i < endCellId; ++i) {
+        int cid = externalCells[i];
+        int cellId = offsets[cid];
+        for (int vi = 0; vi < dimension - 1; ++vi) {
+            int selectedTriangle[3] = {static_cast<int>(connectivity[cellId + vi])};
+            if (selectedTriangle[0] < startVertexId) {
+                for (int vj = vi+1; vj < dimension; ++vj) {
+                    selectedTriangle[1] = static_cast<int>(connectivity[cellId + vj]);
+                    if (selectedTriangle[1] >= startVertexId && selectedTriangle[1] < endVertexId) {
+                        for (int vk = vj+1; vk <= dimension; ++vk) {
+                            selectedTriangle[2] = static_cast<int>(connectivity[cellId + vk]);
+                            int exCluster = indexArray[selectedTriangle[0]];
+                            int triangleId = binarySearch<3>(triangleList, triangleIntervals[exCluster-1], triangleIntervals[exCluster], selectedTriangle);
+                            if (boundaryTriangles[triangleId]) {
+                                int selectedEdge[2] = {selectedTriangle[1], selectedTriangle[2]};
+                                int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge) - baseEdgeId + edgeOffset;
+                                boundaryEdges[relativeEid] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // determine the range of internal triangles
+    clusterStartCellId = triangleIntervals[tid - 1];
+    clusterEndCellId = triangleIntervals[tid];
+    cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
+    startCellId = clusterStartCellId + (threadIdx.x % numThreadsPerCluster) * cellsPerThread;
+    endCellId = (threadIdx.x % numThreadsPerCluster == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
+
+    // loop through the internal cell list
+    for (int triangleId = startCellId; triangleId < endCellId; ++triangleId) {
+        if (boundaryTriangles[triangleId]) {
+            int cellId = triangleId * 3;
+            for (int vi = 0; vi < 2; ++vi) {
+                int selectedEdge[2] = {triangleList[cellId + vi]};
+                if (selectedEdge[0] < endVertexId) {
+                    for (int vj = vi+1; vj < 3; ++vj) {
+                        selectedEdge[1] = triangleList[cellId + vj];
+                        int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge) - baseEdgeId + edgeOffset;
+                        boundaryEdges[relativeEid] = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
 __global__ void computeMultiBoundaryVertices(int *triangleList, bool *boundaryTriangles, bool *boundaryVertices,
             const int clusterNumber, const int *baseClusters, const int *vertexOffsets,
             const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
@@ -1302,8 +1464,8 @@ __global__ void computeMultiEdgeTriangles(int *edgeList, int *triangleList,
     endCellId = (threadIdx.x % numThreadsPerCluster == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
 
     // loop through the internal cell list
-    for (int cid = startCellId; cid < endCellId; ++cid) {
-        int cellId = cid * 3;
+    for (int triangleId = startCellId; triangleId < endCellId; ++triangleId) {
+        int cellId = triangleId * 3;
         for (int vi = 0; vi < 2; ++vi) {
             int selectedEdge[2] = {triangleList[cellId + vi]};
             if (selectedEdge[0] < endVertexId) {
@@ -1314,7 +1476,7 @@ __global__ void computeMultiEdgeTriangles(int *edgeList, int *triangleList,
                     int localSize = edgeTriangleSizes[relativeEid];
                     int oldVal = -1;
                     do {
-                        oldVal = atomicCAS(&arr[localSize++], -1, cid);
+                        oldVal = atomicCAS(&arr[localSize++], -1, triangleId);
                     } while (oldVal != -1);
                     atomicAdd(&edgeTriangleSizes[relativeEid], 1);
                 }

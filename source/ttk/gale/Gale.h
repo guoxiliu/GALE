@@ -47,13 +47,15 @@ class Gale final : public AbstractTriangulation {
                     // buildBoundaryTopCellList(clusterId);
                 }
             } else if(cellDimension_ == 3) {
-                preconditionBoundaryTrianglesInternal();
+                preconditionBoundaryTriangles();
                 clusterBoundaryEdges_ = std::vector<std::vector<bool>>(clusterNumber_, std::vector<bool>());
+                preconditionedRelations_.push_back(RelationType::BERelation);
             } else {
                 // unsupported dimension
                 printErr("Unsupported dimension for boundary precondition.");
                 return -1;
             }
+            this->printMsg("Preconditioned boundary edges");
             return 0;
         }
 
@@ -90,6 +92,7 @@ class Gale final : public AbstractTriangulation {
                 }
             }
             clusterBoundaryVertices_ = std::vector<std::vector<bool>>(clusterNumber_, std::vector<bool>());
+            preconditionedRelations_.push_back(RelationType::BVRelation);
             return 0;
         }
 
@@ -105,6 +108,7 @@ class Gale final : public AbstractTriangulation {
                 return 1;
             }
             edgeStarList_ = std::vector<std::vector<int>>(edgeNumber_, std::vector<int>{});
+            preconditionedRelations_.push_back(RelationType::ETRelation);
             return 0;
         }
 
@@ -114,6 +118,7 @@ class Gale final : public AbstractTriangulation {
                 return 1;
             }
             edgeTriangleList_ = std::vector<std::vector<int>>(edgeNumber_, std::vector<int>{});
+            preconditionedRelations_.push_back(RelationType::EFRelation);
             return 0;
         }
 
@@ -126,6 +131,7 @@ class Gale final : public AbstractTriangulation {
                 return 1;
             }
             triangleStarList_ = std::vector<std::vector<int>>(triangleNumber_, std::vector<int>{});
+            preconditionedRelations_.push_back(RelationType::FTRelation);
             return 0;
         }
 
@@ -135,6 +141,7 @@ class Gale final : public AbstractTriangulation {
                 return 1;
             }
             vertexEdgeList_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
+            preconditionedRelations_.push_back(RelationType::VERelation);
             return 0;
         }
         // int preconditionVertexLinksInternal() override;
@@ -145,6 +152,7 @@ class Gale final : public AbstractTriangulation {
                 return 1;
             }
             vertexNeighborList_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
+            preconditionedRelations_.push_back(RelationType::VVRelation);
             return 0;
         }
 
@@ -154,6 +162,7 @@ class Gale final : public AbstractTriangulation {
                 return 1;
             }
             vertexStarList_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
+            preconditionedRelations_.push_back(RelationType::VTRelation);
             return 0;
         }
 
@@ -163,6 +172,7 @@ class Gale final : public AbstractTriangulation {
                 return 1;
             }
             vertexTriangleList_ = std::vector<std::vector<int>>(vertexNumber_, std::vector<int>{});
+            preconditionedRelations_.push_back(RelationType::VFRelation);
             return 0;
         }
 
@@ -863,15 +873,16 @@ class Gale final : public AbstractTriangulation {
         int cellDimension_;
         int clusterNumber_;
         int vertexNumber_, edgeNumber_, triangleNumber_, cellNumber_;
+        std::vector<RelationType> preconditionedRelations_{};
         std::vector<std::vector<bool>> clusterBoundaryVertices_, clusterBoundaryEdges_;
 
         // data allocated on host memory
         // pointers will be initialized to nullptr directly
+        void *pointSet_;
         int numBlocks_, blockSize_;
         int *hIndexArray_{}, *hExternalCells_{}, *hExternalCellOffsets_{};
         vtkIdType *hConnectivity_{}, *hOffsets_{};
         int *hCellIntervals_{}, *hTriangleIntervals_{}, *hEdgeIntervals_{}, *hVertexIntervals_{};
-        void *pointSet_;
 
         // data allocated on device memory
         vtkIdType *dConnectivity_{}, *dOffsets_{};

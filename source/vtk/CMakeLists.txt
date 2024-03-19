@@ -20,19 +20,21 @@ set_compile_options(ttkScalarFieldCriticalPoints)
 
 # ftm tree executable
 add_executable(ttkFTMTree ttkFTMTree.cpp)
-# # set_property(TARGET ttkDiscreteGradient PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 target_link_libraries(ttkFTMTree PRIVATE gale ftmTree)
 target_link_libraries(ttkFTMTree PRIVATE VTK::IOXML VTK::FiltersCore VTK::CommonExecutionModel)
-# target_compile_options(ttkDiscreteGradient PRIVATE $<$<COMPILE_LANGUAGE:CUDA>: -Xcompiler=-fopenmp>)
 set_compile_options(ttkFTMTree)
 
 # discrete gradient executable
 add_executable(ttkDiscreteGradient ttkDiscreteGradient.cpp)
-# # set_property(TARGET ttkDiscreteGradient PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 target_link_libraries(ttkDiscreteGradient PRIVATE gale discreteGradient)
 target_link_libraries(ttkDiscreteGradient PRIVATE VTK::IOXML)
-# target_compile_options(ttkDiscreteGradient PRIVATE $<$<COMPILE_LANGUAGE:CUDA>: -Xcompiler=-fopenmp>)
 set_compile_options(ttkDiscreteGradient)
+
+# Morse smale complex executable
+add_executable(ttkMorseSmaleComplex ttkMorseSmaleComplex.cpp)
+target_link_libraries(ttkMorseSmaleComplex PRIVATE gale morseSmaleComplex)
+target_link_libraries(ttkMorseSmaleComplex PRIVATE VTK::IOXML)
+set_compile_options(ttkMorseSmaleComplex)
 
 # test relation extraction with cuda
 add_executable(cudaBlockRelation cudaBlockRelation.cu)

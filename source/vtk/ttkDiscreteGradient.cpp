@@ -102,7 +102,7 @@ int main(int argc, char *argv[])
     else 
         gale.initialize(inputDataSet);
 
-    ttk::dcg::DiscreteGradient dgPlugin;
+    ttk::dcg::DiscreteGradient dgPlugin{};
     dgPlugin.setDebugLevel(3);
     dgPlugin.setThreadNumber(threadNumber);
     dgPlugin.preconditionTriangulation(&gale);
