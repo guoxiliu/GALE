@@ -22,6 +22,7 @@ namespace ttk {
     // ############## //
     // Initialization //
     // ############## //
+    FlatJaggedArray() {}
 
     /**
      * @brief Set internal data from pre-existing vectors
@@ -123,6 +124,14 @@ namespace ttk {
      */
     inline std::size_t footprint() const {
       return (this->data_.size() + this->offsets_.size()) * sizeof(SimplexId);
+    }
+
+    /**
+     * @brief Clear the data in the array.
+     */
+    inline void clear() {
+      data_.clear(); data_.shrink_to_fit();
+      offsets_.clear(); offsets_.shrink_to_fit();
     }
 
     // #################### //
