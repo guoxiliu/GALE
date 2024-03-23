@@ -179,8 +179,8 @@ __global__ void computeBoundaryEdges(int *edgeList, int *triangleList,
     const int startVertexId= vertexIntervals[tid-1];
     const int endVertexId = vertexIntervals[tid];
     const int baseEdgeId = edgeIntervals[baseCluster - 1];
-    const int startEdgeId = edgeIntervals[tid-1] - baseEdgeId;
-    const int endEdgeId = edgeIntervals[tid] - baseEdgeId;
+    const int startEdgeId = edgeIntervals[tid-1];
+    const int endEdgeId = edgeIntervals[tid];
 
     // printf("threadIdx.x: %d, tid: %d, startEdgeId: %d, endEdgeId: %d\n", threadIdx.x, tid, startEdgeId, endEdgeId);
 
@@ -206,7 +206,7 @@ __global__ void computeBoundaryEdges(int *edgeList, int *triangleList,
                             int triangleId = binarySearch<3>(triangleList, triangleIntervals[exCluster-1], triangleIntervals[exCluster], selectedTriangle);
                             if (boundaryTriangles[triangleId]) {
                                 int selectedEdge[2] = {selectedTriangle[1], selectedTriangle[2]};
-                                int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge);
+                                int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge) - baseEdgeId;
                                 boundaryEdges[relativeEid] = true;
                             }
                         }
@@ -232,7 +232,7 @@ __global__ void computeBoundaryEdges(int *edgeList, int *triangleList,
                 if (selectedEdge[0] < endVertexId) {
                     for (int vj = vi+1; vj < 3; ++vj) {
                         selectedEdge[1] = triangleList[cellId + vj];
-                        int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge);
+                        int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge) - baseEdgeId;
                         boundaryEdges[relativeEid] = true;
                     }
                 }
@@ -431,8 +431,8 @@ __global__ void computeEdgeTriangles(int *edgeList, int *triangleList,
     const int startVertexId= vertexIntervals[tid-1];
     const int endVertexId = vertexIntervals[tid];
     const int baseEdgeId = edgeIntervals[baseCluster - 1];
-    const int startEdgeId = edgeIntervals[tid-1] - baseEdgeId;
-    const int endEdgeId = edgeIntervals[tid] - baseEdgeId;
+    const int startEdgeId = edgeIntervals[tid-1];
+    const int endEdgeId = edgeIntervals[tid];
 
     // printf("threadIdx.x: %d, tid: %d, startEdgeId: %d, endEdgeId: %d\n", threadIdx.x, tid, startEdgeId, endEdgeId);
 
@@ -455,7 +455,7 @@ __global__ void computeEdgeTriangles(int *edgeList, int *triangleList,
                         for (int vk = vj+1; vk <= dimension; ++vk) {
                             selectedTriangle[2] = static_cast<int>(connectivity[cellId + vk]);
                             int selectedEdge[2] = {selectedTriangle[1], selectedTriangle[2]};
-                            int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge);
+                            int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge) - baseEdgeId;
                             int exCluster = indexArray[selectedTriangle[0]];
                             int triangleId = binarySearch<3>(triangleList, triangleIntervals[exCluster-1], triangleIntervals[exCluster], selectedTriangle);
                             int *arr = edgeTriangleMatrix + efColumnNum * relativeEid;
@@ -499,7 +499,7 @@ __global__ void computeEdgeTriangles(int *edgeList, int *triangleList,
             if (selectedEdge[0] < endVertexId) {
                 for (int vj = vi+1; vj < 3; ++vj) {
                     selectedEdge[1] = triangleList[cellId + vj];
-                    int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge);
+                    int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge) - baseEdgeId;
                     int *arr = edgeTriangleMatrix + efColumnNum * relativeEid;
                     int localSize = edgeTriangleSizes[relativeEid];
                     int oldVal = -1;
@@ -530,8 +530,8 @@ __global__ void computeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeSt
     const int startVertexId= vertexIntervals[tid-1];
     const int endVertexId = vertexIntervals[tid];
     const int baseEdgeId = edgeIntervals[baseCluster - 1];
-    const int startEdgeId = edgeIntervals[tid-1] - baseEdgeId;
-    const int endEdgeId = edgeIntervals[tid] - baseEdgeId;
+    const int startEdgeId = edgeIntervals[tid-1];
+    const int endEdgeId = edgeIntervals[tid];
 
     // printf("threadIdx.x: %d, tid: %d, startEdgeId: %d, endEdgeId: %d\n", threadIdx.x, tid, startEdgeId, endEdgeId);
 
@@ -550,7 +550,7 @@ __global__ void computeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeSt
             if (selectedEdge[0] < endVertexId) {
                 for (int vj = vi+1; vj <= dimension; ++vj) {
                     selectedEdge[1] = static_cast<int>(connectivity[cellId + vj]);
-                    int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge);
+                    int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge) - baseEdgeId;
                     int *arr = edgeStarMatrix + etColumnNum * relativeEid;
                     int localSize = edgeStarSizes[relativeEid];
                     int oldVal = -1;
@@ -578,7 +578,7 @@ __global__ void computeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeSt
             if (selectedEdge[0] >= startVertexId && selectedEdge[0] < endVertexId) {
                 for (int vj = vi+1; vj <= dimension; ++vj) {
                     selectedEdge[1] = static_cast<int>(connectivity[cellId + vj]);
-                    int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge);
+                    int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge) - baseEdgeId;
                     int *arr = edgeStarMatrix + etColumnNum * relativeEid;
                     int localSize = edgeStarSizes[relativeEid];
                     int oldVal = -1;
@@ -609,8 +609,8 @@ __global__ void computeTriangleStars(int *triangleList, int *triangleStarMatrix,
     const int startVertexId= vertexIntervals[tid-1];
     const int endVertexId = vertexIntervals[tid];
     const int baseTriangleId = triangleIntervals[baseCluster - 1];
-    const int startTriangleId = triangleIntervals[tid-1] - baseTriangleId;
-    const int endTriangleId = triangleIntervals[tid] - baseTriangleId;
+    const int startTriangleId = triangleIntervals[tid-1];
+    const int endTriangleId = triangleIntervals[tid];
 
     // printf("threadIdx.x: %d, tid: %d, startTriangleId: %d, endTriangleId: %d\n", threadIdx.x, tid, startTriangleId, endTriangleId);
 
@@ -631,7 +631,7 @@ __global__ void computeTriangleStars(int *triangleList, int *triangleStarMatrix,
                     for (int vk = vj+1; vk <= dimension; ++vk) {
                         selectedTriangle[1] = static_cast<int>(connectivity[cellId + vj]);
                         selectedTriangle[2] = static_cast<int>(connectivity[cellId + vk]);
-                        int relativeFid = binarySearch<3>(triangleList, startTriangleId, endTriangleId, selectedTriangle);
+                        int relativeFid = binarySearch<3>(triangleList, startTriangleId, endTriangleId, selectedTriangle) - baseTriangleId;
                         int *arr = triangleStarMatrix + ftColumnNum * relativeFid;
                         int localSize = triangleStarSizes[relativeFid];
                         int oldVal = -1;
@@ -662,7 +662,7 @@ __global__ void computeTriangleStars(int *triangleList, int *triangleStarMatrix,
                     for (int vk = vj+1; vk <= dimension; ++vk) {
                         selectedTriangle[1] = static_cast<int>(connectivity[cellId + vj]);
                         selectedTriangle[2] = static_cast<int>(connectivity[cellId + vk]);
-                        int relativeFid = binarySearch<3>(triangleList, startTriangleId, endTriangleId, selectedTriangle);
+                        int relativeFid = binarySearch<3>(triangleList, startTriangleId, endTriangleId, selectedTriangle) - baseTriangleId;
                         int *arr = triangleStarMatrix + ftColumnNum * relativeFid;
                         int localSize = triangleStarSizes[relativeFid];
                         int oldVal = -1;
