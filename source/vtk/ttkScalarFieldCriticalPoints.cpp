@@ -2,12 +2,14 @@
 #include <MemoryUsage.h>
 #include <ScalarFieldCriticalPoints.h>
 #include <vtkDataSet.h>
+#include <vtkSignedCharArray.h>
 #include <vtkXMLGenericDataObjectReader.h>
 #include <iostream>
 #include <unistd.h>
 
 #include "ttkUtils.h"
 
+bool VertexIds{true}, VertexScalars{true}, VertexBoundary{false};
 
 int main(int argc, char *argv[])
 {
@@ -76,6 +78,9 @@ int main(int argc, char *argv[])
     else 
         gale.initialize(inputDataSet);
 
+    if(VertexBoundary)
+        gale.preconditionBoundaryVertices();
+
     std::vector<std::pair<ttk::SimplexId, char>> criticalPoints_;
 
     ttk::ScalarFieldCriticalPoints cpPlugin;
@@ -85,11 +90,30 @@ int main(int argc, char *argv[])
     
     vtkDataArray *offsetField = GetOrderArray(inputDataSet, scalarFieldIndex, 1);
 
+    ttk::Timer t;
+
     int res = cpPlugin.executeLegacy(static_cast<ttk::SimplexId *>(GetVoidPointer(offsetField)), &gale);
     if (res != 0) {
         std::cerr << "Execution failed, status code: " << res << std::endl;
     }
 
+    if(VertexBoundary) {
+        vtkNew<vtkSignedCharArray> vertexBoundary{};
+        vertexBoundary->SetNumberOfComponents(1);
+        vertexBoundary->SetNumberOfTuples(criticalPoints_.size());
+        vertexBoundary->SetName("IsOnBoundary");
+
+    #ifdef TTK_ENABLE_OPENMP
+    #pragma omp parallel for num_threads(threadNumber)
+    #endif
+        for(size_t i = 0; i < criticalPoints_.size(); i++) {
+        vertexBoundary->SetTuple1(
+            i, (signed char)gale.isVertexOnBoundary(
+                criticalPoints_[i].first));
+        }
+    }
+
+    std::cout << "[ScalarFieldCriticalPoints] Time usage for computation: " << t.getElapsedTime() << " s." << std::endl;
     std::cout << "[ScalarFieldCriticalPoints] Memory usage: " << m.getValue_in_MB(false) << " MB." << std::endl;
 
     return 0;

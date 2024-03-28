@@ -351,7 +351,6 @@ int Gale::computeRelation(const RelationType relation,
                     }
                 }
             }
-            baseClusters_[relationId][threadId] = clusterId;
 
             // lck.unlock();
             if (signal) {
@@ -359,6 +358,8 @@ int Gale::computeRelation(const RelationType relation,
                 // else res = 1;
                 sem_post(&relationSems_[threadId]);
             }
+            if (baseClusters_[relationId][threadId] == 0)
+                baseClusters_[relationId][threadId] = clusterId;
 
             CHECK(cudaFree(dBoundaryEdgeList));
             delete[] hBoundaryEdgeList;
@@ -399,7 +400,6 @@ int Gale::computeRelation(const RelationType relation,
                     }
                 }
             }
-            baseClusters_[relationId][threadId] = clusterId;
 
             // lck.unlock();
             if (signal) {
@@ -407,6 +407,8 @@ int Gale::computeRelation(const RelationType relation,
                 // else res = 1;
                 sem_post(&relationSems_[threadId]);
             }
+            if (baseClusters_[relationId][threadId] == 0)
+                baseClusters_[relationId][threadId] = clusterId;
 
             CHECK(cudaFree(dTriangleList));
             CHECK(cudaFree(dBoundaryVertexList));
@@ -495,7 +497,6 @@ int Gale::computeRelation(const RelationType relation,
                     allClusters_[sid].edgeTriangles_[0].setData(std::move(edgeTriangleData), std::move(edgeTriangleOffsets));
                 }
             }
-            baseClusters_[relationId][threadId] = clusterId;
 
             // lck.unlock();
             if (signal) {
@@ -503,6 +504,8 @@ int Gale::computeRelation(const RelationType relation,
                 // else res = 1;
                 sem_post(&relationSems_[threadId]);
             }
+            if (baseClusters_[relationId][threadId] == 0)
+                baseClusters_[relationId][threadId] = clusterId;
 
             CHECK(cudaFree(dEdgeTriangleSizes_));
             CHECK(cudaFree(dEdgeTriangleMatrix_));
@@ -551,7 +554,6 @@ int Gale::computeRelation(const RelationType relation,
                     allClusters_[sid].edgeStars_[0].setData(std::move(edgeStarData), std::move(edgeStarOffsets));
                 }
             }
-            baseClusters_[relationId][threadId] = clusterId;
 
             // lck.unlock();
             if (signal) {
@@ -559,6 +561,8 @@ int Gale::computeRelation(const RelationType relation,
                 // else res = 1;
                 sem_post(&relationSems_[threadId]);
             }
+            if (baseClusters_[relationId][threadId] == 0)
+                baseClusters_[relationId][threadId] = clusterId;
 
             CHECK(cudaFree(dEdgeStarSizes_));
             CHECK(cudaFree(dEdgeStarMatrix_));
@@ -607,7 +611,6 @@ int Gale::computeRelation(const RelationType relation,
                     allClusters_[sid].triangleStars_[0].setData(std::move(triangleStarData), std::move(triangleStarOffsets));
                 }
             }
-            baseClusters_[relationId][threadId] = clusterId;
 
             // lck.unlock();
             if (signal) {
@@ -615,6 +618,8 @@ int Gale::computeRelation(const RelationType relation,
                 // else res = 1;
                 sem_post(&relationSems_[threadId]);
             }
+            if (baseClusters_[relationId][threadId] == 0)
+                baseClusters_[relationId][threadId] = clusterId;
 
             CHECK(cudaFree(dTriangleStarSizes_));
             CHECK(cudaFree(dTriangleStarMatrix_));
@@ -663,7 +668,6 @@ int Gale::computeRelation(const RelationType relation,
                     allClusters_[sid].vertexEdges_[0].setData(std::move(vertexEdgeData), std::move(vertexEdgeOffsets));
                 }
             }
-            baseClusters_[relationId][threadId] = clusterId;
 
             // lck.unlock();
             if (signal) {
@@ -671,6 +675,8 @@ int Gale::computeRelation(const RelationType relation,
                 // else res = 1;
                 sem_post(&relationSems_[threadId]);
             }
+            if (baseClusters_[relationId][threadId] == 0)
+                baseClusters_[relationId][threadId] = clusterId;
 
             CHECK(cudaFree(dVertexEdgeSizes_));
             CHECK(cudaFree(dVertexEdgeMatrix_));
@@ -719,7 +725,6 @@ int Gale::computeRelation(const RelationType relation,
                     allClusters_[sid].vertexTriangles_[0].setData(std::move(vertexTriangleData), std::move(vertexTriangleOffsets));
                 }
             }
-            baseClusters_[relationId][threadId] = clusterId;
 
             // lck.unlock();
             if (signal) {
@@ -727,6 +732,8 @@ int Gale::computeRelation(const RelationType relation,
                 // else res = 1;
                 sem_post(&relationSems_[threadId]);
             }
+            if (baseClusters_[relationId][threadId] == 0)
+                baseClusters_[relationId][threadId] = clusterId;
 
             CHECK(cudaFree(dVertexTriangleSizes_));
             CHECK(cudaFree(dVertexTriangleMatrix_));
@@ -776,10 +783,11 @@ int Gale::computeRelation(const RelationType relation,
                 }
             }
             // lck.unlock();
-            baseClusters_[relationId][threadId] = clusterId;
             if (signal) {
                 sem_post(&relationSems_[threadId]);
             }
+            if (baseClusters_[relationId][threadId] == 0)
+                baseClusters_[relationId][threadId] = clusterId;
 
             CHECK(cudaFree(dVertexStarSizes_));
             CHECK(cudaFree(dVertexStarMatrix_));
@@ -829,13 +837,14 @@ int Gale::computeRelation(const RelationType relation,
                 }
             }
             // lck.unlock();
-            baseClusters_[relationId][threadId] = clusterId;
 
             if (signal) {
             // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
             // else res = 1;
                 sem_post(&relationSems_[threadId]);
             }
+            if (baseClusters_[relationId][threadId] == 0)
+                baseClusters_[relationId][threadId] = clusterId;
 
             CHECK(cudaFree(dVertexNeighborSizes_));
             CHECK(cudaFree(dVertexNeighborMatrix_));
@@ -1474,7 +1483,7 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                             allClusters_[sid].triangleStars_[tid].setData(std::move(triangleStarData), std::move(triangleStarOffsets));
                         }
                     }
-                    if (baseClusters_[relationId][tid] == 0) 
+                    if (baseClusters_[relationId][tid] == 0)
                         baseClusters_[relationId][tid] = baseClusterId;
                     sem_post(&relationSems_[tid]);
                 }
@@ -1708,89 +1717,93 @@ void Gale::assistProcedure() {
                 //     computeRelation(leaderFunc, leaderCluster, i, false);
                 // }
                 
-                SimplexId startCluster = baseClusters_[static_cast<int>(leaderFunc)][0];
-                if (startCluster == 0) continue;
-                // different relations correspond to different vectors
-                switch (leaderFunc)
-                {
-                    case RelationType::BVRelation:
+                for (RelationType &relation : preconditionedRelations_) {
+                    if (relation == currRelations_[0]) continue;
+                    SimplexId startCluster = baseClusters_[static_cast<int>(relation)][0];
+                    // leaderCluster = (leaderCluster - startCluster) * removalRatio + startCluster;
+                    if (startCluster == 0) continue;
+                    // different relations correspond to different vectors
+                    switch (relation)
                     {
-                        for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                            allClusters_[cid].boundaryVertices_[0] = std::vector<bool>();
+                        case RelationType::BVRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].boundaryVertices_[0] = std::vector<bool>();
+                            }
+                            break;
                         }
-                        break;
-                    }
 
-                    case RelationType::BERelation:
-                    {
-                        for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                            allClusters_[cid].boundaryEdges_[0] = std::vector<bool>();
+                        case RelationType::BERelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].boundaryEdges_[0] = std::vector<bool>();
+                            }
+                            break;
                         }
-                        break;
-                    }
-                    
-                    case RelationType::EFRelation:
-                    {
-                        for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                            allClusters_[cid].edgeTriangles_[0].clear();
+                        
+                        case RelationType::EFRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].edgeTriangles_[0].clear();
+                            }
+                            break;
                         }
-                        break;
-                    }
-                    
-                    case RelationType::ETRelation:
-                    {
-                        for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                            allClusters_[cid].edgeStars_[0].clear();
+                        
+                        case RelationType::ETRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].edgeStars_[0].clear();
+                            }
+                            break;
                         }
-                        break;
-                    }
-                    
-                    case RelationType::FTRelation:
-                    {
-                        for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                            allClusters_[cid].triangleStars_[0].clear();
+                        
+                        case RelationType::FTRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].triangleStars_[0].clear();
+                            }
+                            break;
                         }
-                        break;
-                    }
 
-                    case RelationType::VVRelation:
-                    {
-                        for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                            allClusters_[cid].vertexNeighbors_[0].clear();
+                        case RelationType::VVRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].vertexNeighbors_[0].clear();
+                            }
+                            break;
                         }
-                        break;
-                    }
-                
-                    case RelationType::VERelation:
-                    {
-                        for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                            allClusters_[cid].vertexEdges_[0].clear();
-                        }
-                        break;
-                    }
-
-                    case RelationType::VFRelation:
-                    {
-                        for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                            allClusters_[cid].vertexTriangles_[0].clear();
-                        }
-                        break;
-                    }
-
-                    case RelationType::VTRelation:
-                    {
-                        for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                            allClusters_[cid].vertexStars_[0].clear();
-                        }
-                        break;
-                    }
                     
-                    default:
-                        break;
-                    
+                        case RelationType::VERelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].vertexEdges_[0].clear();
+                            }
+                            break;
+                        }
+
+                        case RelationType::VFRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].vertexTriangles_[0].clear();
+                            }
+                            break;
+                        }
+
+                        case RelationType::VTRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].vertexStars_[0].clear();
+                            }
+                            break;
+                        }
+                        
+                        default:
+                            break;
+                        
+                    }
+                    // reset the base cluster of the thread to 0
+                    baseClusters_[static_cast<int>(relation)][0] = 0;
                 }
-                // reset the base cluster of the thread to 0
-                baseClusters_[static_cast<int>(leaderFunc)][0] = 0;
             }
         }
     }
@@ -1825,9 +1838,9 @@ void Gale::assistProcedure() {
                     leaderCluster = currClusters_[i];
                     if (leaderCluster < 0) return;
                     else if (leaderCluster == 0) continue;
-                    if (!jobQueue.empty()) break;
+                    // if (!jobQueue.empty()) break;
                     for (RelationType &relation : preconditionedRelations_) {
-                        // if (relation == currRelations_[i]) continue;
+                        if (relation == currRelations_[i]) continue;
                         SimplexId startCluster = baseClusters_[static_cast<int>(relation)][i];
                         // leaderCluster = (leaderCluster - startCluster) * removalRatio + startCluster;
                         if (startCluster == 0) continue;
