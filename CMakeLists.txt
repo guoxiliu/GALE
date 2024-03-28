@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.12 FATAL_ERROR)
 
-project(AcTopo-GPU LANGUAGES CXX CUDA)
+project(GALE LANGUAGES CXX CUDA)
 
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")
 set(CMAKE_HAVE_THREADS_LIBRARY 1)
@@ -27,30 +27,77 @@ endif()
 find_package(VTK PATHS ~/usr/local)
 find_package(VTK)
 
-if (NOT VTK_FOUND)
+if(NOT VTK_FOUND)
     message("VTK NOT FOUND!")
     return()
 endif()
 
-set(VTK_INCLUDE_DIRS "" CACHE PATH "VTK Include Directory")
-if (NOT EXISTS "${VTK_INCLUDE_DIRS}")
-    message(FATAL_ERROR "VTK_INCLUDE_DIRS NOT FOUND!")
-    return()
+option(TTK_ENABLE_KAMIKAZE "Enable Kamikaze compilation mode" ON)
+
+option(TTK_ENABLE_OPENMP "Enable OpenMP support" TRUE)
+if(TTK_ENABLE_OPENMP)
+    find_package(OpenMP)
+    if (OpenMP_CXX_FOUND)
+    option(TTK_ENABLE_OMP_PRIORITY "Gives tasks priority, high perf improvement" OFF)
+    if(OpenMP_CXX_VERSION_MAJOR GREATER_EQUAL 4 AND 
+        OpenMP_CXX_VERSION_MINOR GREATER_EQUAL 5)
+        set(TTK_ENABLE_OMP_PRIORITY 
+            OFF 
+            CACHE 
+            BOOL 
+            "Enable priorities on opnemp tasks" 
+            FORCE
+        )
+    endif()
+
+    else()
+        message("OpenMP NOT FOUND!")
+        if(TTK_ENABLE_OMP_PRIORITY)
+            # priorities are only meaningful when openmp is on
+            set(TTK_ENABLE_OMP_PRIORITY
+                OFF
+                CACHE
+                BOOL
+                "Enable priorities on opnemp tasks"
+                FORCE
+            )
+        endif()
+        return()
 endif()
 
-find_package(OpenMP)
-if (NOT OpenMP_CXX_FOUND) 
-    message("OpenMP NOT FOUND!")
-    return()
+    endif()
+find_package(Boost COMPONENTS system thread)
+    if(NOT Boost_FOUND)
+        find_package(Boost REQUIRED)
+        if(Boost_FOUND)
+            message(STATUS "BOOST_INCLUDE_DIR: ${Boost_INCLUDE_DIR}")
+        endif()
 endif()
 
 message(STATUS "VTK_VERSION: ${VTK_VERSION}")
 message("VTK_DIR: ${VTK_DIR}")
-message("VTK_INCLUDE_DIRS: ${VTK_INCLUDE_DIRS}")
-message("VTK_LIBRARIES: ${VTK_LIBRARIES}")
+# message("VTK_LIBRARIES: ${VTK_LIBRARIES}")
 
 set(CMAKE_CUDA_ARCHITECTURES 52 60 61 75)
 set(CMAKE_CXX_STANDARD 14)
 
 # add_subdirectory("test")
+
+# Source code
+function(set_compile_options library)
+    if (TTK_ENABLE_KAMIKAZE)
+        target_compile_definitions(${library} PUBLIC TTK_ENABLE_KAMIKAZE)
+    endif()
+
+    if (TTK_ENABLE_OPENMP)
+        target_compile_definitions(${library} PUBLIC TTK_ENABLE_OPENMP)
+        target_link_libraries(${library} PUBLIC OpenMP::OpenMP_CXX)
+
+        if (TTK_ENABLE_OMP_PRIORITY)
+           target_compile_definitions(${library} PUBLIC TTK_ENABLE_OMP_PRIORITY)
+        endif()
+    endif()
+endfunction()
+
+
 add_subdirectory("source")
