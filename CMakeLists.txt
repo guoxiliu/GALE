@@ -66,7 +66,7 @@ if(TTK_ENABLE_OPENMP)
 endif()
 
     endif()
-find_package(Boost COMPONENTS system)
+find_package(Boost COMPONENTS system thread)
     if(NOT Boost_FOUND)
         find_package(Boost REQUIRED)
         if(Boost_FOUND)
