@@ -15,12 +15,15 @@
 #include <thread>
 #include <semaphore.h>
 
+/* Uncomment to track waiting time of consumer threads*/
 // #define MEASURE_WAITING 0
 
 // Find the global edge/triangle index from the edge/triangle list
+// (x, e): x specifies the segment index, e specifies the edge pair
 #define findEdgeIdx(x, e) (std::lower_bound(edgeList_.begin()+hEdgeIntervals_[x-1], edgeList_.begin()+hEdgeIntervals_[x], e) - edgeList_.begin())
 #define findTriangleIdx(x, f) (std::lower_bound(triangleList_.begin()+hTriangleIntervals_[x-1], triangleList_.begin()+hTriangleIntervals_[x], f) - triangleList_.begin())
 
+// Check if CUDA function calls are correct
 #define CHECK_CUDA(func)                                                       \
 {                                                                              \
     cudaError_t status = (func);                                               \
@@ -31,12 +34,9 @@
     }                                                                          \
 }
 
-// const int removalRatio = 0.5;
-
 namespace ttk {
-
-
-class ImplicitCluster {
+// the mesh segment class
+class MeshSegment {
     private:
     /* components */
     SimplexId nid;
@@ -60,9 +60,9 @@ class ImplicitCluster {
     FlatJaggedArray cellNeighbors_;
 
 public:
-    ImplicitCluster() {}
+    MeshSegment() {}
     // multiple thread numbers
-    ImplicitCluster(SimplexId id) : nid(id) {
+    MeshSegment(SimplexId id) : nid(id) {
         /* boundary cells */
         boundaryVertices_ = std::vector<bool>();
         boundaryEdges_ = std::vector<bool>();
@@ -82,7 +82,7 @@ public:
         /* cell relations */
         cellNeighbors_ = FlatJaggedArray();
     }
-    ~ImplicitCluster() {}
+    ~MeshSegment() {}
 
     inline void clear() {
         // keep the edge and triangle lists
@@ -119,7 +119,12 @@ class Gale final : public AbstractTriangulation {
         ~Gale();
         void initialize(vtkDataSet *dataSet, int numBlocks = 100, int blockSize = 32, bool reorder = false);
         
-        
+        /**
+         * Preconditioning relation functions.
+         * These functions are called before the algorithm execution to
+         * tell the toplogical data structure which relations will be used 
+         * 
+        */
         inline int preconditionBoundaryEdgesInternal() override {
             if(cellDimension_ == 2) {
                 #ifdef TTK_ENABLE_OPENMP
@@ -176,12 +181,7 @@ class Gale final : public AbstractTriangulation {
             return 0;
         }
 
-        // int preconditionCellEdgesInternal() override;
-        // int preconditionCellNeighborsInternal() override;
-        // int preconditionCellTrianglesInternal() override;
-
         int preconditionEdgesInternal() override;
-        // int preconditionEdgeLinksInternal() override;
         int preconditionEdgeStarsInternal() override {
             if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
                 std::cerr << "Empty dataset, precondition skipped";
@@ -201,14 +201,11 @@ class Gale final : public AbstractTriangulation {
         }
 
         int preconditionTrianglesInternal() override;
-        // int preconditionTriangleEdgesInternal() override;
-        // int preconditionTriangleLinksInternal() override;
         int preconditionTriangleStarsInternal() override {
             if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
                 std::cerr << "Empty dataset, precondition skipped";
                 return 1;
             }
-            // triangleStarList_ = std::vector<std::vector<int>>(triangleNumber_, std::vector<int>{});
             preconditionedRelations_.push_back(RelationType::FTRelation);
             return 0;
         }
@@ -221,7 +218,6 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::VERelation);
             return 0;
         }
-        // int preconditionVertexLinksInternal() override;
 
         inline int preconditionVertexNeighborsInternal() override {
             if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
@@ -1005,10 +1001,10 @@ class Gale final : public AbstractTriangulation {
     private:
     
         /* Build the internal edge list in the cluster. */
-        int buildInternalEdgeList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 2>>> &clusterEdges, bool buildBoundary = false);
+        int buildInternalEdgeList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 2>>> &clusterEdges);
 
         /* Build the internal triangle list in the cluster. */
-        int buildInternalTriangleList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 3>>> &clusterTriangles, bool buildBoundary = false);
+        int buildInternalTriangleList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 3>>> &clusterTriangles);
 
         /* Compute the interval array for cells */
         void computeCellIntervals();
@@ -1022,8 +1018,8 @@ class Gale final : public AbstractTriangulation {
         /* Change the vertex id in the cell array */
         int reorderCells(const std::vector<SimplexId> &vertexMap);
 
-        /* Assisting function used by the producer thread */
-        void assistProcedure();
+        /* Function used by the leader producer thread */
+        void leaderProducer();
 
         /* Compute the array for the given topological relation */
         int computeRelation(const RelationType relation, const SimplexId clusterId, bool global = false, int threadId = 0, bool signal = false);
@@ -1036,9 +1032,9 @@ class Gale final : public AbstractTriangulation {
         int clusterNumber_;
         int vertexNumber_, edgeNumber_, triangleNumber_, cellNumber_;
         std::vector<RelationType> preconditionedRelations_{};
-        std::vector<ImplicitCluster> allClusters_;
+        std::vector<MeshSegment> allClusters_;
 
-        // data allocated on host memory
+        /* Data allocated on the host memory */
         // pointers will be initialized to nullptr directly
         void *pointSet_;
         int numBlocks_, blockSize_;
@@ -1046,14 +1042,14 @@ class Gale final : public AbstractTriangulation {
         vtkIdType *hConnectivity_{}, *hOffsets_{};
         int *hCellIntervals_{}, *hTriangleIntervals_{}, *hEdgeIntervals_{}, *hVertexIntervals_{};
 
-        // data allocated on device memory
+        /* Data allocated on the device memory */
         vtkIdType *dConnectivity_{}, *dOffsets_{};
         int *dIndexArray_{};
         int *dCellIntervals_{}, *dTriangleIntervals_{}, *dEdgeIntervals_{}, *dVertexIntervals_{};
         int *dExternalCells_{}, *dExternalCellOffsets_{};
         int *dEdgeList_{}, *dTriangleList_{};
 
-        // relation matrices
+        /* Relation matrices on the host and device */
         bool *hBoundaryVertices_, *hBoundaryEdges_, *hBoundaryTriangles_;
         bool *dBoundaryVertices_, *dBoundaryEdges_, *dBoundaryTriangles_;
 
@@ -1078,7 +1074,7 @@ class Gale final : public AbstractTriangulation {
         int *hVertexTriangleSizes_, *hVertexTriangleMatrix_;
         int *dVertexTriangleSizes_, *dVertexTriangleMatrix_;
 
-        // multithreading support
+        /* Multithreading support */
         std::thread producer_;
         int threadsPerCluster_;
         std::array<std::vector<int>, 25> baseClusters_;
@@ -1086,10 +1082,10 @@ class Gale final : public AbstractTriangulation {
         mutable std::vector<SimplexId> currClusters_;
         mutable std::vector<RelationType> currRelations_;
         mutable std::vector<sem_t> relationSems_;
-        mutable std::vector<Timer> timers_;
         mutable std::mutex qMutex_;
         mutable std::queue<int> jobQueue;
         #ifdef MEASURE_WAITING
+        mutable std::vector<Timer> timers_;
         mutable std::vector<double> waitingTimes_;
         mutable std::vector<int> waitingCounts_;
         #endif

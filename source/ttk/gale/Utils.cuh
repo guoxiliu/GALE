@@ -35,34 +35,6 @@
     }                                                                          \
 }
 
-
-__global__ void add(int *a, int *b, int *c, int n) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid < n) {
-        c[tid] = a[tid] + b[tid];
-    }
-}
-
-__global__ void multiply(int *a, int *b, int *c, int n) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid < n) {
-        c[tid] = a[tid] * b[tid];
-    }
-}
-
-__global__ void test2DArray(int **arr) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    for (int i = 0; i < 10; ++i) 
-        arr[tid][i] *= 2;
-}
-
-__global__ void printArray(const int *arr, int start, int end) {
-    // int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    for (int i = start; i < end; ++i) {
-        printf("%d: %d\n", i, arr[i]);
-    }
-}
-
 // Get the hash value using the modulo operation
 __device__ int getHashPosition(const int *arr, const int length, const int target) {
     int pos = (target % MOD_VALUE) % length;
@@ -130,5 +102,34 @@ __device__ void insertElement(int *arr, const int start, const int length, const
     }
     for (int j = 0; j < dim; ++j) {
         arr[pos * dim + j] = target[j];
+    }
+}
+
+/** Utility functions for testing CUDA */
+
+__global__ void add(int *a, int *b, int *c, int n) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < n) {
+        c[tid] = a[tid] + b[tid];
+    }
+}
+
+__global__ void multiply(int *a, int *b, int *c, int n) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < n) {
+        c[tid] = a[tid] * b[tid];
+    }
+}
+
+__global__ void test2DArray(int **arr) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    for (int i = 0; i < 10; ++i) 
+        arr[tid][i] *= 2;
+}
+
+__global__ void printArray(const int *arr, int start, int end) {
+    // int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    for (int i = start; i < end; ++i) {
+        printf("%d: %d\n", i, arr[i]);
     }
 }

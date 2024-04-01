@@ -11,7 +11,11 @@
 
 using namespace ttk;
 
-
+/**
+ * Constructor of GALE
+ * `tnum` specifies the number of consumer threads
+ * `tnumPerCluster` specifies the GPU threads per segment 
+*/
 Gale::Gale(int tnum, int tnumPerCluster) {
     this->setDebugMsgPrefix("Gale");
     threadNumber_ = tnum;
@@ -19,12 +23,12 @@ Gale::Gale(int tnum, int tnumPerCluster) {
     currClusters_ = std::vector<SimplexId>(threadNumber_, 0);
     currRelations_ = std::vector<RelationType>(threadNumber_, RelationType::BlankRelation);
     // waitings_ = std::vector<int>(threadNumber_, 0);
-    timers_ = std::vector<Timer>(threadNumber_);
     relationSems_ = std::vector<sem_t>(threadNumber_);
     for (int i = 0; i < 25; ++i) {
         baseClusters_[i] = std::vector<int>(threadNumber_, 0);
     }
     #ifdef MEASURE_WAITING
+    timers_ = std::vector<Timer>(threadNumber_);
     waitingTimes_ = std::vector<double>(threadNumber_, 0);
     waitingCounts_ = std::vector<int>(threadNumber_, 0);
     #endif
@@ -34,6 +38,9 @@ Gale::Gale(int tnum, int tnumPerCluster) {
 }
 
 
+/**
+ * Destructor of GALE
+*/
 Gale::~Gale() {
     if (producer_.joinable()) {
         currClusters_[0] = -1;
@@ -71,235 +78,130 @@ Gale::~Gale() {
 }
 
 
-int Gale::buildInternalEdgeList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 2>>> &clusterEdges, bool buildBoundary) {
+/**
+ * Extraction of edge list during the initialization phase.
+*/
+int Gale::buildInternalEdgeList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 2>>> &clusterEdges) {
 
     if(clusterId <= 0 || clusterId > clusterNumber_)
         return -1;
 
     SimplexId edgeCount = 0;
-    // if we need to build the boundary edge list
-    if(buildBoundary) {
-        std::map<std::array<SimplexId, 2>, int> localEdgeMap;
+    std::set<std::array<SimplexId, 2>> localEdgeSet;
 
-        // loop through the internal cell list
-        for(SimplexId cid = hCellIntervals_[clusterId - 1];
-            cid < hCellIntervals_[clusterId]; cid++) {
-            std::array<SimplexId, 2> edgeIds;
+    // loop through the internal cell list
+    for(SimplexId cid = hCellIntervals_[clusterId - 1];
+        cid < hCellIntervals_[clusterId]; cid++) {
+        std::array<SimplexId, 2> edgeIds;
 
-            // loop through each edge of the cell
-            for(SimplexId j = 0; j < cellDimension_; j++) {
-                edgeIds[0] = hConnectivity_[hOffsets_[cid] + j];
-                // the edge does not belong to the current node
-                if(edgeIds[0] < hVertexIntervals_[clusterId]) {
-                    for(SimplexId k = j + 1; k < cellDimension_ + 1; k++) {
-                        edgeIds[1] = hConnectivity_[hOffsets_[cid] + k];
-                        localEdgeMap[edgeIds]++;
-                    }
-                }
-            }
-        }
-
-        // loop through the external cell list
-        for(int i = hExternalCellOffsets_[clusterId-1]; i < hExternalCellOffsets_[clusterId]; ++i) {
-            SimplexId cellId = hOffsets_[hExternalCells_[i]];
-
-            std::array<SimplexId, 2> edgeIds;
-
-            // loop through each edge of the cell from cell[1]
-            for(SimplexId j = 1; j < cellDimension_; j++) {
+        // loop through each edge of the cell
+        for(SimplexId j = 0; j < cellDimension_; j++) {
+            edgeIds[0] = hConnectivity_[hOffsets_[cid] + j];
+            // the edge does not belong to the current node
+            if(edgeIds[0] < hVertexIntervals_[clusterId]) {
                 for(SimplexId k = j + 1; k < cellDimension_ + 1; k++) {
-                    edgeIds[0] = hConnectivity_[cellId + j];
-                    edgeIds[1] = hConnectivity_[cellId + k];
+                    edgeIds[1] = hConnectivity_[hOffsets_[cid] + k];
 
-                    // the edge is in the current node
-                    if(edgeIds[0] >= hVertexIntervals_[clusterId - 1]
-                        && edgeIds[0] < hVertexIntervals_[clusterId]) {
-                        localEdgeMap[edgeIds]++;
+                    // not found in the edge map - assign new edge id
+                    if(localEdgeSet.find(edgeIds) == localEdgeSet.end()) {
+                        edgeCount++;
+                        localEdgeSet.insert(edgeIds);
                     }
                 }
             }
         }
-
-        // compute boundary edges
-        edgeCount = localEdgeMap.size();
-        std::vector<bool> localBoundEdges(edgeCount, false);
-        int k = 0;
-        for(auto &m : localEdgeMap) {
-            clusterEdges[clusterId].push_back(std::move(m.first));
-            if(m.second == 1) {
-                localBoundEdges[k] = true;
-            }
-            k++;
-        }
-        // allClusters_[clusterId].boundaryEdges_[0] = std::move(localBoundEdges);
     }
-    // otherwise, we just build the edge list
-    else {
-        std::set<std::array<SimplexId, 2>> localEdgeSet;
 
-        // loop through the internal cell list
-        for(SimplexId cid = hCellIntervals_[clusterId - 1];
-            cid < hCellIntervals_[clusterId]; cid++) {
-            std::array<SimplexId, 2> edgeIds;
+    // loop through the external cell list
+    for(int i = hExternalCellOffsets_[clusterId - 1]; i < hExternalCellOffsets_[clusterId]; ++i) {
+        SimplexId cellId = hOffsets_[hExternalCells_[i]];
+        std::array<SimplexId, 2> edgeIds;
 
-            // loop through each edge of the cell
-            for(SimplexId j = 0; j < cellDimension_; j++) {
-                edgeIds[0] = hConnectivity_[hOffsets_[cid] + j];
-                // the edge does not belong to the current node
-                if(edgeIds[0] < hVertexIntervals_[clusterId]) {
-                    for(SimplexId k = j + 1; k < cellDimension_ + 1; k++) {
-                        edgeIds[1] = hConnectivity_[hOffsets_[cid] + k];
+        // loop through each edge of the cell from cell[1]
+        for(SimplexId j = 1; j < cellDimension_; j++) {
+            for(SimplexId k = j + 1; k < cellDimension_ + 1; k++) {
+                edgeIds[0] = hConnectivity_[cellId + j];
+                edgeIds[1] = hConnectivity_[cellId + k];
 
-                        // not found in the edge map - assign new edge id
-                        if(localEdgeSet.find(edgeIds) == localEdgeSet.end()) {
-                            edgeCount++;
-                            localEdgeSet.insert(edgeIds);
-                        }
+                // the edge is in the current node
+                if(edgeIds[0] >= hVertexIntervals_[clusterId - 1]
+                    && edgeIds[0] < hVertexIntervals_[clusterId]) {
+                    if(localEdgeSet.find(edgeIds) == localEdgeSet.end()) {
+                        edgeCount++;
+                        localEdgeSet.insert(edgeIds);
                     }
                 }
             }
         }
-
-        // loop through the external cell list
-        for(int i = hExternalCellOffsets_[clusterId - 1]; i < hExternalCellOffsets_[clusterId]; ++i) {
-            SimplexId cellId = hOffsets_[hExternalCells_[i]];
-            std::array<SimplexId, 2> edgeIds;
-
-            // loop through each edge of the cell from cell[1]
-            for(SimplexId j = 1; j < cellDimension_; j++) {
-                for(SimplexId k = j + 1; k < cellDimension_ + 1; k++) {
-                    edgeIds[0] = hConnectivity_[cellId + j];
-                    edgeIds[1] = hConnectivity_[cellId + k];
-
-                    // the edge is in the current node
-                    if(edgeIds[0] >= hVertexIntervals_[clusterId - 1]
-                        && edgeIds[0] < hVertexIntervals_[clusterId]) {
-                        if(localEdgeSet.find(edgeIds) == localEdgeSet.end()) {
-                            edgeCount++;
-                            localEdgeSet.insert(edgeIds);
-                        }
-                    }
-                }
-            }
-        }
-
-        clusterEdges[clusterId] = {localEdgeSet.begin(), localEdgeSet.end()};
     }
+
+    clusterEdges[clusterId] = {localEdgeSet.begin(), localEdgeSet.end()};
     return edgeCount;
 }
 
-int Gale::buildInternalTriangleList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 3>>> &clusterTriangles, bool buildBoundary) {
+/**
+ * Extraction of edge list during the initialization phase.
+*/
+int Gale::buildInternalTriangleList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 3>>> &clusterTriangles) {
 
     if(clusterId <= 0 || clusterId > clusterNumber_)
         return -1;
 
     SimplexId triangleCount = 0;
 
-    // if we need to build the boundary triangle list
-    if(buildBoundary) {
-        std::map<std::array<SimplexId, 3>, int> localTriangleMap;
+    std::set<std::array<SimplexId, 3>> localTriangleSet;
 
-        // loop through the internal cell list
-        for(SimplexId cid = hCellIntervals_[clusterId - 1];
-            cid < hCellIntervals_[clusterId]; cid++) {
-            std::array<SimplexId, 3> triangleIds;
+    // loop through the internal cell list
+    for(SimplexId cid = hCellIntervals_[clusterId - 1];
+        cid < hCellIntervals_[clusterId]; cid++) {
+        std::array<SimplexId, 3> triangleIds;
 
-            // loop through each triangle of the cell
-            for(SimplexId j = 0; j < cellDimension_ - 1; j++) {
-                triangleIds[0] = hConnectivity_[hOffsets_[cid] + j];
-                // the triangle does not belong to the current node
-                if(triangleIds[0] < hVertexIntervals_[clusterId]) {
-                    for(SimplexId k = j + 1; k < cellDimension_; k++) {
-                        for(SimplexId l = k + 1; l < cellDimension_ + 1; l++) {
-                            triangleIds[1] = hConnectivity_[hOffsets_[cid] + k];
-                            triangleIds[2] = hConnectivity_[hOffsets_[cid] + l];
-                            localTriangleMap[triangleIds]++;
+        // loop through each triangle of the cell
+        for(SimplexId j = 0; j < cellDimension_ - 1; j++) {
+            triangleIds[0] = hConnectivity_[hOffsets_[cid] + j];
+            // the triangle does not belong to the current node
+            if(triangleIds[0] < hVertexIntervals_[clusterId]) {
+                for(SimplexId k = j + 1; k < cellDimension_; k++) {
+                    for(SimplexId l = k + 1; l < cellDimension_ + 1; l++) {
+                        triangleIds[1] = hConnectivity_[hOffsets_[cid] + k];
+                        triangleIds[2] = hConnectivity_[hOffsets_[cid] + l];
+
+                        if(localTriangleSet.find(triangleIds) == localTriangleSet.end()) {
+                            triangleCount++;
+                            localTriangleSet.insert(triangleIds);
                         }
                     }
                 }
             }
         }
-
-        // loop through the external cell list
-        for(int i = hExternalCellOffsets_[clusterId-1]; i < hExternalCellOffsets_[clusterId]; ++i) {
-            SimplexId cellId = hOffsets_[hExternalCells_[i]];
-            // only check the cell[1,2,3] since cell[0] belongs to the previous cluster?
-            std::array<SimplexId, 3> triangleIds;
-            triangleIds[0] = hConnectivity_[cellId + 1];
-            if(triangleIds[0] >= hVertexIntervals_[clusterId - 1]
-                && triangleIds[0] < hVertexIntervals_[clusterId]) {
-                triangleIds[1] = hConnectivity_[cellId + 2];
-                triangleIds[2] = hConnectivity_[cellId + 3];
-                localTriangleMap[triangleIds]++;
-            }
-        }
-
-        // compute boundary triangles
-        triangleCount = localTriangleMap.size();
-        std::vector<bool> localBoundTriangles(triangleCount, false);
-        int k = 0;
-        for(auto &m : localTriangleMap) {
-            clusterTriangles[clusterId].push_back(std::move(m.first));
-            if(m.second == 1) {
-                localBoundTriangles[k] = true;
-            }
-            k++;
-        }
-        // allClusters_[clusterId].boundaryTriangles_[0] = std::move(localBoundTriangles);
     }
-    // otherwise, we just build the triangle list
-    else {
-        std::set<std::array<SimplexId, 3>> localTriangleSet;
 
-        // loop through the internal cell list
-        for(SimplexId cid = hCellIntervals_[clusterId - 1];
-            cid < hCellIntervals_[clusterId]; cid++) {
-            std::array<SimplexId, 3> triangleIds;
-
-            // loop through each triangle of the cell
-            for(SimplexId j = 0; j < cellDimension_ - 1; j++) {
-                triangleIds[0] = hConnectivity_[hOffsets_[cid] + j];
-                // the triangle does not belong to the current node
-                if(triangleIds[0] < hVertexIntervals_[clusterId]) {
-                    for(SimplexId k = j + 1; k < cellDimension_; k++) {
-                        for(SimplexId l = k + 1; l < cellDimension_ + 1; l++) {
-                            triangleIds[1] = hConnectivity_[hOffsets_[cid] + k];
-                            triangleIds[2] = hConnectivity_[hOffsets_[cid] + l];
-
-                            if(localTriangleSet.find(triangleIds) == localTriangleSet.end()) {
-                                triangleCount++;
-                                localTriangleSet.insert(triangleIds);
-                            }
-                        }
-                    }
-                }
+    // loop through the external cell list
+    for(int i = hExternalCellOffsets_[clusterId-1]; i < hExternalCellOffsets_[clusterId]; ++i) {
+        SimplexId cellId = hOffsets_[hExternalCells_[i]];
+        // only check the cell[1,2,3] since cell[0] belongs to the previous cluster?
+        std::array<SimplexId, 3> triangleIds;
+        triangleIds[0] = hConnectivity_[cellId + 1];
+        if(triangleIds[0] >= hVertexIntervals_[clusterId - 1]
+            && triangleIds[0] < hVertexIntervals_[clusterId]) {
+            triangleIds[1] = hConnectivity_[cellId + 2];
+            triangleIds[2] = hConnectivity_[cellId + 3];
+            if(localTriangleSet.find(triangleIds) == localTriangleSet.end()) {
+                triangleCount++;
+                localTriangleSet.insert(triangleIds);
             }
         }
-
-        // loop through the external cell list
-        for(int i = hExternalCellOffsets_[clusterId-1]; i < hExternalCellOffsets_[clusterId]; ++i) {
-            SimplexId cellId = hOffsets_[hExternalCells_[i]];
-            // only check the cell[1,2,3] since cell[0] belongs to the previous cluster?
-            std::array<SimplexId, 3> triangleIds;
-            triangleIds[0] = hConnectivity_[cellId + 1];
-            if(triangleIds[0] >= hVertexIntervals_[clusterId - 1]
-                && triangleIds[0] < hVertexIntervals_[clusterId]) {
-                triangleIds[1] = hConnectivity_[cellId + 2];
-                triangleIds[2] = hConnectivity_[cellId + 3];
-                if(localTriangleSet.find(triangleIds) == localTriangleSet.end()) {
-                    triangleCount++;
-                    localTriangleSet.insert(triangleIds);
-                }
-            }
-        }
-        clusterTriangles[clusterId] = {localTriangleSet.begin(), localTriangleSet.end()};
     }
+
+    clusterTriangles[clusterId] = {localTriangleSet.begin(), localTriangleSet.end()};
     return triangleCount;
 }
 
 
-// Compute relations when there is only one single consumer thread
-// WARNING: will be deprecated later
+/**
+ * Compute relations when there is only one single consumer thread
+ * WARNING: will be deprecated later
+*/
 int Gale::computeRelation(const RelationType relation,
                         const SimplexId clusterId,
                         bool global,
@@ -319,6 +221,7 @@ int Gale::computeRelation(const RelationType relation,
         endCluster = std::min(clusterId + numBlocks * (blockSize_ / threadsPerCluster_), clusterNumber_) - 1;
     }
 
+    // different relations correspond to different GPU kernels
     switch (relation) {
         case RelationType::BERelation:
         {
@@ -861,7 +764,9 @@ int Gale::computeRelation(const RelationType relation,
     return res;
 }
 
-
+/**
+ * Compute topological relations for multiple consumer.
+*/
 int Gale::computeCombinedRelation(std::map<RelationType, 
             std::vector<std::pair<int,int>>> &requestMap, 
             std::vector<RelationType> &relationOrders) {
@@ -1685,11 +1590,13 @@ int Gale::computeCombinedRelation(std::map<RelationType,
 }
 
 
-void Gale::assistProcedure() {
+/**
+ * Procedure of the leader producer.
+*/
+void Gale::leaderProducer() {
     volatile SimplexId leaderCluster = 0;
     volatile RelationType leaderFunc = RelationType::BlankRelation;
 
-    /* Job queue version */
     if (threadNumber_ == 1) {
         while (true) {
             std::unique_lock<std::mutex> qlock(qMutex_);
@@ -1962,6 +1869,9 @@ void Gale::assistProcedure() {
     }
 }
 
+/**
+ * Initialize GALE with custom parameters.
+*/
 void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reorder) {
     if (dataSet->GetDataObjectType() != VTK_UNSTRUCTURED_GRID) {
         std::cerr << "The input dataset is not unstructured grid!" << std::endl;
@@ -2144,13 +2054,13 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
         computeVertexIntervals();
     }
     
-    allClusters_ = std::vector<ImplicitCluster>(clusterNumber_);
+    allClusters_ = std::vector<MeshSegment>(clusterNumber_);
     clusterMutexes_ = std::vector<boost::shared_mutex>(clusterNumber_);
     for (int cid = 1; cid < clusterNumber_; ++cid) {
-        allClusters_[cid] = ImplicitCluster(cid);
+        allClusters_[cid] = MeshSegment(cid);
     }
 
-    producer_ = std::thread(&Gale::assistProcedure, this);
+    producer_ = std::thread(&Gale::leaderProducer, this);
     printf("[Gale] GPU threads per cluster: %d, thread num: %d, block number: %d, block size: %d, cluster number: %d, cell number: %d, vertex number: %d\n", threadsPerCluster_, threadNumber_, numBlocks_, blockSize_, clusterNumber_, cellNumber_, vertexNumber_);
 
     // copy input mesh arrays to the GPU     
@@ -2162,7 +2072,9 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
     CHECK(cudaMemcpyAsync(dIndexArray_, hIndexArray_, sizeof(int) * vertexNumber_, cudaMemcpyHostToDevice));
 }
 
-
+/**
+ * Compute the cell interval array.
+*/
 void Gale::computeCellIntervals() {
     std::vector<std::vector<int>> externalCells(clusterNumber_);
     hExternalCellOffsets_ = new int[clusterNumber_];
@@ -2201,31 +2113,12 @@ void Gale::computeCellIntervals() {
         tmp += externalCells[i].size();
     }
     CHECK(cudaMemcpy(dExternalCells_, hExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], cudaMemcpyHostToDevice));
-
-    // int blockSize = 32;
-    // int numBlocks = vertexNumber_ / blockSize + 1;
-    // cudaMalloc(&dCellIntervals_, sizeof(int) * clusterNumber_);
-    // cudaMemset(dCellIntervals_, 0, clusterNumber_);
-
-    // countCells<<<numBlocks, blockSize>>>(dCellIntervals_, dConnectivity_, dOffsets_, dIndexArray_, cellNumber_, 3);
-
-    // hCellIntervals_ = (int *) malloc(sizeof(int) * clusterNumber_);
-    // cudaMemcpy(hCellIntervals_, dCellIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyDeviceToHost);
 }
 
-
+/**
+ * Compute the vertex interval array.
+*/
 void Gale::computeVertexIntervals() {
-    // int blockSize = 64;
-    // int numBlocks = vertexNumber_ / blockSize + 1;
-
-    // cudaMalloc(&dVertexIntervals_, sizeof(int) * (clusterNumber_+1));
-    // cudaMemset(dVertexIntervals_, 0, clusterNumber_+1);
-    // countVertices<<<numBlocks, blockSize>>>(dVertexIntervals_, dIndexArray_, vertexNumber_);
-
-    // hVertexIntervals_ = (int *) malloc(sizeof(int) * (clusterNumber_+1));
-    // cudaMemcpy(hVertexIntervals_, dVertexIntervals_, sizeof(int) * (clusterNumber_+1), cudaMemcpyDeviceToHost);
-    // hVertexIntervals_[0] = -1;
-    // for (int i = 1; i < clusterNumber_; ++i) hVertexIntervals_[i] = hVertexIntervals_[i-1] + hVertexIntervals_[i];
 
     CHECK(cudaMallocAsync(&dVertexIntervals_, sizeof(int) * clusterNumber_, 0));
 
@@ -2241,7 +2134,9 @@ void Gale::computeVertexIntervals() {
     CHECK(cudaMemcpyAsync(dVertexIntervals_, hVertexIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice, 0));
 }
 
-
+/**
+ * Reindex the vertices to make the GALE work with the input segment.
+*/
 int Gale::reorderVertices(std::vector<SimplexId> &vertexMap) {
     CHECK(cudaMallocAsync(&dVertexIntervals_, sizeof(int) * clusterNumber_, 0));
     std::vector<std::vector<SimplexId>> clusterVertices(clusterNumber_);
@@ -2266,12 +2161,6 @@ int Gale::reorderVertices(std::vector<SimplexId> &vertexMap) {
     if(doublePrecision_) {
         double *newPointSet = new double[3 * vertexNumber_];
         mempcpy(newPointSet, pointSet_, sizeof(double) * 3 * vertexNumber_);
-        // for(SimplexId vid = 0; vid < vertexNumber_; vid++) {
-        //     for(int j = 0; j < 3; j++) {
-        //         newPointSet[3 * vertexMap[vid] + j]
-        //         = ((double *)pointSet_)[3 * vid + j];
-        //     }
-        // }
         for(SimplexId vid = 0; vid < vertexNumber_; vid++) {
             for(int j = 0; j < 3; j++) {
                 ((double *)pointSet_)[3 * vertexMap[vid] + j] = newPointSet[3 * vid + j];
@@ -2300,6 +2189,9 @@ int Gale::reorderVertices(std::vector<SimplexId> &vertexMap) {
     return 0;
 }
 
+/**
+ * Reindex the cells to make the GALE work with the input segment.
+*/
 int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
     // change the indices in cell array
     SimplexId cellCount = 0, verticesPerCell = hOffsets_[1] - hOffsets_[0];
@@ -2371,6 +2263,9 @@ int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
 }
 
 
+/**
+ * Compute the edge list from the input cell array.
+*/
 int Gale::preconditionEdgesInternal() {
     if(edgeList_.empty()) {
         Timer t;
@@ -2408,6 +2303,9 @@ int Gale::preconditionEdgesInternal() {
     return 0;
 }
 
+/**
+ * Compute the triangle list from the input cell array.
+*/
 int Gale::preconditionTrianglesInternal() {
     if(triangleList_.empty()) {
         Timer t;

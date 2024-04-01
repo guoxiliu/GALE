@@ -80,7 +80,10 @@ __global__ void countExternalCells(int *externalCellOffsets, const vtkIdType *co
 }
 
 
-/* NOT USED: Build the edge list */
+/**
+ * Build the edge list. 
+ * NOTE: NOT USED due to poor performance.
+*/
 __global__ void buildEdges(int *edgeList, int *edgeCounts,
                             const int *vertexMap, const int *cellIntervals, 
                             const int *vertexIntervals, const int *edgeIntervals, 
@@ -157,6 +160,8 @@ __global__ void computeVertexCells(int *vertexCellSize, const vtkIdType *connect
         atomicAdd(&vertexCellSize[vertexId], 1);
     }
 }
+
+/* The following kernels compute relations for a single consumer thread */
 
 /**
  * Compute the boundary edge list
@@ -342,6 +347,9 @@ __global__ void computeBoundaryTriangles(int *triangleList, int *triangleStarMat
     }
 }
 
+/**
+ * Compute the boundary vertex list.
+*/
 __global__ void computeBoundaryVertices(int *triangleList, bool *boundaryTriangles, bool *boundaryVertices,
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
@@ -413,6 +421,9 @@ __global__ void computeBoundaryVertices(int *triangleList, bool *boundaryTriangl
     }
 }
 
+/**
+ * Compute the edge triangle relation.
+*/
 __global__ void computeEdgeTriangles(int *edgeList, int *triangleList,
             int *edgeTriangleMatrix, int *edgeTriangleSizes, 
             const int baseCluster, const int clusterNumber,
@@ -513,6 +524,9 @@ __global__ void computeEdgeTriangles(int *edgeList, int *triangleList,
     }
 }
 
+/**
+ * Compute the edge tetrahedron relation.
+*/
 __global__ void computeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeStarSizes, 
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
@@ -592,6 +606,9 @@ __global__ void computeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeSt
     }
 }
 
+/**
+ * Compute the triangle tetrahedron relation.
+*/
 __global__ void computeTriangleStars(int *triangleList, int *triangleStarMatrix, int *triangleStarSizes, 
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
@@ -677,6 +694,9 @@ __global__ void computeTriangleStars(int *triangleList, int *triangleStarMatrix,
     }
 }
 
+/**
+ * Compute the vertex edge relation.
+*/
 __global__ void computeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int *vertexEdgeSizes, 
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
@@ -781,6 +801,9 @@ __global__ void computeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int *ve
     }
 }
 
+/**
+ * Compute the vertex neighbor relation.
+*/
 __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNeighborSizes, 
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
@@ -933,7 +956,9 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
 
 }
 
-
+/**
+ * Compute the vertex tetrahedron relation.
+*/
 __global__ void computeVertexStars(int *vertexStarMatrix, int *vertexStarSizes, 
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
@@ -1008,7 +1033,9 @@ __global__ void computeVertexStars(int *vertexStarMatrix, int *vertexStarSizes,
     }
 }
 
-
+/**
+ * Compute the vertex triangle relation.
+*/
 __global__ void computeVertexTriangles(int *triangleList, int *vertexTriangleMatrix, int *vertexTriangleSizes, 
             const int baseCluster, const int clusterNumber,
             const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
@@ -1147,6 +1174,12 @@ __global__ void computeVertexTriangles(int *triangleList, int *vertexTriangleMat
     }
 }
 
+
+/* The following kernels compute relations for multiple consumer threads */
+
+/**
+ * Compute boundary edge list.
+*/
 __global__ void computeMultiBoundaryEdges(int *edgeList, int *triangleList,
             bool *boundaryEdges, bool *boundaryTriangles, 
             const int clusterNumber, const int *baseClusters, const int *edgeOffsets,
@@ -1229,6 +1262,9 @@ __global__ void computeMultiBoundaryEdges(int *edgeList, int *triangleList,
     }
 }
 
+/**
+ * Compute the boundary vertex list.
+*/
 __global__ void computeMultiBoundaryVertices(int *triangleList, bool *boundaryTriangles, bool *boundaryVertices,
             const int clusterNumber, const int *baseClusters, const int *vertexOffsets,
             const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
@@ -1302,6 +1338,9 @@ __global__ void computeMultiBoundaryVertices(int *triangleList, bool *boundaryTr
     }
 }
 
+/**
+ * Compute the edge tetrahedron relation.
+*/
 __global__ void computeMultiEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeStarSizes, 
             const int clusterNumber, const int *baseClusters, const int *edgeOffsets,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
@@ -1383,6 +1422,9 @@ __global__ void computeMultiEdgeStars(int *edgeList, int *edgeStarMatrix, int *e
     }
 }
 
+/**
+ * Compute the edge triangle relation.
+*/
 __global__ void computeMultiEdgeTriangles(int *edgeList, int *triangleList,
             int *edgeTriangleMatrix, int *edgeTriangleSizes, 
             const int clusterNumber, const int *baseClusters, const int *edgeOffsets,
@@ -1485,6 +1527,9 @@ __global__ void computeMultiEdgeTriangles(int *edgeList, int *triangleList,
     }
 }
 
+/**
+ * Compute the triangle tetrahedron relation.
+*/
 __global__ void computeMultiTriangleStars(int *triangleList, int *triangleStarMatrix, int *triangleStarSizes, 
             const int clusterNumber, const int *baseClusters, const int *triangleOffsets,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
@@ -1572,6 +1617,9 @@ __global__ void computeMultiTriangleStars(int *triangleList, int *triangleStarMa
     }
 }
 
+/**
+ * Compute the vertex edge relation.
+*/
 __global__ void computeMultiVertexEdges(int *edgeList, int *vertexEdgeMatrix, 
             int *vertexEdgeSizes, const int clusterNumber, 
             const int *baseClusters, const int *vertexOffsets,
@@ -1667,6 +1715,9 @@ __global__ void computeMultiVertexEdges(int *edgeList, int *vertexEdgeMatrix,
     }
 }
 
+/**
+ * Compute the vertex triangle relation.
+*/
 __global__ void computeMultiVertexTriangles(int *triangleList, int *vertexTriangleMatrix, 
             int *vertexTriangleSizes, const int clusterNumber, 
             const int *baseClusters, const int *vertexOffsets,
@@ -1791,6 +1842,9 @@ __global__ void computeMultiVertexTriangles(int *triangleList, int *vertexTriang
     }
 }
 
+/**
+ * Compute the vertex neighbor relation.
+*/
 __global__ void computeMultiVertexNeighbors(int *vertexNeighborMatrix, int *vertexNeighborSizes, 
             const int clusterNumber, const int *baseClusters, const int *vertexOffsets,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
@@ -1935,7 +1989,9 @@ __global__ void computeMultiVertexNeighbors(int *vertexNeighborMatrix, int *vert
     }
 }
 
-
+/**
+ * Compute the vertex tetrahedron relation.
+*/
 __global__ void computeMultiVertexStars(int *vertexStarMatrix, int *vertexStarSizes, 
             const int clusterNumber, const int *baseClusters, const int *vertexOffsets,
             const vtkIdType *connectivity, const vtkIdType *offsets, 
