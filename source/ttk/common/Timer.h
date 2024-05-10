@@ -1,9 +1,3 @@
-/**
- * The library contains useful functions related to Timer. 
- * Author: Guoxi Liu <guoxil@clemson.edu>
- * Date: 2023/09/20
- *  
-*/
 #pragma once
 
 #include <chrono>

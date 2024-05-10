@@ -1037,7 +1037,7 @@ class Gale final : public AbstractTriangulation {
         /* Data allocated on the host memory */
         // pointers will be initialized to nullptr directly
         void *pointSet_;
-        int numBlocks_, blockSize_;
+        int blocksPerThread_, blockSize_;
         int *hIndexArray_{}, *hExternalCells_{}, *hExternalCellOffsets_{};
         vtkIdType *hConnectivity_{}, *hOffsets_{};
         int *hCellIntervals_{}, *hTriangleIntervals_{}, *hEdgeIntervals_{}, *hVertexIntervals_{};

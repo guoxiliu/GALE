@@ -34,7 +34,7 @@ Gale::Gale(int tnum, int tnumPerCluster) {
     #endif
 
     // GPU parameters
-    numBlocks_ = 50, blockSize_ = 32;
+    blocksPerThread_ = 1, blockSize_ = 32;
 }
 
 
@@ -217,7 +217,7 @@ int Gale::computeRelation(const RelationType relation,
         endCluster = clusterNumber_ - 1;
     }
     else {
-        numBlocks = numBlocks_;
+        numBlocks = blocksPerThread_;
         endCluster = std::min(clusterId + numBlocks * (blockSize_ / threadsPerCluster_), clusterNumber_) - 1;
     }
 
@@ -793,7 +793,7 @@ int Gale::computeCombinedRelation(std::map<RelationType,
         std::vector<std::pair<int,int>> &jobs = requestMap[relation];
 
         int threadNum = jobs.size();
-        int gpuBlocks = numBlocks_ / threadNum;
+        int gpuBlocks = blocksPerThread_ * threadNum;
         int gpuThreads = blockSize_ / threadsPerCluster_ * gpuBlocks;
 
         // launches different kernels on different streams
@@ -1619,7 +1619,7 @@ void Gale::leaderProducer() {
                 
                 // SimplexId diff = leaderCluster - baseClusters_[static_cast<int>(leaderFunc)][i];
                 // // check if the precomputation needs to be performed
-                // if (diff < 0 || diff > numBlocks_ * blockSize_ * 0.6) {
+                // if (diff < 0 || diff > blocksPerThread_ * blockSize_ * 0.6) {
                 //     // std::cout << "precomputing for thread " << i << " cluster = " << leaderCluster << " diff = " << diff << std::endl;
                 //     computeRelation(leaderFunc, leaderCluster, i, false);
                 // }
@@ -1933,7 +1933,7 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
     for (int i = 0; i < threadNumber_; ++i) {
         sem_init(&relationSems_[i], 0, 0);
     }
-    if (blockNum > 0) numBlocks_ = blockNum;
+    if (blockNum > 0) blocksPerThread_ = blockNum;
     if (blockSize > 0) {
         blockSize_ = blockSize;
         if (blockSize % threadsPerCluster_ != 0) {
@@ -2061,7 +2061,7 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
     }
 
     producer_ = std::thread(&Gale::leaderProducer, this);
-    printf("[Gale] GPU threads per cluster: %d, thread num: %d, block number: %d, block size: %d, cluster number: %d, cell number: %d, vertex number: %d\n", threadsPerCluster_, threadNumber_, numBlocks_, blockSize_, clusterNumber_, cellNumber_, vertexNumber_);
+    printf("[Gale] GPU threads per cluster: %d, thread num: %d, block number: %d, block size: %d, cluster number: %d, cell number: %d, vertex number: %d\n", threadsPerCluster_, threadNumber_, blocksPerThread_, blockSize_, clusterNumber_, cellNumber_, vertexNumber_);
 
     // copy input mesh arrays to the GPU     
     CHECK(cudaMallocAsync(&dConnectivity_, sizeof(vtkIdType) * (cellNumber_ * 4), 0));
