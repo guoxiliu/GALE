@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Utils.cuh>
-#include <vtkType.h>
 
 const int efColumnNum = 20;
 const int etColumnNum = 20;
@@ -12,7 +11,7 @@ const int veColumnNum = 30;
 const int vfColumnNum = 80;
 
 
-__global__ void countCells(int *localCellCounts, const vtkIdType *connectivity, const vtkIdType *offset, const int *vertexMap, const int cellNumber, const int dimension) {
+__global__ void countCells(int *localCellCounts, const int *connectivity, const int *offset, const int *vertexMap, const int cellNumber, const int dimension) {
     /* Divide the job by cells */
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= cellNumber) return;
@@ -41,7 +40,7 @@ __global__ void countCells(int *localCellCounts, const vtkIdType *connectivity, 
 }
 
 
-__global__ void countExternalCells(int *externalCellOffsets, const vtkIdType *connectivity, const vtkIdType *offset, const int *vertexMap, const int cellNumber, const int dimension) {
+__global__ void countExternalCells(int *externalCellOffsets, const int *connectivity, const int *offset, const int *vertexMap, const int cellNumber, const int dimension) {
     /* Divide the job by cells */
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= cellNumber) return;
@@ -57,7 +56,7 @@ __global__ void countExternalCells(int *externalCellOffsets, const vtkIdType *co
 }
 
 
-__global__ void countExternalCells(int *externalCellOffsets, const vtkIdType *connectivity, const vtkIdType *offset, const int *cellIntervals, const int *vertexMap, const int clusterNumber, const int dimension) {
+__global__ void countExternalCells(int *externalCellOffsets, const int *connectivity, const int *offset, const int *cellIntervals, const int *vertexMap, const int clusterNumber, const int dimension) {
     /* Divide the job by clusters */
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid > 0 && tid < clusterNumber) {
@@ -88,7 +87,7 @@ __global__ void buildEdges(int *edgeList, int *edgeCounts,
                             const int *vertexMap, const int *cellIntervals, 
                             const int *vertexIntervals, const int *edgeIntervals, 
                             const int *externalCells, const int *externalCellOffsets, 
-                            const vtkIdType *connectivity, const vtkIdType *offsets, 
+                            const int *connectivity, const int *offsets, 
                             const int clusterNumber, const int cellNumber, const int dimension) {
 
     int tid = blockIdx.x * blockDim.x + threadIdx.x + 1;
@@ -150,7 +149,7 @@ __global__ void buildEdges(int *edgeList, int *edgeCounts,
 }
 
 
-__global__ void computeVertexCells(int *vertexCellSize, const vtkIdType *connectivity, const vtkIdType *offset, const int cellNumber, const int dimension) {
+__global__ void computeVertexCells(int *vertexCellSize, const int *connectivity, const int *offset, const int cellNumber, const int dimension) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= cellNumber) return;
 
@@ -169,7 +168,7 @@ __global__ void computeVertexCells(int *vertexCellSize, const vtkIdType *connect
 __global__ void computeBoundaryEdges(int *edgeList, int *triangleList,
             bool *boundaryEdges, bool *boundaryTriangles, 
             const int baseCluster, const int clusterNumber,
-            const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
+            const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *edgeIntervals, const int *triangleIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -252,7 +251,7 @@ __global__ void computeBoundaryEdges(int *edgeList, int *triangleList,
 __global__ void computeBoundaryTriangles(int *triangleList, int *triangleStarMatrix, 
             int *triangleStarSizes, bool *boundaryTriangles,
             const int baseCluster, const int clusterNumber,
-            const vtkIdType *connectivity, const vtkIdType *offsets, 
+            const int *connectivity, const int *offsets, 
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -352,7 +351,7 @@ __global__ void computeBoundaryTriangles(int *triangleList, int *triangleStarMat
 */
 __global__ void computeBoundaryVertices(int *triangleList, bool *boundaryTriangles, bool *boundaryVertices,
             const int baseCluster, const int clusterNumber,
-            const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
+            const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -427,7 +426,7 @@ __global__ void computeBoundaryVertices(int *triangleList, bool *boundaryTriangl
 __global__ void computeEdgeTriangles(int *edgeList, int *triangleList,
             int *edgeTriangleMatrix, int *edgeTriangleSizes, 
             const int baseCluster, const int clusterNumber,
-            const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
+            const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *edgeIntervals, const int *triangleIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -529,7 +528,7 @@ __global__ void computeEdgeTriangles(int *edgeList, int *triangleList,
 */
 __global__ void computeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeStarSizes, 
             const int baseCluster, const int clusterNumber,
-            const vtkIdType *connectivity, const vtkIdType *offsets, 
+            const int *connectivity, const int *offsets, 
             const int *vertexIntervals, const int *edgeIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -611,7 +610,7 @@ __global__ void computeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeSt
 */
 __global__ void computeTriangleStars(int *triangleList, int *triangleStarMatrix, int *triangleStarSizes, 
             const int baseCluster, const int clusterNumber,
-            const vtkIdType *connectivity, const vtkIdType *offsets, 
+            const int *connectivity, const int *offsets, 
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -699,7 +698,7 @@ __global__ void computeTriangleStars(int *triangleList, int *triangleStarMatrix,
 */
 __global__ void computeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int *vertexEdgeSizes, 
             const int baseCluster, const int clusterNumber,
-            const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
+            const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *edgeIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -806,7 +805,7 @@ __global__ void computeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int *ve
 */
 __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNeighborSizes, 
             const int baseCluster, const int clusterNumber,
-            const vtkIdType *connectivity, const vtkIdType *offsets, 
+            const int *connectivity, const int *offsets, 
             const int *vertexIntervals, const int *cellIntervals, 
             const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
@@ -961,7 +960,7 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
 */
 __global__ void computeVertexStars(int *vertexStarMatrix, int *vertexStarSizes, 
             const int baseCluster, const int clusterNumber,
-            const vtkIdType *connectivity, const vtkIdType *offsets, 
+            const int *connectivity, const int *offsets, 
             const int *vertexIntervals, const int *cellIntervals, 
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -1038,7 +1037,7 @@ __global__ void computeVertexStars(int *vertexStarMatrix, int *vertexStarSizes,
 */
 __global__ void computeVertexTriangles(int *triangleList, int *vertexTriangleMatrix, int *vertexTriangleSizes, 
             const int baseCluster, const int clusterNumber,
-            const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
+            const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -1183,7 +1182,7 @@ __global__ void computeVertexTriangles(int *triangleList, int *vertexTriangleMat
 __global__ void computeMultiBoundaryEdges(int *edgeList, int *triangleList,
             bool *boundaryEdges, bool *boundaryTriangles, 
             const int clusterNumber, const int *baseClusters, const int *edgeOffsets,
-            const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
+            const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *edgeIntervals, const int *triangleIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -1267,7 +1266,7 @@ __global__ void computeMultiBoundaryEdges(int *edgeList, int *triangleList,
 */
 __global__ void computeMultiBoundaryVertices(int *triangleList, bool *boundaryTriangles, bool *boundaryVertices,
             const int clusterNumber, const int *baseClusters, const int *vertexOffsets,
-            const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
+            const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -1343,7 +1342,7 @@ __global__ void computeMultiBoundaryVertices(int *triangleList, bool *boundaryTr
 */
 __global__ void computeMultiEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeStarSizes, 
             const int clusterNumber, const int *baseClusters, const int *edgeOffsets,
-            const vtkIdType *connectivity, const vtkIdType *offsets, 
+            const int *connectivity, const int *offsets, 
             const int *vertexIntervals, const int *edgeIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -1428,7 +1427,7 @@ __global__ void computeMultiEdgeStars(int *edgeList, int *edgeStarMatrix, int *e
 __global__ void computeMultiEdgeTriangles(int *edgeList, int *triangleList,
             int *edgeTriangleMatrix, int *edgeTriangleSizes, 
             const int clusterNumber, const int *baseClusters, const int *edgeOffsets,
-            const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
+            const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *edgeIntervals, const int *triangleIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -1532,7 +1531,7 @@ __global__ void computeMultiEdgeTriangles(int *edgeList, int *triangleList,
 */
 __global__ void computeMultiTriangleStars(int *triangleList, int *triangleStarMatrix, int *triangleStarSizes, 
             const int clusterNumber, const int *baseClusters, const int *triangleOffsets,
-            const vtkIdType *connectivity, const vtkIdType *offsets, 
+            const int *connectivity, const int *offsets, 
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -1623,7 +1622,7 @@ __global__ void computeMultiTriangleStars(int *triangleList, int *triangleStarMa
 __global__ void computeMultiVertexEdges(int *edgeList, int *vertexEdgeMatrix, 
             int *vertexEdgeSizes, const int clusterNumber, 
             const int *baseClusters, const int *vertexOffsets,
-            const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
+            const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *edgeIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -1721,7 +1720,7 @@ __global__ void computeMultiVertexEdges(int *edgeList, int *vertexEdgeMatrix,
 __global__ void computeMultiVertexTriangles(int *triangleList, int *vertexTriangleMatrix, 
             int *vertexTriangleSizes, const int clusterNumber, 
             const int *baseClusters, const int *vertexOffsets,
-            const vtkIdType *connectivity, const vtkIdType *offsets, const int *indexArray, 
+            const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -1847,7 +1846,7 @@ __global__ void computeMultiVertexTriangles(int *triangleList, int *vertexTriang
 */
 __global__ void computeMultiVertexNeighbors(int *vertexNeighborMatrix, int *vertexNeighborSizes, 
             const int clusterNumber, const int *baseClusters, const int *vertexOffsets,
-            const vtkIdType *connectivity, const vtkIdType *offsets, 
+            const int *connectivity, const int *offsets, 
             const int *vertexIntervals, const int *cellIntervals, 
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {
@@ -1994,7 +1993,7 @@ __global__ void computeMultiVertexNeighbors(int *vertexNeighborMatrix, int *vert
 */
 __global__ void computeMultiVertexStars(int *vertexStarMatrix, int *vertexStarSizes, 
             const int clusterNumber, const int *baseClusters, const int *vertexOffsets,
-            const vtkIdType *connectivity, const vtkIdType *offsets, 
+            const int *connectivity, const int *offsets, 
             const int *vertexIntervals, const int *cellIntervals, 
             const int *externalCells, const int *externalCellOffsets, 
             const int dimension, const int numThreadsPerCluster) {

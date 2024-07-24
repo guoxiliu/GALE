@@ -1904,21 +1904,20 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
     // Cells
     cellNumber_ = cells->GetNumberOfCells();
     if(cellNumber_ > 0) {
-        if(!cells->IsStorage64Bit()) {
-            if(cells->CanConvertTo64BitStorage()) {
-                std::cout << "Converting the cell array to 64-bit storage" << std::endl;
-                bool success = cells->ConvertTo64BitStorage();
+        // convert to 32-bit storage to reduce memory consumption
+        if(cells->IsStorage64Bit()) {
+            if(cells->CanConvertTo32BitStorage()) {
+                std::cout << "[Gale] Converting the cell array to 32-bit storage" << std::endl;
+                bool success = cells->ConvertTo32BitStorage();
                 if(!success) {
-                    std::cerr << 
-                        "Error converting the provided cell array to 64-bit storage" << std::endl;
+                    std::cerr << "[Gale] Error converting the provided cell array to 32-bit storage" << std::endl;
                 }
             } else {
-                std::cerr << 
-                    "Cannot convert the provided cell array to 64-bit storage" << std::endl;
+                std::cerr << "[Gale] Cannot convert the provided cell array to 32-bit storage" << std::endl;
             }
         }
-        hConnectivity_ = static_cast<vtkIdType *>(cells->GetConnectivityArray()->GetVoidPointer(0));
-        hOffsets_ = static_cast<vtkIdType *>(cells->GetOffsetsArray()->GetVoidPointer(0));
+        hConnectivity_ = static_cast<int *>(cells->GetConnectivityArray()->GetVoidPointer(0));
+        hOffsets_ = static_cast<int *>(cells->GetOffsetsArray()->GetVoidPointer(0));
         cellDimension_ = hOffsets_[1] - hOffsets_[0] - 1;
     }
     
@@ -2063,13 +2062,34 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
     producer_ = std::thread(&Gale::leaderProducer, this);
     printf("[Gale] GPU threads per cluster: %d, thread num: %d, block number: %d, block size: %d, cluster number: %d, cell number: %d, vertex number: %d\n", threadsPerCluster_, threadNumber_, blocksPerThread_, blockSize_, clusterNumber_, cellNumber_, vertexNumber_);
 
-    // copy input mesh arrays to the GPU     
-    CHECK(cudaMallocAsync(&dConnectivity_, sizeof(vtkIdType) * (cellNumber_ * 4), 0));
-    CHECK(cudaMemcpyAsync(dConnectivity_, hConnectivity_, sizeof(vtkIdType) * (cellNumber_ * 4), cudaMemcpyHostToDevice));
-    CHECK(cudaMallocAsync(&dOffsets_, sizeof(vtkIdType) * (cellNumber_+1), 0));
-    CHECK(cudaMemcpyAsync(dOffsets_, hOffsets_, sizeof(vtkIdType) * (cellNumber_+1), cudaMemcpyHostToDevice));
+    #ifdef MEASURE_WAITING
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaEventRecord(start, 0);
+    #endif
+
+    // copy input mesh arrays to the GPU
+    CHECK(cudaMallocAsync(&dConnectivity_, sizeof(int) * (cellNumber_ * 4), 0));
+    CHECK(cudaMemcpyAsync(dConnectivity_, hConnectivity_, sizeof(int) * (cellNumber_ * 4), cudaMemcpyHostToDevice));
+    CHECK(cudaMallocAsync(&dOffsets_, sizeof(int) * (cellNumber_+1), 0));
+    CHECK(cudaMemcpyAsync(dOffsets_, hOffsets_, sizeof(int) * (cellNumber_+1), cudaMemcpyHostToDevice));
     CHECK(cudaMallocAsync(&dIndexArray_, sizeof(int) * vertexNumber_, 0));
     CHECK(cudaMemcpyAsync(dIndexArray_, hIndexArray_, sizeof(int) * vertexNumber_, cudaMemcpyHostToDevice));
+
+    // copy cell intervals and vertex intervals
+    CHECK(cudaMemcpyAsync(dCellIntervals_, hCellIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpyAsync(dExternalCellOffsets_, hExternalCellOffsets_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpy(dExternalCells_, hExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpyAsync(dVertexIntervals_, hVertexIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice, 0));
+
+    #ifdef MEASURE_WAITING
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+    float elapsedTime;
+    cudaEventElapsedTime(&elapsedTime, start, stop);
+    printf("[Gale] Cuda memory copy time measured for initialization: %f s\n", elapsedTime / 1000);
+    #endif
 }
 
 /**
@@ -2101,8 +2121,7 @@ void Gale::computeCellIntervals() {
         hCellIntervals_[i] += hCellIntervals_[i-1];
         hExternalCellOffsets_[i] = hExternalCellOffsets_[i-1] + externalCells[i].size();
     }
-    CHECK(cudaMemcpyAsync(dCellIntervals_, hCellIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
-    CHECK(cudaMemcpyAsync(dExternalCellOffsets_, hExternalCellOffsets_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
+    
 
     // Convert the 2D vector to 1D flat vector
     hExternalCells_ = new int[hExternalCellOffsets_[clusterNumber_-1]];
@@ -2112,7 +2131,6 @@ void Gale::computeCellIntervals() {
         std::copy(externalCells[i].begin(), externalCells[i].end(), tmp);
         tmp += externalCells[i].size();
     }
-    CHECK(cudaMemcpy(dExternalCells_, hExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], cudaMemcpyHostToDevice));
 }
 
 /**
@@ -2130,8 +2148,6 @@ void Gale::computeVertexIntervals() {
     for (int cid = 1; cid < clusterNumber_; ++cid) {
         hVertexIntervals_[cid] += hVertexIntervals_[cid-1];
     }
-
-    CHECK(cudaMemcpyAsync(dVertexIntervals_, hVertexIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice, 0));
 }
 
 /**
@@ -2211,8 +2227,7 @@ int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
     std::vector<std::vector<int>> externalCells(clusterNumber_);
     hCellIntervals_[0] = 0;
 
-    vtkIdType *newCellArray
-    = new vtkIdType[verticesPerCell * cellNumber_];
+    int *newCellArray = new int[verticesPerCell * cellNumber_];
     for(SimplexId clusterId = 1; clusterId < clusterNumber_; ++clusterId) {
         for(SimplexId cid : clusterCells[clusterId]) {
             SimplexId cellId = verticesPerCell * cid;
@@ -2256,7 +2271,7 @@ int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
     CHECK(cudaMemcpyAsync(dExternalCells_, hExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], cudaMemcpyHostToDevice));
     
     // copy the new cell array back to original one
-    memcpy(hConnectivity_, newCellArray, sizeof(vtkIdType) * cellNumber_ * verticesPerCell);
+    memcpy(hConnectivity_, newCellArray, sizeof(int) * cellNumber_ * verticesPerCell);
     delete[] newCellArray;
 
     return 0;

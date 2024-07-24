@@ -68,37 +68,35 @@ int main(int argc, char const *argv[]) {
     }
 
     // Cells
-    vtkIdType *connectivity, *offsets;
-    vtkIdType *dConnectitity, *dOffsets;
+    int *connectivity, *offsets;
+    int *dConnectitity, *dOffsets;
     tetraNumber = cells->GetNumberOfCells();
     if (tetraNumber > 0) {
-        if (!cells->IsStorage64Bit()) {
-            if (cells->CanConvertTo64BitStorage()) {
-                std::cout << "Converting the cell array to 64-bit storage" << std::endl;
-                bool success = cells->ConvertTo64BitStorage();
-                if (!success) {
-                    std::cerr
-                            << "Error converting the provided cell array to 64-bit storage"
-                            << std::endl;
+        // convert to 32-bit storage to reduce memory consumption
+        if(cells->IsStorage64Bit()) {
+            if(cells->CanConvertTo32BitStorage()) {
+                std::cout << "Converting the cell array to 32-bit storage" << std::endl;
+                bool success = cells->ConvertTo32BitStorage();
+                if(!success) {
+                    std::cerr << "Error converting the provided cell array to 32-bit storage" << std::endl;
                 }
             } else {
-                std::cerr << "Cannot convert the provided cell array to 64-bit storage"
-                                    << std::endl;
+                std::cerr << "Cannot convert the provided cell array to 32-bit storage" << std::endl;
             }
         }
-        connectivity = static_cast<vtkIdType *>(
+        connectivity = static_cast<int *>(
                 cells->GetConnectivityArray()->GetVoidPointer(0));
         offsets =
-                static_cast<vtkIdType *>(cells->GetOffsetsArray()->GetVoidPointer(0));
+                static_cast<int *>(cells->GetOffsetsArray()->GetVoidPointer(0));
     }
     int verticesPerCell = offsets[1] - offsets[0];
 
-    cudaMallocAsync(&dConnectitity, sizeof(vtkIdType) * (tetraNumber * verticesPerCell), 0);
-    cudaMallocAsync(&dOffsets, sizeof(vtkIdType) * tetraNumber, 0);
+    cudaMallocAsync(&dConnectitity, sizeof(int) * (tetraNumber * verticesPerCell), 0);
+    cudaMallocAsync(&dOffsets, sizeof(int) * tetraNumber, 0);
     cudaMemcpyAsync(dConnectitity, connectivity,
-                                    sizeof(vtkIdType) * (tetraNumber * verticesPerCell),
+                                    sizeof(int) * (tetraNumber * verticesPerCell),
                                     cudaMemcpyHostToDevice);
-    cudaMemcpyAsync(dOffsets, offsets, sizeof(vtkIdType) * tetraNumber,
+    cudaMemcpyAsync(dOffsets, offsets, sizeof(int) * tetraNumber,
                                     cudaMemcpyHostToDevice);
 
     // index array
