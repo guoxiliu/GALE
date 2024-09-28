@@ -6,7 +6,8 @@
  * 
 */
 
-#pragma once
+#ifndef _DATATYPES_H
+#define _DATATYPES_H
 
 /**
  * @brief Mark function/method parameters that are not used in the
@@ -123,4 +124,32 @@ namespace ttk {
     RelationNum // total number of relations
   };
 
+  inline const char* relationToString(RelationType r) {
+    switch (r) {
+      case RelationType::BlankRelation: return "BLANK";
+      case RelationType::VVRelation: return "VV";
+      case RelationType::VERelation: return "VE";
+      case RelationType::VFRelation: return "VF";
+      case RelationType::VTRelation: return "VT";
+      case RelationType::EVRelation: return "EV";
+      case RelationType::EFRelation: return "EF";
+      case RelationType::ETRelation: return "ET";
+      case RelationType::ELRelation: return "EL";
+      case RelationType::FVRelation: return "FV";
+      case RelationType::FERelation: return "FE";
+      case RelationType::FTRelation: return "FT";
+      case RelationType::FLRelation: return "FL";
+      case RelationType::TVRelation: return "TV";
+      case RelationType::TERelation: return "TE";
+      case RelationType::TFRelation: return "TF";
+      case RelationType::TTRelation: return "TT";
+      case RelationType::BVRelation: return "BV";
+      case RelationType::BERelation: return "BE";
+      case RelationType::BFRelation: return "BF";
+      default: return "None";
+    }
+  }
+
 }
+
+#endif

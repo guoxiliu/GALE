@@ -27,9 +27,9 @@ bool ComputeDescendingSeparatrices1{true};
 bool ComputeSaddleConnectors{true};
 bool ComputeAscendingSeparatrices2{false};
 bool ComputeDescendingSeparatrices2{false};
-bool ComputeAscendingSegmentation{true};
-bool ComputeDescendingSegmentation{true};
-bool ComputeFinalSegmentation{true};
+bool ComputeAscendingSegmentation{false};
+bool ComputeDescendingSegmentation{false};
+bool ComputeFinalSegmentation{false};
 int ReturnSaddleConnectors{false};
 double SaddleConnectorsPersistenceThreshold{0.0};
 
