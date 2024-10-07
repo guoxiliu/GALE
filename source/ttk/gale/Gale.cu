@@ -33,8 +33,11 @@ Gale::Gale(int tnum, int tnumPerCluster) {
     // waitingCounts_ = std::vector<int>(threadNumber_, 0);
     waitingTimes_.resize(threadNumber_);
     waitingCounts_.resize(threadNumber_);
+    consumerTimes_.resize(threadNumber_);
     qSizes_.resize(producerNum);
     qTimes_.resize(producerNum);
+    kernelTimes_.resize(producerNum);
+    returnTimes_.resize(producerNum);
     #endif
 
     // GPU parameters
@@ -46,27 +49,37 @@ Gale::Gale(int tnum, int tnumPerCluster) {
  * Destructor of GALE
 */
 Gale::~Gale() {
+    for (int i = 0; i < threadNumber_; ++i)
+        currClusters_[i] = -1;
     for (int p = 0; p < producerNum; ++p) {
         if (producers_[p].joinable()) {
-            for (int i = 0; i < threadNumber_; ++i)
-                currClusters_[i] = -1;
             producers_[p].join();
         }
     }
 
     #ifdef MEASURE_WAITING
+
+    // for (int i = 0; i < threadNumber_; ++i) {
+    //     std::cout << "thread " << i << ": ";
+    //     for (auto &e : waitingCounts_[i]) {
+    //         std::cout << relationToString(e.first) << " missing counts: " << e.second << ", waiting time: " << waitingTimes_[i].at(e.first) << "; ";
+    //         // std::cout << static_cast<int>(e.first) << " missing counts: " << e.second << ", waiting time: " << waitingTimes_[i].at(e.first) << "; ";
+    //     }
+    //     std::cout << std::endl;
+    //     // std::cout << "waiting count " << i << ": " << waitingCounts_[i] << ", waiting time: " << waitingTimes_[i] << std::endl;
+    // }
+
+    // time for consumer thread to make the request 
     for (int i = 0; i < threadNumber_; ++i) {
-        std::cout << "thread " << i << ": ";
-        for (auto &e : waitingCounts_[i]) {
-            std::cout << relationToString(e.first) << " missing counts: " << e.second << ", waiting time: " << waitingTimes_[i].at(e.first) << "; ";
-            // std::cout << static_cast<int>(e.first) << " missing counts: " << e.second << ", waiting time: " << waitingTimes_[i].at(e.first) << "; ";
+        for (int j = 0; j < consumerTimes_[i].size(); ++j) {
+            std::cout << "consumer " << i << ": " << consumerTimes_[i][j] << std::endl;
         }
-        std::cout << std::endl;
-        // std::cout << "waiting count " << i << ": " << waitingCounts_[i] << ", waiting time: " << waitingTimes_[i] << std::endl;
     }
+
     for (int i = 0; i < producerNum; ++i) {
+        // std::cout << "Producer " << i << " queues with jobs: " << qSizes_[i].size() << ", kernel times: " << kernelTimes_[i].size() << ", return times: " << returnTimes_[i].size() << std::endl;
         for (int j = 0; j < qSizes_[i].size(); ++j) {
-            std::cout << "queue length: " << qSizes_[i][j] << ", time: " << qTimes_[i][j] << std::endl;
+            std::cout << "queue length: " << qSizes_[i][j] << ", total time: " << qTimes_[i][j] << ", kernel time: " << kernelTimes_[i][j] << ", return time: " << returnTimes_[i][j] << std::endl;
         }
     }
 
@@ -228,566 +241,566 @@ int Gale::computeRelation(const RelationType relation,
                         const int threadId,
                         bool signal) {
 
-    // std::cout << "computing cluster " << clusterId << " relation " << static_cast<int>(relation) << std::endl;
+    // // std::cout << "computing cluster " << clusterId << " relation " << static_cast<int>(relation) << std::endl;
     int res = 0;
-    int relationId = static_cast<int>(relation);
-    int numBlocks = 0, endCluster = 0;
-    if (global) {
-        numBlocks = clusterNumber_ / (blockSize_ / threadsPerCluster_) + 1;
-        endCluster = clusterNumber_ - 1;
-    }
-    else {
-        numBlocks = blocksPerThread_;
-        endCluster = std::min(clusterId + numBlocks * (blockSize_ / threadsPerCluster_), clusterNumber_) - 1;
-    }
-
-    // different relations correspond to different GPU kernels
-    switch (relation) {
-        case RelationType::BERelation:
-        {
-            int edgeIdOffset = hEdgeIntervals_[clusterId - 1];
-            int localEdgeNum = hEdgeIntervals_[endCluster] - edgeIdOffset;
-            bool *dBoundaryEdgeList;
-            CHECK(cudaMalloc((void **)&dBoundaryEdgeList, sizeof(bool) * localEdgeNum));
-            CHECK(cudaMemset(dBoundaryEdgeList, false, sizeof(bool) * localEdgeNum));
-
-            computeBoundaryEdges<<<numBlocks, blockSize_>>>(
-                dEdgeList_, dTriangleList_, 
-                dBoundaryEdgeList, dBoundaryTriangles_,
-                clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
-                dExternalCells_, dExternalCellOffsets_, 
-                cellDimension_, threadsPerCluster_);
-
-            bool *hBoundaryEdgeList = new bool[localEdgeNum];
-
-            CHECK(cudaMemcpy(hBoundaryEdgeList, dBoundaryEdgeList, sizeof(bool) * localEdgeNum, cudaMemcpyDeviceToHost));
-
-            // std::unique_lock<std::mutex> lck(BEMutex_);
-            for (int i = clusterId; i <= endCluster; ++i) {
-                if (allClusters_[i].boundaryEdges_.empty()) {
-                    allClusters_[i].boundaryEdges_.resize(hEdgeIntervals_[i] - hEdgeIntervals_[i-1]);
-                    int idOffset = hEdgeIntervals_[i-1] - edgeIdOffset;
-                    for (int j = 0; j < allClusters_[i].boundaryEdges_.size(); ++j) {
-                        allClusters_[i].boundaryEdges_[j] = hBoundaryEdgeList[j + idOffset];
-                    }
-                }
-            }
-
-            // lck.unlock();
-            if (signal) {
-                // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
-                // else res = 1;
-                sem_post(&relationSems_[threadId]);
-            }
-            if (baseClusters_[relationId][threadId] == 0)
-                baseClusters_[relationId][threadId] = clusterId;
-
-            CHECK(cudaFree(dBoundaryEdgeList));
-            delete[] hBoundaryEdgeList;
-
-            break;
-        }
-
-        case RelationType::BVRelation: 
-        {
-            int vertexIdOffset = hVertexIntervals_[clusterId - 1];
-            int localVertexNum = hVertexIntervals_[endCluster] - vertexIdOffset;
-            bool *dBoundaryVertexList;
-            int *dTriangleList; 
-            CHECK(cudaMalloc((void **)&dTriangleList, sizeof(SimplexId) * hTriangleIntervals_[endCluster] * 3));
-            CHECK(cudaMalloc((void **)&dBoundaryVertexList, sizeof(bool) * localVertexNum));
-            CHECK(cudaMemcpy(dTriangleList, triangleList_.data(), sizeof(SimplexId) * hTriangleIntervals_[endCluster] * 3, cudaMemcpyHostToDevice));
-            CHECK(cudaMemset(dBoundaryVertexList, false, sizeof(bool) * localVertexNum));
-
-            computeBoundaryVertices<<<numBlocks, blockSize_>>>(
-                dTriangleList, dBoundaryTriangles_, dBoundaryVertexList,
-                clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_, 
-                cellDimension_, threadsPerCluster_);
-
-            bool *hBoundaryVertexList = new bool[localVertexNum];
-
-            CHECK(cudaMemcpy(hBoundaryVertexList, dBoundaryVertexList, sizeof(bool) * localVertexNum, cudaMemcpyDeviceToHost));
-
-            // std::unique_lock<std::mutex> lck(BVMutex_);
-            for (int sid = clusterId; sid <= endCluster; ++sid) {
-                if (allClusters_[sid].boundaryVertices_.empty()) {
-                    allClusters_[sid].boundaryVertices_.resize(hVertexIntervals_[sid] - hVertexIntervals_[sid-1]);
-                    int rvid = hVertexIntervals_[sid-1] - vertexIdOffset;
-                    for (int vid = 0; vid < allClusters_[sid].boundaryVertices_.size(); ++vid) {
-                        allClusters_[sid].boundaryVertices_[vid] = hBoundaryVertexList[rvid++];
-                    }
-                }
-            }
-
-            // lck.unlock();
-            if (signal) {
-                // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
-                // else res = 1;
-                sem_post(&relationSems_[threadId]);
-            }
-            if (baseClusters_[relationId][threadId] == 0)
-                baseClusters_[relationId][threadId] = clusterId;
-
-            CHECK(cudaFree(dTriangleList));
-            CHECK(cudaFree(dBoundaryVertexList));
-
-            delete[] hBoundaryVertexList;
-            break;
-        }
-
-        case RelationType::BFRelation:
-        {
-            int *dTriangleStarMatrix, *dTriangleStarSizes;
-            int numBlocks = clusterNumber_ / (blockSize_ / threadsPerCluster_) + 1;
-            int localTriangleNum = triangleNumber_;
-            CHECK(cudaMalloc((void **)&dBoundaryTriangles_, sizeof(bool) * localTriangleNum));
-            CHECK(cudaMalloc((void **)&dTriangleStarSizes, sizeof(int) * localTriangleNum));
-            CHECK(cudaMalloc((void **)&dTriangleStarMatrix, sizeof(int) * localTriangleNum * ftColumnNum));
-            CHECK(cudaMemset(dBoundaryTriangles_, false, sizeof(bool) * localTriangleNum));
-            CHECK(cudaMemset(dTriangleStarSizes, 0, sizeof(int) * localTriangleNum));
-            CHECK(cudaMemset(dTriangleStarMatrix, -1, sizeof(int) * localTriangleNum * ftColumnNum));
-
-            computeBoundaryTriangles<<<numBlocks, blockSize_>>>(
-                dTriangleList_, dTriangleStarMatrix, 
-                dTriangleStarSizes, dBoundaryTriangles_,
-                clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_, 
-                cellDimension_, threadsPerCluster_);
-
-            // cannot copy directly to vector<bool>, since it uses one bit for a boolean instead of one byte
-            bool *hBoundaryTriangleList = new bool[localTriangleNum];
-            CHECK(cudaMemcpy(hBoundaryTriangleList, dBoundaryTriangles_, sizeof(bool) * localTriangleNum, cudaMemcpyDeviceToHost));
-            for (int fid = 0; fid < localTriangleNum; ++fid) {
-                boundaryTriangles_[fid] = hBoundaryTriangleList[fid];
-            }
-
-            if (signal) {
-                // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
-                // else res = 1;
-                sem_post(&relationSems_[threadId]);
-            }
-
-            CHECK(cudaFree(dTriangleStarSizes));
-            CHECK(cudaFree(dTriangleStarMatrix));
-            delete[] hBoundaryTriangleList;
-
-            break;
-        }
-
-        case RelationType::EFRelation:
-        {
-            int *dEdgeTriangleMatrix, *dEdgeTriangleSizes;
-            int edgeIdOffset = hEdgeIntervals_[clusterId - 1];
-            int localEdgeSum = hEdgeIntervals_[endCluster] - edgeIdOffset;
-            CHECK(cudaMalloc((void **)&dEdgeTriangleSizes, sizeof(int) * localEdgeSum));
-            CHECK(cudaMalloc((void **)&dEdgeTriangleMatrix, sizeof(int) * localEdgeSum * efColumnNum));
-            CHECK(cudaMemset(dEdgeTriangleSizes, 0, sizeof(int) * localEdgeSum));
-            CHECK(cudaMemset(dEdgeTriangleMatrix, -1, sizeof(int) * localEdgeSum * efColumnNum));
-
-            computeEdgeTriangles<<<numBlocks, blockSize_>>>(
-                dEdgeList_, dTriangleList_,
-                dEdgeTriangleMatrix, dEdgeTriangleSizes,
-                clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
-                dExternalCells_, dExternalCellOffsets_, 
-                cellDimension_, threadsPerCluster_);
-
-            int *hEdgeTriangleSizes = new int[localEdgeSum];
-            int *hEdgeTriangleMatrix = new int[localEdgeSum * efColumnNum];
-
-            CHECK(cudaMemcpy(hEdgeTriangleSizes, dEdgeTriangleSizes, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hEdgeTriangleMatrix, dEdgeTriangleMatrix, sizeof(int) * localEdgeSum * efColumnNum, cudaMemcpyDeviceToHost));
-
-            // std::unique_lock<std::mutex> lck(EFMutex_);
-            for (int sid = clusterId; sid <= endCluster; ++sid) {
-                if (allClusters_[sid].edgeTriangles_.empty()) {
-                    int localEdgeNum = hEdgeIntervals_[sid] - hEdgeIntervals_[sid - 1];
-                    std::vector<SimplexId> edgeTriangleData{};
-                    std::vector<SimplexId> edgeTriangleOffsets(localEdgeNum + 1);
-                    edgeTriangleOffsets[0] = 0;
-                    int reid = hEdgeIntervals_[sid - 1] - edgeIdOffset;
-                    for (int eid = 0; eid < localEdgeNum; ++eid) {
-                        edgeTriangleData.insert(edgeTriangleData.end(), hEdgeTriangleMatrix + reid * efColumnNum, hEdgeTriangleMatrix + reid * efColumnNum + hEdgeTriangleSizes[reid]);
-                        edgeTriangleOffsets[eid+1] = edgeTriangleOffsets[eid] + hEdgeTriangleSizes[reid];
-                        ++reid;
-                    }
-                    allClusters_[sid].edgeTriangles_.setData(std::move(edgeTriangleData), std::move(edgeTriangleOffsets));
-                }
-            }
-
-            // lck.unlock();
-            if (signal) {
-                // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
-                // else res = 1;
-                sem_post(&relationSems_[threadId]);
-            }
-            if (baseClusters_[relationId][threadId] == 0)
-                baseClusters_[relationId][threadId] = clusterId;
-
-            CHECK(cudaFree(dEdgeTriangleSizes));
-            CHECK(cudaFree(dEdgeTriangleMatrix));
-
-            delete[] hEdgeTriangleMatrix;
-            delete[] hEdgeTriangleSizes;
-            break;
-        }
-
-        case RelationType::ETRelation:
-        {
-            int *dEdgeStarMatrix, *dEdgeStarSizes;
-            int edgeIdOffset = hEdgeIntervals_[clusterId - 1];
-            int localEdgeSum = hEdgeIntervals_[endCluster] - edgeIdOffset;
-            CHECK(cudaMalloc((void **)&dEdgeStarSizes, sizeof(int) * localEdgeSum));
-            CHECK(cudaMalloc((void **)&dEdgeStarMatrix, sizeof(int) * localEdgeSum * etColumnNum));
-            CHECK(cudaMemset(dEdgeStarSizes, 0, sizeof(int) * localEdgeSum));
-            CHECK(cudaMemset(dEdgeStarMatrix, -1, sizeof(int) * localEdgeSum * etColumnNum));
-
-            computeEdgeStars<<<numBlocks, blockSize_>>>(
-                dEdgeList_, dEdgeStarMatrix, dEdgeStarSizes,
-                clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_, 
-                cellDimension_, threadsPerCluster_);
-
-            int *hEdgeStarSizes_ = new int[localEdgeSum];
-            int *hEdgeStarMatrix_ = new int[localEdgeSum * etColumnNum];
-
-            CHECK(cudaMemcpy(hEdgeStarSizes_, dEdgeStarSizes, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hEdgeStarMatrix_, dEdgeStarMatrix, sizeof(int) * localEdgeSum * etColumnNum, cudaMemcpyDeviceToHost));
-
-            // std::unique_lock<std::mutex> lck(ETMutex_);
-            for (int sid = clusterId; sid <= endCluster; ++sid) {
-                if (allClusters_[sid].edgeStars_.empty()) {
-                    int localEdgeNum = hEdgeIntervals_[sid] - hEdgeIntervals_[sid - 1];
-                    std::vector<SimplexId> edgeStarData{};
-                    std::vector<SimplexId> edgeStarOffsets(localEdgeNum + 1);
-                    edgeStarOffsets[0] = 0;
-                    int reid = hEdgeIntervals_[sid - 1] - edgeIdOffset;
-                    for (int eid = 0; eid < localEdgeNum; ++eid) {
-                        edgeStarData.insert(edgeStarData.end(), hEdgeStarMatrix_ + reid * etColumnNum, hEdgeStarMatrix_ + reid * etColumnNum + hEdgeStarSizes_[reid]);
-                        edgeStarOffsets[eid+1] = edgeStarOffsets[eid] + hEdgeStarSizes_[reid];
-                        ++reid;
-                    }
-                    allClusters_[sid].edgeStars_.setData(std::move(edgeStarData), std::move(edgeStarOffsets));
-                }
-            }
-
-            // lck.unlock();
-            if (signal) {
-                // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
-                // else res = 1;
-                sem_post(&relationSems_[threadId]);
-            }
-            if (baseClusters_[relationId][threadId] == 0)
-                baseClusters_[relationId][threadId] = clusterId;
-
-            CHECK(cudaFree(dEdgeStarSizes));
-            CHECK(cudaFree(dEdgeStarMatrix));
-
-            delete[] hEdgeStarMatrix_;
-            delete[] hEdgeStarSizes_;
-            break;
-        }
-
-        case RelationType::FTRelation:
-        {
-            int *dTriangleStarMatrix, *dTriangleStarSizes;
-            int triangleIdOffset = hTriangleIntervals_[clusterId - 1];
-            int localTriangleSum = hTriangleIntervals_[endCluster] - triangleIdOffset;
-            CHECK(cudaMalloc((void **)&dTriangleStarSizes, sizeof(int) * localTriangleSum));
-            CHECK(cudaMalloc((void **)&dTriangleStarMatrix, sizeof(int) * localTriangleSum * ftColumnNum));
-            CHECK(cudaMemset(dTriangleStarSizes, 0, sizeof(int) * localTriangleSum));
-            CHECK(cudaMemset(dTriangleStarMatrix, -1, sizeof(int) * localTriangleSum * ftColumnNum));
-
-            computeTriangleStars<<<numBlocks, blockSize_>>>(
-                dTriangleList_, dTriangleStarMatrix, dTriangleStarSizes,
-                clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_, 
-                cellDimension_, threadsPerCluster_);
-
-            int *hTriangleStarSizes = new int[localTriangleSum];
-            int *hTriangleStarMatrix = new int[localTriangleSum * ftColumnNum];
-
-            CHECK(cudaMemcpy(hTriangleStarSizes, dTriangleStarSizes, sizeof(int) * localTriangleSum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hTriangleStarMatrix, dTriangleStarMatrix, sizeof(int) * localTriangleSum * ftColumnNum, cudaMemcpyDeviceToHost));
-
-            // std::unique_lock<std::mutex> lck(FTMutex_);
-            for (int sid = clusterId; sid <= endCluster; ++sid) {
-                if (allClusters_[sid].triangleStars_.empty()) {
-                    int localTriangleNum = hTriangleIntervals_[sid] - hTriangleIntervals_[sid - 1];
-                    std::vector<SimplexId> triangleStarData{};
-                    std::vector<SimplexId> triangleStarOffsets(localTriangleNum + 1);
-                    triangleStarOffsets[0] = 0;
-                    int rfid = hTriangleIntervals_[sid - 1] - triangleIdOffset;
-                    for (int fid = 0; fid < localTriangleNum; ++fid) {
-                        triangleStarData.insert(triangleStarData.end(), hTriangleStarMatrix + rfid * ftColumnNum, hTriangleStarMatrix + rfid * ftColumnNum + hTriangleStarSizes[rfid]);
-                        triangleStarOffsets[fid+1] = triangleStarOffsets[fid] + hTriangleStarSizes[rfid];
-                        ++rfid;
-                    }
-                    allClusters_[sid].triangleStars_.setData(std::move(triangleStarData), std::move(triangleStarOffsets));
-                }
-            }
-
-            // lck.unlock();
-            if (signal) {
-                // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
-                // else res = 1;
-                sem_post(&relationSems_[threadId]);
-            }
-            if (baseClusters_[relationId][threadId] == 0)
-                baseClusters_[relationId][threadId] = clusterId;
-
-            CHECK(cudaFree(dTriangleStarSizes));
-            CHECK(cudaFree(dTriangleStarMatrix));
-            delete[] hTriangleStarMatrix;
-            delete[] hTriangleStarSizes;
-
-            break;
-        }
-
-        case RelationType::VERelation:
-        {
-            int *dVertexEdgeMatrix, *dVertexEdgeSizes;
-            int vertexIdOffset = hVertexIntervals_[clusterId - 1];
-            int localVertexSum = hVertexIntervals_[endCluster] - vertexIdOffset;
-            CHECK(cudaMalloc((void **)&dVertexEdgeSizes, sizeof(int) * localVertexSum));
-            CHECK(cudaMalloc((void **)&dVertexEdgeMatrix, sizeof(int) * localVertexSum * veColumnNum));
-            CHECK(cudaMemset(dVertexEdgeSizes, 0, sizeof(int) * localVertexSum));
-            CHECK(cudaMemset(dVertexEdgeMatrix, -1, sizeof(int) * localVertexSum * veColumnNum));
-
-            computeVertexEdges<<<numBlocks, blockSize_>>>(
-                dEdgeList_, dVertexEdgeMatrix, dVertexEdgeSizes,
-                clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_, 
-                cellDimension_, threadsPerCluster_);
-
-            int *hVertexEdgeSizes = new int[localVertexSum];
-            int *hVertexEdgeMatrix = new int[localVertexSum * veColumnNum];
-
-            CHECK(cudaMemcpy(hVertexEdgeSizes, dVertexEdgeSizes, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hVertexEdgeMatrix, dVertexEdgeMatrix, sizeof(int) * localVertexSum * veColumnNum, cudaMemcpyDeviceToHost));
-
-            // std::unique_lock<std::mutex> lck(VEMutex_);
-            for (int sid = clusterId; sid <= endCluster; ++sid) {
-                if (allClusters_[sid].vertexEdges_.empty()) {
-                    int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
-                    std::vector<SimplexId> vertexEdgeData{};
-                    std::vector<SimplexId> vertexEdgeOffsets(localVertexNum + 1);
-                    vertexEdgeOffsets[0] = 0;
-                    int rvid = hVertexIntervals_[sid - 1] - vertexIdOffset;
-                    for (int vid = 0; vid < localVertexNum; ++vid) {
-                        vertexEdgeData.insert(vertexEdgeData.end(), hVertexEdgeMatrix + rvid * veColumnNum, hVertexEdgeMatrix + rvid * veColumnNum + hVertexEdgeSizes[rvid]);
-                        vertexEdgeOffsets[vid+1] = vertexEdgeOffsets[vid] + hVertexEdgeSizes[rvid];
-                        ++rvid;
-                    }
-                    allClusters_[sid].vertexEdges_.setData(std::move(vertexEdgeData), std::move(vertexEdgeOffsets));
-                }
-            }
-
-            // lck.unlock();
-            if (signal) {
-                // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
-                // else res = 1;
-                sem_post(&relationSems_[threadId]);
-            }
-            if (baseClusters_[relationId][threadId] == 0)
-                baseClusters_[relationId][threadId] = clusterId;
-
-            CHECK(cudaFree(dVertexEdgeSizes));
-            CHECK(cudaFree(dVertexEdgeMatrix));
-            delete[] hVertexEdgeMatrix;
-            delete[] hVertexEdgeSizes;
-
-            break;
-        }
-
-        case RelationType::VFRelation:
-        {
-            int *dVertexTriangleMatrix, *dVertexTriangleSizes;
-            int vertexIdOffset = hVertexIntervals_[clusterId - 1];
-            int localVertexSum = hVertexIntervals_[endCluster] - vertexIdOffset;
-            CHECK(cudaMalloc((void **)&dVertexTriangleSizes, sizeof(int) * localVertexSum));
-            CHECK(cudaMalloc((void **)&dVertexTriangleMatrix, sizeof(int) * localVertexSum * vfColumnNum));
-            CHECK(cudaMemset(dVertexTriangleSizes, 0, sizeof(int) * localVertexSum));
-            CHECK(cudaMemset(dVertexTriangleMatrix, -1, sizeof(int) * localVertexSum * vfColumnNum));
-
-            computeVertexTriangles<<<numBlocks, blockSize_>>>(
-                dTriangleList_, dVertexTriangleMatrix, dVertexTriangleSizes,
-                clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_, 
-                cellDimension_, threadsPerCluster_);
-
-            int *hVertexTriangleSizes = new int[localVertexSum];
-            int *hVertexTriangleMatrix = new int[localVertexSum * vfColumnNum];
-
-            CHECK(cudaMemcpy(hVertexTriangleSizes, dVertexTriangleSizes, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hVertexTriangleMatrix, dVertexTriangleMatrix, sizeof(int) * localVertexSum * vfColumnNum, cudaMemcpyDeviceToHost));
-
-            // std::unique_lock<std::mutex> lck(VFMutex_);
-            for (int sid = clusterId; sid <= endCluster; ++sid) {
-                if (allClusters_[sid].vertexTriangles_.empty()) {
-                    int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
-                    std::vector<SimplexId> vertexTriangleData{};
-                    std::vector<SimplexId> vertexTriangleOffsets(localVertexNum + 1);
-                    vertexTriangleOffsets[0] = 0;
-                    int rvid = hVertexIntervals_[sid - 1] - vertexIdOffset;
-                    for (int vid = 0; vid < localVertexNum; ++vid) {
-                        vertexTriangleData.insert(vertexTriangleData.end(), hVertexTriangleMatrix + rvid * vfColumnNum, hVertexTriangleMatrix + rvid * vfColumnNum + hVertexTriangleSizes[rvid]);
-                        vertexTriangleOffsets[vid+1] = vertexTriangleOffsets[vid] + hVertexTriangleSizes[rvid];
-                        ++rvid;
-                    }
-                    allClusters_[sid].vertexTriangles_.setData(std::move(vertexTriangleData), std::move(vertexTriangleOffsets));
-                }
-            }
-
-            // lck.unlock();
-            if (signal) {
-                // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
-                // else res = 1;
-                sem_post(&relationSems_[threadId]);
-            }
-            if (baseClusters_[relationId][threadId] == 0)
-                baseClusters_[relationId][threadId] = clusterId;
-
-            CHECK(cudaFree(dVertexTriangleSizes));
-            CHECK(cudaFree(dVertexTriangleMatrix));
-            delete[] hVertexTriangleMatrix;
-            delete[] hVertexTriangleSizes;
-
-            break;
-        }
-
-        case RelationType::VTRelation:
-        {
-            int *dVertexStarMatrix, *dVertexStarSizes;
-            int vertexIdOffset = hVertexIntervals_[clusterId - 1];
-            int localVertexNum = hVertexIntervals_[endCluster] - vertexIdOffset;
-            CHECK(cudaMalloc((void **)&dVertexStarSizes, sizeof(int) * localVertexNum));
-            CHECK(cudaMalloc((void **)&dVertexStarMatrix, sizeof(int) * localVertexNum * vtColumnNum));
-            CHECK(cudaMemset(dVertexStarSizes, 0, sizeof(int) * localVertexNum));
-            CHECK(cudaMemset(dVertexStarMatrix, -1, sizeof(int) * localVertexNum * vtColumnNum));
-
-            computeVertexStars<<<numBlocks, blockSize_>>>(
-                dVertexStarMatrix, dVertexStarSizes,
-                clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_, 
-                cellDimension_, threadsPerCluster_);
-
-            int *hVertexStarSizes = new int[localVertexNum];
-            int *hVertexStarMatrix = new int[localVertexNum * vtColumnNum];
-
-            CHECK(cudaMemcpy(hVertexStarSizes, dVertexStarSizes, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hVertexStarMatrix, dVertexStarMatrix, sizeof(int) * localVertexNum * vtColumnNum, cudaMemcpyDeviceToHost));
-
-            // std::unique_lock<std::mutex> lck(VTMutex_);
-            for (int sid = clusterId; sid <= endCluster; ++sid) {
-                if (allClusters_[sid].vertexStars_.empty()) {
-                    int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
-                    std::vector<SimplexId> vertexStarData{};
-                    std::vector<SimplexId> vertexStarOffsets(localVertexNum + 1);
-                    vertexStarOffsets[0] = 0;
-                    int rvid = hVertexIntervals_[sid - 1] - vertexIdOffset;
-                    for (int vid = 0; vid < localVertexNum; ++vid) {
-                        vertexStarData.insert(vertexStarData.end(), hVertexStarMatrix + rvid * vtColumnNum, hVertexStarMatrix + rvid * vtColumnNum + hVertexStarSizes[rvid]);
-                        vertexStarOffsets[vid+1] = vertexStarOffsets[vid] + hVertexStarSizes[rvid];
-                        ++rvid;
-                    }
-                    allClusters_[sid].vertexStars_.setData(std::move(vertexStarData), std::move(vertexStarOffsets));
-                }
-            }
-            // lck.unlock();
-            if (signal) {
-                sem_post(&relationSems_[threadId]);
-            }
-            if (baseClusters_[relationId][threadId] == 0)
-                baseClusters_[relationId][threadId] = clusterId;
-
-            CHECK(cudaFree(dVertexStarSizes));
-            CHECK(cudaFree(dVertexStarMatrix));
-            delete[] hVertexStarMatrix;
-            delete[] hVertexStarSizes;
-
-            break;
-        }
-
-        case RelationType::VVRelation:
-        {
-            int *dVertexNeighborMatrix, *dVertexNeighborSizes;
-            int vertexIdOffset = hVertexIntervals_[clusterId - 1];
-            int localVertexNum = hVertexIntervals_[endCluster] - vertexIdOffset;
-            CHECK(cudaMalloc((void **)&dVertexNeighborSizes, sizeof(int) * localVertexNum));
-            CHECK(cudaMalloc((void **)&dVertexNeighborMatrix, sizeof(int) * localVertexNum * vvColumnNum));
-            CHECK(cudaMemset(dVertexNeighborSizes, 0, sizeof(int) * localVertexNum));
-            CHECK(cudaMemset(dVertexNeighborMatrix, -1, sizeof(int) * localVertexNum * vvColumnNum));
+    // int relationId = static_cast<int>(relation);
+    // int numBlocks = 0, endCluster = 0;
+    // if (global) {
+    //     numBlocks = clusterNumber_ / (blockSize_ / threadsPerCluster_) + 1;
+    //     endCluster = clusterNumber_ - 1;
+    // }
+    // else {
+    //     numBlocks = blocksPerThread_;
+    //     endCluster = std::min(clusterId + numBlocks * (blockSize_ / threadsPerCluster_), clusterNumber_) - 1;
+    // }
+
+    // // different relations correspond to different GPU kernels
+    // switch (relation) {
+    //     case RelationType::BERelation:
+    //     {
+    //         int edgeIdOffset = hEdgeIntervals_[clusterId - 1];
+    //         int localEdgeNum = hEdgeIntervals_[endCluster] - edgeIdOffset;
+    //         bool *dBoundaryEdgeList;
+    //         CHECK(cudaMalloc((void **)&dBoundaryEdgeList, sizeof(bool) * localEdgeNum));
+    //         CHECK(cudaMemset(dBoundaryEdgeList, false, sizeof(bool) * localEdgeNum));
+
+    //         computeBoundaryEdges<<<numBlocks, blockSize_>>>(
+    //             dEdgeList_, dTriangleList_, 
+    //             dBoundaryEdgeList, dBoundaryTriangles_,
+    //             clusterId, clusterNumber_,
+    //             dConnectivity_, dOffsets_, dIndexArray_,
+    //             dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
+    //             dExternalCells_, dExternalCellOffsets_, 
+    //             cellDimension_, threadsPerCluster_);
+
+    //         bool *hBoundaryEdgeList = new bool[localEdgeNum];
+
+    //         CHECK(cudaMemcpy(hBoundaryEdgeList, dBoundaryEdgeList, sizeof(bool) * localEdgeNum, cudaMemcpyDeviceToHost));
+
+    //         // std::unique_lock<std::mutex> lck(BEMutex_);
+    //         for (int i = clusterId; i <= endCluster; ++i) {
+    //             if (allClusters_[i].boundaryEdges_.empty()) {
+    //                 allClusters_[i].boundaryEdges_.resize(hEdgeIntervals_[i] - hEdgeIntervals_[i-1]);
+    //                 int idOffset = hEdgeIntervals_[i-1] - edgeIdOffset;
+    //                 for (int j = 0; j < allClusters_[i].boundaryEdges_.size(); ++j) {
+    //                     allClusters_[i].boundaryEdges_[j] = hBoundaryEdgeList[j + idOffset];
+    //                 }
+    //             }
+    //         }
+
+    //         // lck.unlock();
+    //         if (signal) {
+    //             // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+    //             // else res = 1;
+    //             sem_post(&relationSems_[threadId]);
+    //         }
+    //         if (baseClusters_[relationId][threadId] == 0)
+    //             baseClusters_[relationId][threadId] = clusterId;
+
+    //         CHECK(cudaFree(dBoundaryEdgeList));
+    //         delete[] hBoundaryEdgeList;
+
+    //         break;
+    //     }
+
+    //     case RelationType::BVRelation: 
+    //     {
+    //         int vertexIdOffset = hVertexIntervals_[clusterId - 1];
+    //         int localVertexNum = hVertexIntervals_[endCluster] - vertexIdOffset;
+    //         bool *dBoundaryVertexList;
+    //         int *dTriangleList; 
+    //         CHECK(cudaMalloc((void **)&dTriangleList, sizeof(SimplexId) * hTriangleIntervals_[endCluster] * 3));
+    //         CHECK(cudaMalloc((void **)&dBoundaryVertexList, sizeof(bool) * localVertexNum));
+    //         CHECK(cudaMemcpy(dTriangleList, triangleList_.data(), sizeof(SimplexId) * hTriangleIntervals_[endCluster] * 3, cudaMemcpyHostToDevice));
+    //         CHECK(cudaMemset(dBoundaryVertexList, false, sizeof(bool) * localVertexNum));
+
+    //         computeBoundaryVertices<<<numBlocks, blockSize_>>>(
+    //             dTriangleList, dBoundaryTriangles_, dBoundaryVertexList,
+    //             clusterId, clusterNumber_,
+    //             dConnectivity_, dOffsets_, dIndexArray_,
+    //             dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
+    //             dExternalCells_, dExternalCellOffsets_, 
+    //             cellDimension_, threadsPerCluster_);
+
+    //         bool *hBoundaryVertexList = new bool[localVertexNum];
+
+    //         CHECK(cudaMemcpy(hBoundaryVertexList, dBoundaryVertexList, sizeof(bool) * localVertexNum, cudaMemcpyDeviceToHost));
+
+    //         // std::unique_lock<std::mutex> lck(BVMutex_);
+    //         for (int sid = clusterId; sid <= endCluster; ++sid) {
+    //             if (allClusters_[sid].boundaryVertices_.empty()) {
+    //                 allClusters_[sid].boundaryVertices_.resize(hVertexIntervals_[sid] - hVertexIntervals_[sid-1]);
+    //                 int rvid = hVertexIntervals_[sid-1] - vertexIdOffset;
+    //                 for (int vid = 0; vid < allClusters_[sid].boundaryVertices_.size(); ++vid) {
+    //                     allClusters_[sid].boundaryVertices_[vid] = hBoundaryVertexList[rvid++];
+    //                 }
+    //             }
+    //         }
+
+    //         // lck.unlock();
+    //         if (signal) {
+    //             // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+    //             // else res = 1;
+    //             sem_post(&relationSems_[threadId]);
+    //         }
+    //         if (baseClusters_[relationId][threadId] == 0)
+    //             baseClusters_[relationId][threadId] = clusterId;
+
+    //         CHECK(cudaFree(dTriangleList));
+    //         CHECK(cudaFree(dBoundaryVertexList));
+
+    //         delete[] hBoundaryVertexList;
+    //         break;
+    //     }
+
+    //     case RelationType::BFRelation:
+    //     {
+    //         int *dTriangleStarMatrix, *dTriangleStarSizes;
+    //         int numBlocks = clusterNumber_ / (blockSize_ / threadsPerCluster_) + 1;
+    //         int localTriangleNum = triangleNumber_;
+    //         CHECK(cudaMalloc((void **)&dBoundaryTriangles_, sizeof(bool) * localTriangleNum));
+    //         CHECK(cudaMalloc((void **)&dTriangleStarSizes, sizeof(int) * localTriangleNum));
+    //         CHECK(cudaMalloc((void **)&dTriangleStarMatrix, sizeof(int) * localTriangleNum * ftColumnNum));
+    //         CHECK(cudaMemset(dBoundaryTriangles_, false, sizeof(bool) * localTriangleNum));
+    //         CHECK(cudaMemset(dTriangleStarSizes, 0, sizeof(int) * localTriangleNum));
+    //         CHECK(cudaMemset(dTriangleStarMatrix, -1, sizeof(int) * localTriangleNum * ftColumnNum));
+
+    //         computeBoundaryTriangles<<<numBlocks, blockSize_>>>(
+    //             dTriangleList_, dTriangleStarMatrix, 
+    //             dTriangleStarSizes, dBoundaryTriangles_,
+    //             clusterId, clusterNumber_,
+    //             dConnectivity_, dOffsets_,
+    //             dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
+    //             dExternalCells_, dExternalCellOffsets_, 
+    //             cellDimension_, threadsPerCluster_);
+
+    //         // cannot copy directly to vector<bool>, since it uses one bit for a boolean instead of one byte
+    //         bool *hBoundaryTriangleList = new bool[localTriangleNum];
+    //         CHECK(cudaMemcpy(hBoundaryTriangleList, dBoundaryTriangles_, sizeof(bool) * localTriangleNum, cudaMemcpyDeviceToHost));
+    //         for (int fid = 0; fid < localTriangleNum; ++fid) {
+    //             boundaryTriangles_[fid] = hBoundaryTriangleList[fid];
+    //         }
+
+    //         if (signal) {
+    //             // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+    //             // else res = 1;
+    //             sem_post(&relationSems_[threadId]);
+    //         }
+
+    //         CHECK(cudaFree(dTriangleStarSizes));
+    //         CHECK(cudaFree(dTriangleStarMatrix));
+    //         delete[] hBoundaryTriangleList;
+
+    //         break;
+    //     }
+
+    //     case RelationType::EFRelation:
+    //     {
+    //         int *dEdgeTriangleMatrix, *dEdgeTriangleSizes;
+    //         int edgeIdOffset = hEdgeIntervals_[clusterId - 1];
+    //         int localEdgeSum = hEdgeIntervals_[endCluster] - edgeIdOffset;
+    //         CHECK(cudaMalloc((void **)&dEdgeTriangleSizes, sizeof(int) * localEdgeSum));
+    //         CHECK(cudaMalloc((void **)&dEdgeTriangleMatrix, sizeof(int) * localEdgeSum * efColumnNum));
+    //         CHECK(cudaMemset(dEdgeTriangleSizes, 0, sizeof(int) * localEdgeSum));
+    //         CHECK(cudaMemset(dEdgeTriangleMatrix, -1, sizeof(int) * localEdgeSum * efColumnNum));
+
+    //         computeEdgeTriangles<<<numBlocks, blockSize_>>>(
+    //             dEdgeList_, dTriangleList_,
+    //             dEdgeTriangleMatrix, dEdgeTriangleSizes,
+    //             clusterId, clusterNumber_,
+    //             dConnectivity_, dOffsets_, dIndexArray_,
+    //             dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
+    //             dExternalCells_, dExternalCellOffsets_, 
+    //             cellDimension_, threadsPerCluster_);
+
+    //         int *hEdgeTriangleSizes = new int[localEdgeSum];
+    //         int *hEdgeTriangleMatrix = new int[localEdgeSum * efColumnNum];
+
+    //         CHECK(cudaMemcpy(hEdgeTriangleSizes, dEdgeTriangleSizes, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
+    //         CHECK(cudaMemcpy(hEdgeTriangleMatrix, dEdgeTriangleMatrix, sizeof(int) * localEdgeSum * efColumnNum, cudaMemcpyDeviceToHost));
+
+    //         // std::unique_lock<std::mutex> lck(EFMutex_);
+    //         for (int sid = clusterId; sid <= endCluster; ++sid) {
+    //             if (allClusters_[sid].edgeTriangles_.empty()) {
+    //                 int localEdgeNum = hEdgeIntervals_[sid] - hEdgeIntervals_[sid - 1];
+    //                 std::vector<SimplexId> edgeTriangleData{};
+    //                 std::vector<SimplexId> edgeTriangleOffsets(localEdgeNum + 1);
+    //                 edgeTriangleOffsets[0] = 0;
+    //                 int reid = hEdgeIntervals_[sid - 1] - edgeIdOffset;
+    //                 for (int eid = 0; eid < localEdgeNum; ++eid) {
+    //                     edgeTriangleData.insert(edgeTriangleData.end(), hEdgeTriangleMatrix + reid * efColumnNum, hEdgeTriangleMatrix + reid * efColumnNum + hEdgeTriangleSizes[reid]);
+    //                     edgeTriangleOffsets[eid+1] = edgeTriangleOffsets[eid] + hEdgeTriangleSizes[reid];
+    //                     ++reid;
+    //                 }
+    //                 allClusters_[sid].edgeTriangles_.setData(std::move(edgeTriangleData), std::move(edgeTriangleOffsets));
+    //             }
+    //         }
+
+    //         // lck.unlock();
+    //         if (signal) {
+    //             // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+    //             // else res = 1;
+    //             sem_post(&relationSems_[threadId]);
+    //         }
+    //         if (baseClusters_[relationId][threadId] == 0)
+    //             baseClusters_[relationId][threadId] = clusterId;
+
+    //         CHECK(cudaFree(dEdgeTriangleSizes));
+    //         CHECK(cudaFree(dEdgeTriangleMatrix));
+
+    //         delete[] hEdgeTriangleMatrix;
+    //         delete[] hEdgeTriangleSizes;
+    //         break;
+    //     }
+
+    //     case RelationType::ETRelation:
+    //     {
+    //         int *dEdgeStarMatrix, *dEdgeStarSizes;
+    //         int edgeIdOffset = hEdgeIntervals_[clusterId - 1];
+    //         int localEdgeSum = hEdgeIntervals_[endCluster] - edgeIdOffset;
+    //         CHECK(cudaMalloc((void **)&dEdgeStarSizes, sizeof(int) * localEdgeSum));
+    //         CHECK(cudaMalloc((void **)&dEdgeStarMatrix, sizeof(int) * localEdgeSum * etColumnNum));
+    //         CHECK(cudaMemset(dEdgeStarSizes, 0, sizeof(int) * localEdgeSum));
+    //         CHECK(cudaMemset(dEdgeStarMatrix, -1, sizeof(int) * localEdgeSum * etColumnNum));
+
+    //         computeEdgeStars<<<numBlocks, blockSize_>>>(
+    //             dEdgeList_, dEdgeStarMatrix, dEdgeStarSizes,
+    //             clusterId, clusterNumber_,
+    //             dConnectivity_, dOffsets_,
+    //             dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
+    //             dExternalCells_, dExternalCellOffsets_, 
+    //             cellDimension_, threadsPerCluster_);
+
+    //         int *hEdgeStarSizes_ = new int[localEdgeSum];
+    //         int *hEdgeStarMatrix_ = new int[localEdgeSum * etColumnNum];
+
+    //         CHECK(cudaMemcpy(hEdgeStarSizes_, dEdgeStarSizes, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
+    //         CHECK(cudaMemcpy(hEdgeStarMatrix_, dEdgeStarMatrix, sizeof(int) * localEdgeSum * etColumnNum, cudaMemcpyDeviceToHost));
+
+    //         // std::unique_lock<std::mutex> lck(ETMutex_);
+    //         for (int sid = clusterId; sid <= endCluster; ++sid) {
+    //             if (allClusters_[sid].edgeStars_.empty()) {
+    //                 int localEdgeNum = hEdgeIntervals_[sid] - hEdgeIntervals_[sid - 1];
+    //                 std::vector<SimplexId> edgeStarData{};
+    //                 std::vector<SimplexId> edgeStarOffsets(localEdgeNum + 1);
+    //                 edgeStarOffsets[0] = 0;
+    //                 int reid = hEdgeIntervals_[sid - 1] - edgeIdOffset;
+    //                 for (int eid = 0; eid < localEdgeNum; ++eid) {
+    //                     edgeStarData.insert(edgeStarData.end(), hEdgeStarMatrix_ + reid * etColumnNum, hEdgeStarMatrix_ + reid * etColumnNum + hEdgeStarSizes_[reid]);
+    //                     edgeStarOffsets[eid+1] = edgeStarOffsets[eid] + hEdgeStarSizes_[reid];
+    //                     ++reid;
+    //                 }
+    //                 allClusters_[sid].edgeStars_.setData(std::move(edgeStarData), std::move(edgeStarOffsets));
+    //             }
+    //         }
+
+    //         // lck.unlock();
+    //         if (signal) {
+    //             // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+    //             // else res = 1;
+    //             sem_post(&relationSems_[threadId]);
+    //         }
+    //         if (baseClusters_[relationId][threadId] == 0)
+    //             baseClusters_[relationId][threadId] = clusterId;
+
+    //         CHECK(cudaFree(dEdgeStarSizes));
+    //         CHECK(cudaFree(dEdgeStarMatrix));
+
+    //         delete[] hEdgeStarMatrix_;
+    //         delete[] hEdgeStarSizes_;
+    //         break;
+    //     }
+
+    //     case RelationType::FTRelation:
+    //     {
+    //         int *dTriangleStarMatrix, *dTriangleStarSizes;
+    //         int triangleIdOffset = hTriangleIntervals_[clusterId - 1];
+    //         int localTriangleSum = hTriangleIntervals_[endCluster] - triangleIdOffset;
+    //         CHECK(cudaMalloc((void **)&dTriangleStarSizes, sizeof(int) * localTriangleSum));
+    //         CHECK(cudaMalloc((void **)&dTriangleStarMatrix, sizeof(int) * localTriangleSum * ftColumnNum));
+    //         CHECK(cudaMemset(dTriangleStarSizes, 0, sizeof(int) * localTriangleSum));
+    //         CHECK(cudaMemset(dTriangleStarMatrix, -1, sizeof(int) * localTriangleSum * ftColumnNum));
+
+    //         computeTriangleStars<<<numBlocks, blockSize_>>>(
+    //             dTriangleList_, dTriangleStarMatrix, dTriangleStarSizes,
+    //             clusterId, clusterNumber_,
+    //             dConnectivity_, dOffsets_,
+    //             dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
+    //             dExternalCells_, dExternalCellOffsets_, 
+    //             cellDimension_, threadsPerCluster_);
+
+    //         int *hTriangleStarSizes = new int[localTriangleSum];
+    //         int *hTriangleStarMatrix = new int[localTriangleSum * ftColumnNum];
+
+    //         CHECK(cudaMemcpy(hTriangleStarSizes, dTriangleStarSizes, sizeof(int) * localTriangleSum, cudaMemcpyDeviceToHost));
+    //         CHECK(cudaMemcpy(hTriangleStarMatrix, dTriangleStarMatrix, sizeof(int) * localTriangleSum * ftColumnNum, cudaMemcpyDeviceToHost));
+
+    //         // std::unique_lock<std::mutex> lck(FTMutex_);
+    //         for (int sid = clusterId; sid <= endCluster; ++sid) {
+    //             if (allClusters_[sid].triangleStars_.empty()) {
+    //                 int localTriangleNum = hTriangleIntervals_[sid] - hTriangleIntervals_[sid - 1];
+    //                 std::vector<SimplexId> triangleStarData{};
+    //                 std::vector<SimplexId> triangleStarOffsets(localTriangleNum + 1);
+    //                 triangleStarOffsets[0] = 0;
+    //                 int rfid = hTriangleIntervals_[sid - 1] - triangleIdOffset;
+    //                 for (int fid = 0; fid < localTriangleNum; ++fid) {
+    //                     triangleStarData.insert(triangleStarData.end(), hTriangleStarMatrix + rfid * ftColumnNum, hTriangleStarMatrix + rfid * ftColumnNum + hTriangleStarSizes[rfid]);
+    //                     triangleStarOffsets[fid+1] = triangleStarOffsets[fid] + hTriangleStarSizes[rfid];
+    //                     ++rfid;
+    //                 }
+    //                 allClusters_[sid].triangleStars_.setData(std::move(triangleStarData), std::move(triangleStarOffsets));
+    //             }
+    //         }
+
+    //         // lck.unlock();
+    //         if (signal) {
+    //             // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+    //             // else res = 1;
+    //             sem_post(&relationSems_[threadId]);
+    //         }
+    //         if (baseClusters_[relationId][threadId] == 0)
+    //             baseClusters_[relationId][threadId] = clusterId;
+
+    //         CHECK(cudaFree(dTriangleStarSizes));
+    //         CHECK(cudaFree(dTriangleStarMatrix));
+    //         delete[] hTriangleStarMatrix;
+    //         delete[] hTriangleStarSizes;
+
+    //         break;
+    //     }
+
+    //     case RelationType::VERelation:
+    //     {
+    //         int *dVertexEdgeMatrix, *dVertexEdgeSizes;
+    //         int vertexIdOffset = hVertexIntervals_[clusterId - 1];
+    //         int localVertexSum = hVertexIntervals_[endCluster] - vertexIdOffset;
+    //         CHECK(cudaMalloc((void **)&dVertexEdgeSizes, sizeof(int) * localVertexSum));
+    //         CHECK(cudaMalloc((void **)&dVertexEdgeMatrix, sizeof(int) * localVertexSum * veColumnNum));
+    //         CHECK(cudaMemset(dVertexEdgeSizes, 0, sizeof(int) * localVertexSum));
+    //         CHECK(cudaMemset(dVertexEdgeMatrix, -1, sizeof(int) * localVertexSum * veColumnNum));
+
+    //         computeVertexEdges<<<numBlocks, blockSize_>>>(
+    //             dEdgeList_, dVertexEdgeMatrix, dVertexEdgeSizes,
+    //             clusterId, clusterNumber_,
+    //             dConnectivity_, dOffsets_, dIndexArray_,
+    //             dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
+    //             dExternalCells_, dExternalCellOffsets_, 
+    //             cellDimension_, threadsPerCluster_);
+
+    //         int *hVertexEdgeSizes = new int[localVertexSum];
+    //         int *hVertexEdgeMatrix = new int[localVertexSum * veColumnNum];
+
+    //         CHECK(cudaMemcpy(hVertexEdgeSizes, dVertexEdgeSizes, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
+    //         CHECK(cudaMemcpy(hVertexEdgeMatrix, dVertexEdgeMatrix, sizeof(int) * localVertexSum * veColumnNum, cudaMemcpyDeviceToHost));
+
+    //         // std::unique_lock<std::mutex> lck(VEMutex_);
+    //         for (int sid = clusterId; sid <= endCluster; ++sid) {
+    //             if (allClusters_[sid].vertexEdges_.empty()) {
+    //                 int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
+    //                 std::vector<SimplexId> vertexEdgeData{};
+    //                 std::vector<SimplexId> vertexEdgeOffsets(localVertexNum + 1);
+    //                 vertexEdgeOffsets[0] = 0;
+    //                 int rvid = hVertexIntervals_[sid - 1] - vertexIdOffset;
+    //                 for (int vid = 0; vid < localVertexNum; ++vid) {
+    //                     vertexEdgeData.insert(vertexEdgeData.end(), hVertexEdgeMatrix + rvid * veColumnNum, hVertexEdgeMatrix + rvid * veColumnNum + hVertexEdgeSizes[rvid]);
+    //                     vertexEdgeOffsets[vid+1] = vertexEdgeOffsets[vid] + hVertexEdgeSizes[rvid];
+    //                     ++rvid;
+    //                 }
+    //                 allClusters_[sid].vertexEdges_.setData(std::move(vertexEdgeData), std::move(vertexEdgeOffsets));
+    //             }
+    //         }
+
+    //         // lck.unlock();
+    //         if (signal) {
+    //             // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+    //             // else res = 1;
+    //             sem_post(&relationSems_[threadId]);
+    //         }
+    //         if (baseClusters_[relationId][threadId] == 0)
+    //             baseClusters_[relationId][threadId] = clusterId;
+
+    //         CHECK(cudaFree(dVertexEdgeSizes));
+    //         CHECK(cudaFree(dVertexEdgeMatrix));
+    //         delete[] hVertexEdgeMatrix;
+    //         delete[] hVertexEdgeSizes;
+
+    //         break;
+    //     }
+
+    //     case RelationType::VFRelation:
+    //     {
+    //         int *dVertexTriangleMatrix, *dVertexTriangleSizes;
+    //         int vertexIdOffset = hVertexIntervals_[clusterId - 1];
+    //         int localVertexSum = hVertexIntervals_[endCluster] - vertexIdOffset;
+    //         CHECK(cudaMalloc((void **)&dVertexTriangleSizes, sizeof(int) * localVertexSum));
+    //         CHECK(cudaMalloc((void **)&dVertexTriangleMatrix, sizeof(int) * localVertexSum * vfColumnNum));
+    //         CHECK(cudaMemset(dVertexTriangleSizes, 0, sizeof(int) * localVertexSum));
+    //         CHECK(cudaMemset(dVertexTriangleMatrix, -1, sizeof(int) * localVertexSum * vfColumnNum));
+
+    //         computeVertexTriangles<<<numBlocks, blockSize_>>>(
+    //             dTriangleList_, dVertexTriangleMatrix, dVertexTriangleSizes,
+    //             clusterId, clusterNumber_,
+    //             dConnectivity_, dOffsets_, dIndexArray_,
+    //             dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
+    //             dExternalCells_, dExternalCellOffsets_, 
+    //             cellDimension_, threadsPerCluster_);
+
+    //         int *hVertexTriangleSizes = new int[localVertexSum];
+    //         int *hVertexTriangleMatrix = new int[localVertexSum * vfColumnNum];
+
+    //         CHECK(cudaMemcpy(hVertexTriangleSizes, dVertexTriangleSizes, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
+    //         CHECK(cudaMemcpy(hVertexTriangleMatrix, dVertexTriangleMatrix, sizeof(int) * localVertexSum * vfColumnNum, cudaMemcpyDeviceToHost));
+
+    //         // std::unique_lock<std::mutex> lck(VFMutex_);
+    //         for (int sid = clusterId; sid <= endCluster; ++sid) {
+    //             if (allClusters_[sid].vertexTriangles_.empty()) {
+    //                 int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
+    //                 std::vector<SimplexId> vertexTriangleData{};
+    //                 std::vector<SimplexId> vertexTriangleOffsets(localVertexNum + 1);
+    //                 vertexTriangleOffsets[0] = 0;
+    //                 int rvid = hVertexIntervals_[sid - 1] - vertexIdOffset;
+    //                 for (int vid = 0; vid < localVertexNum; ++vid) {
+    //                     vertexTriangleData.insert(vertexTriangleData.end(), hVertexTriangleMatrix + rvid * vfColumnNum, hVertexTriangleMatrix + rvid * vfColumnNum + hVertexTriangleSizes[rvid]);
+    //                     vertexTriangleOffsets[vid+1] = vertexTriangleOffsets[vid] + hVertexTriangleSizes[rvid];
+    //                     ++rvid;
+    //                 }
+    //                 allClusters_[sid].vertexTriangles_.setData(std::move(vertexTriangleData), std::move(vertexTriangleOffsets));
+    //             }
+    //         }
+
+    //         // lck.unlock();
+    //         if (signal) {
+    //             // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+    //             // else res = 1;
+    //             sem_post(&relationSems_[threadId]);
+    //         }
+    //         if (baseClusters_[relationId][threadId] == 0)
+    //             baseClusters_[relationId][threadId] = clusterId;
+
+    //         CHECK(cudaFree(dVertexTriangleSizes));
+    //         CHECK(cudaFree(dVertexTriangleMatrix));
+    //         delete[] hVertexTriangleMatrix;
+    //         delete[] hVertexTriangleSizes;
+
+    //         break;
+    //     }
+
+    //     case RelationType::VTRelation:
+    //     {
+    //         int *dVertexStarMatrix, *dVertexStarSizes;
+    //         int vertexIdOffset = hVertexIntervals_[clusterId - 1];
+    //         int localVertexNum = hVertexIntervals_[endCluster] - vertexIdOffset;
+    //         CHECK(cudaMalloc((void **)&dVertexStarSizes, sizeof(int) * localVertexNum));
+    //         CHECK(cudaMalloc((void **)&dVertexStarMatrix, sizeof(int) * localVertexNum * vtColumnNum));
+    //         CHECK(cudaMemset(dVertexStarSizes, 0, sizeof(int) * localVertexNum));
+    //         CHECK(cudaMemset(dVertexStarMatrix, -1, sizeof(int) * localVertexNum * vtColumnNum));
+
+    //         computeVertexStars<<<numBlocks, blockSize_>>>(
+    //             dVertexStarMatrix, dVertexStarSizes,
+    //             clusterId, clusterNumber_,
+    //             dConnectivity_, dOffsets_,
+    //             dVertexIntervals_, dCellIntervals_,
+    //             dExternalCells_, dExternalCellOffsets_, 
+    //             cellDimension_, threadsPerCluster_);
+
+    //         int *hVertexStarSizes = new int[localVertexNum];
+    //         int *hVertexStarMatrix = new int[localVertexNum * vtColumnNum];
+
+    //         CHECK(cudaMemcpy(hVertexStarSizes, dVertexStarSizes, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
+    //         CHECK(cudaMemcpy(hVertexStarMatrix, dVertexStarMatrix, sizeof(int) * localVertexNum * vtColumnNum, cudaMemcpyDeviceToHost));
+
+    //         // std::unique_lock<std::mutex> lck(VTMutex_);
+    //         for (int sid = clusterId; sid <= endCluster; ++sid) {
+    //             if (allClusters_[sid].vertexStars_.empty()) {
+    //                 int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
+    //                 std::vector<SimplexId> vertexStarData{};
+    //                 std::vector<SimplexId> vertexStarOffsets(localVertexNum + 1);
+    //                 vertexStarOffsets[0] = 0;
+    //                 int rvid = hVertexIntervals_[sid - 1] - vertexIdOffset;
+    //                 for (int vid = 0; vid < localVertexNum; ++vid) {
+    //                     vertexStarData.insert(vertexStarData.end(), hVertexStarMatrix + rvid * vtColumnNum, hVertexStarMatrix + rvid * vtColumnNum + hVertexStarSizes[rvid]);
+    //                     vertexStarOffsets[vid+1] = vertexStarOffsets[vid] + hVertexStarSizes[rvid];
+    //                     ++rvid;
+    //                 }
+    //                 allClusters_[sid].vertexStars_.setData(std::move(vertexStarData), std::move(vertexStarOffsets));
+    //             }
+    //         }
+    //         // lck.unlock();
+    //         if (signal) {
+    //             sem_post(&relationSems_[threadId]);
+    //         }
+    //         if (baseClusters_[relationId][threadId] == 0)
+    //             baseClusters_[relationId][threadId] = clusterId;
+
+    //         CHECK(cudaFree(dVertexStarSizes));
+    //         CHECK(cudaFree(dVertexStarMatrix));
+    //         delete[] hVertexStarMatrix;
+    //         delete[] hVertexStarSizes;
+
+    //         break;
+    //     }
+
+    //     case RelationType::VVRelation:
+    //     {
+    //         int *dVertexNeighborMatrix, *dVertexNeighborSizes;
+    //         int vertexIdOffset = hVertexIntervals_[clusterId - 1];
+    //         int localVertexNum = hVertexIntervals_[endCluster] - vertexIdOffset;
+    //         CHECK(cudaMalloc((void **)&dVertexNeighborSizes, sizeof(int) * localVertexNum));
+    //         CHECK(cudaMalloc((void **)&dVertexNeighborMatrix, sizeof(int) * localVertexNum * vvColumnNum));
+    //         CHECK(cudaMemset(dVertexNeighborSizes, 0, sizeof(int) * localVertexNum));
+    //         CHECK(cudaMemset(dVertexNeighborMatrix, -1, sizeof(int) * localVertexNum * vvColumnNum));
             
-            computeVertexNeighbors<<<numBlocks, blockSize_>>>(
-                dVertexNeighborMatrix, dVertexNeighborSizes,
-                clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_, 
-                cellDimension_, threadsPerCluster_);
+    //         computeVertexNeighbors<<<numBlocks, blockSize_>>>(
+    //             dVertexNeighborMatrix, dVertexNeighborSizes,
+    //             clusterId, clusterNumber_,
+    //             dConnectivity_, dOffsets_,
+    //             dVertexIntervals_, dCellIntervals_,
+    //             dExternalCells_, dExternalCellOffsets_, 
+    //             cellDimension_, threadsPerCluster_);
 
-            int *hVertexNeighborSizes_ = new int[localVertexNum];
-            int *hVertexNeighborMatrix_ = new int[localVertexNum * vvColumnNum];
+    //         int *hVertexNeighborSizes_ = new int[localVertexNum];
+    //         int *hVertexNeighborMatrix_ = new int[localVertexNum * vvColumnNum];
 
-            CHECK(cudaMemcpy(hVertexNeighborSizes_, dVertexNeighborSizes, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hVertexNeighborMatrix_, dVertexNeighborMatrix, sizeof(int) * localVertexNum * vvColumnNum, cudaMemcpyDeviceToHost));
+    //         CHECK(cudaMemcpy(hVertexNeighborSizes_, dVertexNeighborSizes, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
+    //         CHECK(cudaMemcpy(hVertexNeighborMatrix_, dVertexNeighborMatrix, sizeof(int) * localVertexNum * vvColumnNum, cudaMemcpyDeviceToHost));
 
-            // std::unique_lock<std::mutex> lck(VVMutex_);
-            for (int sid = clusterId; sid <= endCluster; ++sid) {
-                if (allClusters_[sid].vertexNeighbors_.empty()) {
-                    int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
-                    std::vector<SimplexId> vertexNeighborData{};
-                    std::vector<SimplexId> vertexNeighborOffsets(localVertexNum + 1);
-                    vertexNeighborOffsets[0] = 0;
-                    int rvid = hVertexIntervals_[sid - 1] - vertexIdOffset;
-                    for (int vid = 0; vid < localVertexNum; ++vid) {
-                        vertexNeighborData.insert(vertexNeighborData.end(), hVertexNeighborMatrix_ + rvid * vvColumnNum, hVertexNeighborMatrix_ + rvid * vvColumnNum + hVertexNeighborSizes_[rvid]);
-                        vertexNeighborOffsets[vid+1] = vertexNeighborOffsets[vid] + hVertexNeighborSizes_[rvid];
-                        ++rvid;
-                    }
-                    allClusters_[sid].vertexNeighbors_.setData(std::move(vertexNeighborData), std::move(vertexNeighborOffsets));
-                }
-            }
-            // lck.unlock();
+    //         // std::unique_lock<std::mutex> lck(VVMutex_);
+    //         for (int sid = clusterId; sid <= endCluster; ++sid) {
+    //             if (allClusters_[sid].vertexNeighbors_.empty()) {
+    //                 int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
+    //                 std::vector<SimplexId> vertexNeighborData{};
+    //                 std::vector<SimplexId> vertexNeighborOffsets(localVertexNum + 1);
+    //                 vertexNeighborOffsets[0] = 0;
+    //                 int rvid = hVertexIntervals_[sid - 1] - vertexIdOffset;
+    //                 for (int vid = 0; vid < localVertexNum; ++vid) {
+    //                     vertexNeighborData.insert(vertexNeighborData.end(), hVertexNeighborMatrix_ + rvid * vvColumnNum, hVertexNeighborMatrix_ + rvid * vvColumnNum + hVertexNeighborSizes_[rvid]);
+    //                     vertexNeighborOffsets[vid+1] = vertexNeighborOffsets[vid] + hVertexNeighborSizes_[rvid];
+    //                     ++rvid;
+    //                 }
+    //                 allClusters_[sid].vertexNeighbors_.setData(std::move(vertexNeighborData), std::move(vertexNeighborOffsets));
+    //             }
+    //         }
+    //         // lck.unlock();
 
-            if (signal) {
-            // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
-            // else res = 1;
-                sem_post(&relationSems_[threadId]);
-            }
-            if (baseClusters_[relationId][threadId] == 0)
-                baseClusters_[relationId][threadId] = clusterId;
+    //         if (signal) {
+    //         // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
+    //         // else res = 1;
+    //             sem_post(&relationSems_[threadId]);
+    //         }
+    //         if (baseClusters_[relationId][threadId] == 0)
+    //             baseClusters_[relationId][threadId] = clusterId;
 
-            CHECK(cudaFree(dVertexNeighborSizes));
-            CHECK(cudaFree(dVertexNeighborMatrix));
+    //         CHECK(cudaFree(dVertexNeighborSizes));
+    //         CHECK(cudaFree(dVertexNeighborMatrix));
 
-            delete[] hVertexNeighborMatrix_;
-            delete[] hVertexNeighborSizes_;
-            break;
-        }
+    //         delete[] hVertexNeighborMatrix_;
+    //         delete[] hVertexNeighborSizes_;
+    //         break;
+    //     }
 
-        default:
-            res = -1;
-    }
+    //     default:
+    //         res = -1;
+    // }
 
     return res;
 }
@@ -797,7 +810,8 @@ int Gale::computeRelation(const RelationType relation,
 */
 int Gale::computeCombinedRelation(std::map<RelationType, 
             std::vector<std::pair<int,int>>> &requestMap, 
-            std::vector<RelationType> &relationOrders) {
+            std::vector<RelationType> &relationOrders,
+            const int producerId = 0) {
 
     // std::cout << "request size: " << requestMap.size() << ": [";
     // for (auto &e : requestMap) {
@@ -813,9 +827,14 @@ int Gale::computeCombinedRelation(std::map<RelationType,
     std::vector<int *> dClustersIds(numRelations);
     std::vector<int *> dSimplexOffsets(numRelations);
     RelationArrays rarrs;
+    cudaEvent_t startEvents[numRelations];
+    cudaEvent_t endEvents[numRelations];
+    float kernelTime = 0, returnTime = 0;
 
     for (int curStream = 0; curStream < numRelations; ++curStream) {
         // (relation, [(tid, clusterId), ...])
+        cudaEventCreate(&startEvents[curStream]);
+        cudaEventCreate(&endEvents[curStream]);
         RelationType &relation = relationOrders[curStream];
         CHECK(cudaStreamCreate(&threadStreams[curStream]));
         // int relationId = static_cast<int>(relation);
@@ -1064,6 +1083,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 CHECK(cudaMemsetAsync(rarrs.dVertexEdgeMatrix, -1, sizeof(int) * localVertexSum * veColumnNum, threadStreams[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                #endif
                 computeMultiVertexEdges<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
                     dEdgeList_, rarrs.dVertexEdgeMatrix, rarrs.dVertexEdgeSizes,
                     clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
@@ -1071,6 +1093,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
+
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(endEvents[curStream], threadStreams[curStream]);
+                #endif
 
                 rarrs.hVertexEdgeSizes = new int[localVertexSum];
                 rarrs.hVertexEdgeMatrix = new int[localVertexSum * veColumnNum];
@@ -1110,6 +1136,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 CHECK(cudaMemsetAsync(rarrs.dVertexTriangleMatrix, -1, sizeof(int) * localVertexSum * vfColumnNum, threadStreams[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                #endif
                 computeMultiVertexTriangles<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
                     dTriangleList_, rarrs.dVertexTriangleMatrix, rarrs.dVertexTriangleSizes,
                     clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
@@ -1117,6 +1146,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
+
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                #endif
 
                 rarrs.hVertexTriangleSizes = new int [localVertexSum];
                 rarrs.hVertexTriangleMatrix = new int [localVertexSum * vfColumnNum];
@@ -1151,6 +1184,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 CHECK(cudaMemsetAsync(rarrs.dVertexStarMatrix, -1, sizeof(int) * localVertexSum * vtColumnNum, threadStreams[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                #endif
                 computeMultiVertexStars<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
                     rarrs.dVertexStarMatrix, rarrs.dVertexStarSizes,
                     clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
@@ -1158,6 +1194,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     dVertexIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(endEvents[curStream], threadStreams[curStream]);
+                #endif
 
                 rarrs.hVertexStarSizes = new int[localVertexSum];
                 rarrs.hVertexStarMatrix = new int[localVertexSum * vtColumnNum];
@@ -1192,6 +1231,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 CHECK(cudaMemsetAsync(rarrs.dVertexNeighborMatrix, -1, sizeof(int) * localVertexSum * vvColumnNum, threadStreams[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                #endif
                 computeMultiVertexNeighbors<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
                     rarrs.dVertexNeighborMatrix, rarrs.dVertexNeighborSizes,
                     clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
@@ -1199,6 +1241,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     dVertexIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(endEvents[curStream], threadStreams[curStream]);
+                #endif
 
                 rarrs.hVertexNeighborSizes = new int[localVertexSum];
                 rarrs.hVertexNeighborMatrix = new int[localVertexSum * vvColumnNum];
@@ -1439,6 +1484,12 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
                         __FILE__, __LINE__); if (abort) exit(status);
                 }
+                #ifdef MEASURE_WAITING
+                float milliseconds = 0;
+                cudaEventElapsedTime(&milliseconds, startEvents[curStream], endEvents[curStream]);
+                kernelTime += milliseconds;
+                Timer tmp;
+                #endif
 
                 for (int i = 0; i < threadNum; ++i) {
                     // std::unique_lock<std::mutex> lck(VVMutex_);
@@ -1467,6 +1518,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     sem_post(&relationSems_[tid]);
                 }
 
+                #ifdef MEASURE_WAITING
+                returnTime += tmp.getElapsedTime();
+                #endif
+
                 CHECK(cudaFree(dClustersIds[curStream]));
                 CHECK(cudaFree(dSimplexOffsets[curStream]));
                 CHECK(cudaFree(rarrs.dVertexEdgeSizes));
@@ -1484,6 +1539,12 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
                         __FILE__, __LINE__); if (abort) exit(status);
                 }
+                #ifdef MEASURE_WAITING
+                float milliseconds = 0;
+                cudaEventElapsedTime(&milliseconds, startEvents[curStream], endEvents[curStream]);
+                kernelTime += milliseconds;
+                Timer tmp;
+                #endif
 
                 for (int i = 0; i < threadNum; ++i) {
                     // std::unique_lock<std::mutex> lck(VVMutex_);
@@ -1511,6 +1572,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     // lck.unlock();
                     sem_post(&relationSems_[tid]);
                 }
+                #ifdef MEASURE_WAITING
+                returnTime += tmp.getElapsedTime();
+                #endif
 
                 CHECK(cudaFree(dClustersIds[curStream]));
                 CHECK(cudaFree(dSimplexOffsets[curStream]));
@@ -1529,6 +1593,12 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
                         __FILE__, __LINE__); if (abort) exit(status);
                 }
+                #ifdef MEASURE_WAITING
+                float milliseconds = 0;
+                cudaEventElapsedTime(&milliseconds, startEvents[curStream], endEvents[curStream]);
+                kernelTime += milliseconds;
+                Timer tmp;
+                #endif
 
                 for (int i = 0; i < threadNum; ++i) {
                     // std::unique_lock<std::mutex> lck(VVMutex_);
@@ -1556,6 +1626,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     // lck.unlock();
                     sem_post(&relationSems_[tid]);
                 }
+                #ifdef MEASURE_WAITING
+                returnTime += tmp.getElapsedTime();
+                #endif
 
                 CHECK(cudaFree(dClustersIds[curStream]));
                 CHECK(cudaFree(dSimplexOffsets[curStream]));
@@ -1574,6 +1647,12 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
                         __FILE__, __LINE__); if (abort) exit(status);
                 }
+                #ifdef MEASURE_WAITING
+                float milliseconds = 0;
+                cudaEventElapsedTime(&milliseconds, startEvents[curStream], endEvents[curStream]);
+                kernelTime += milliseconds;
+                Timer tmp;
+                #endif
 
                 for (int i = 0; i < threadNum; ++i) {
                     SimplexId tid = jobs[i].first;
@@ -1601,6 +1680,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     if (baseClusters_[relationId][tid] == 0)
                         baseClusters_[relationId][tid] = baseClusterId;
                 }
+                #ifdef MEASURE_WAITING
+                returnTime += tmp.getElapsedTime();
+                #endif
+
                 CHECK(cudaFree(dClustersIds[curStream]));
                 CHECK(cudaFree(dSimplexOffsets[curStream]));
                 CHECK(cudaFree(rarrs.dVertexNeighborSizes));
@@ -1613,6 +1696,11 @@ int Gale::computeCombinedRelation(std::map<RelationType,
         }
         CHECK(cudaStreamDestroy(threadStreams[curStream]));
     }
+
+    #ifdef MEASURE_WAITING
+    kernelTimes_[producerId].push_back(kernelTime/1000);    // convert to seconds
+    returnTimes_[producerId].push_back(returnTime);
+    #endif
     
     return res;
 }
@@ -1621,22 +1709,22 @@ int Gale::computeCombinedRelation(std::map<RelationType,
 /**
  * Procedure of the leader producer.
 */
-void Gale::leaderProducer(const int id) {
+void Gale::leaderProducer(const int pid) {
     volatile SimplexId leaderCluster = 0;
     volatile RelationType leaderFunc = RelationType::BlankRelation;
 
     if (threadNumber_ == 1) {
         while (true) {
-            std::unique_lock<std::mutex> qlock(qMutex_);
-            int qSize = jobQueue.size();
+            std::unique_lock<std::mutex> qlock(qMutexes_[pid]);
+            int qSize = jobQueues_[pid].size();
             qlock.unlock();
             if (qSize > 0) {
-                int tid = jobQueue.front();
+                int tid = jobQueues_[pid].front();
                 leaderCluster = currClusters_[tid], leaderFunc = currRelations_[tid];
                 int res = computeRelation(leaderFunc, leaderCluster, false, tid, true);
                 if (res == 0) {
-                    std::unique_lock<std::mutex> qlock(qMutex_);
-                    jobQueue.pop();
+                    std::unique_lock<std::mutex> qlock(qMutexes_[pid]);
+                    jobQueues_[pid].pop();
                     qlock.unlock();
                 }
             }
@@ -1747,33 +1835,29 @@ void Gale::leaderProducer(const int id) {
         // std::vector<std::vector<std::tuple<int, int, RelationType>>> qstats;
         while (true) {
             /* Job queue version */
-            // save jobs in the current queue to the vector
-            std::unique_lock<std::mutex> qlock(qMutex_);
-            std::vector<int> localQ;
-            while (!jobQueue.empty()) {
-                localQ.push_back(jobQueue.front());
-                jobQueue.pop();
-            }
+            std::unique_lock<std::mutex> qlock(qMutexes_[pid]);
+            int qSize = jobQueues_[pid].size();
             qlock.unlock();
-
-            if (!localQ.empty()) {
+            if (qSize > 0) {
                 Timer t;
-                // handle the waiting jobs in the queue
-                // combine the requests from all waiting consumers
                 std::vector<RelationType> relationOrders;
                 std::map<RelationType, std::vector<std::pair<int,int>>> requestMap;
-                for (int i = 0; i < localQ.size(); ++i) {
-                    int tid = localQ[i];
+                // handle the waiting jobs in the queue
+                // combine the requests from all waiting consumers
+                std::unique_lock<std::mutex> qlock(qMutexes_[pid]);
+                for (int i = 0; i < qSize; ++i) {
+                    int tid = jobQueues_[pid].front();
+                    jobQueues_[pid].pop();
                     RelationType jobType = currRelations_[tid];
                     if (requestMap.find(jobType) == requestMap.end()) {
                         relationOrders.push_back(jobType);
                     }
                     requestMap[jobType].push_back(std::make_pair(tid, currClusters_[tid]));
-                    // curq.push_back(std::make_tuple(tid, currClusters_[tid], jobType));
                 }
-                computeCombinedRelation(requestMap, relationOrders);
-                qTimes_[id].push_back(t.getElapsedTime());
-                qSizes_[id].push_back(localQ.size());
+                qlock.unlock();
+                computeCombinedRelation(requestMap, relationOrders, pid);
+                qTimes_[pid].push_back(t.getElapsedTime());
+                qSizes_[pid].push_back(qSize);
             }
             else {
                 // clean the memory storage
@@ -1783,7 +1867,7 @@ void Gale::leaderProducer(const int id) {
                         return;
                     }
                     else if (leaderCluster == 0) continue;
-                    if (!jobQueue.empty()) break;
+                    if (!jobQueues_[pid].empty()) break;
                     // SimplexId startCluster = baseClusters_[static_cast<int>(currRelations_[i])][i];
                     // for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
                     //     if (clusterMutexes_[cid].try_lock())
