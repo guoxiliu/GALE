@@ -29,12 +29,13 @@ Gale::Gale(int tnum, int tnumPerCluster) {
     }
     #ifdef MEASURE_WAITING
     timers_ = std::vector<Timer>(threadNumber_);
-    // waitingTimes_ = std::vector<double>(threadNumber_, 0);
-    // waitingCounts_ = std::vector<int>(threadNumber_, 0);
     waitingTimes_.resize(threadNumber_);
     waitingCounts_.resize(threadNumber_);
+    consumerTimes_.resize(threadNumber_);
     qSizes_.resize(producerNum);
     qTimes_.resize(producerNum);
+    kernelTimes_.resize(producerNum);
+    returnTimes_.resize(producerNum);
     #endif
 
     // GPU parameters
@@ -46,27 +47,33 @@ Gale::Gale(int tnum, int tnumPerCluster) {
  * Destructor of GALE
 */
 Gale::~Gale() {
+    for (int i = 0; i < threadNumber_; ++i)
+        currClusters_[i] = -1;
     for (int p = 0; p < producerNum; ++p) {
         if (producers_[p].joinable()) {
-            for (int i = 0; i < threadNumber_; ++i)
-                currClusters_[i] = -1;
             producers_[p].join();
         }
     }
 
     #ifdef MEASURE_WAITING
-    for (int i = 0; i < threadNumber_; ++i) {
-        std::cout << "thread " << i << ": ";
-        for (auto &e : waitingCounts_[i]) {
-            std::cout << relationToString(e.first) << " missing counts: " << e.second << ", waiting time: " << waitingTimes_[i].at(e.first) << "; ";
-            // std::cout << static_cast<int>(e.first) << " missing counts: " << e.second << ", waiting time: " << waitingTimes_[i].at(e.first) << "; ";
+    // for (int i = 0; i < threadNumber_; ++i) {
+    //     std::cout << "thread " << i << ": ";
+    //     for (auto &e : waitingCounts_[i]) {
+    //         std::cout << relationToString(e.first) << " missing counts: " << e.second << ", waiting time: " << waitingTimes_[i].at(e.first) << "; ";
+    //         // std::cout << static_cast<int>(e.first) << " missing counts: " << e.second << ", waiting time: " << waitingTimes_[i].at(e.first) << "; ";
+    //     }
+    //     std::cout << std::endl;
+    //     // std::cout << "waiting count " << i << ": " << waitingCounts_[i] << ", waiting time: " << waitingTimes_[i] << std::endl;
+    // }
+     for (int i = 0; i < threadNumber_; ++i) {
+        for (int j = 0; j < consumerTimes_[i].size(); ++j) {
+            std::cout << "consumer " << i << ": " << consumerTimes_[i][j] << std::endl;
         }
-        std::cout << std::endl;
-        // std::cout << "waiting count " << i << ": " << waitingCounts_[i] << ", waiting time: " << waitingTimes_[i] << std::endl;
     }
     for (int i = 0; i < producerNum; ++i) {
+        // std::cout << "Producer " << i << " queues with jobs: " << qSizes_[i].size() << ", kernel times: " << kernelTimes_[i].size() << ", return times: " << returnTimes_[i].size() << std::endl;
         for (int j = 0; j < qSizes_[i].size(); ++j) {
-            std::cout << "queue length: " << qSizes_[i][j] << ", time: " << qTimes_[i][j] << std::endl;
+            std::cout << "queue length: " << qSizes_[i][j] << ", total time: " << qTimes_[i][j] << ", kernel time: " << kernelTimes_[i][j] << ", return time: " << returnTimes_[i][j] << std::endl;
         }
     }
 
@@ -797,7 +804,8 @@ int Gale::computeRelation(const RelationType relation,
 */
 int Gale::computeCombinedRelation(std::map<RelationType, 
             std::vector<std::pair<int,int>>> &requestMap, 
-            std::vector<RelationType> &relationOrders) {
+            std::vector<RelationType> &relationOrders,
+            const int producerId) {
 
     // std::cout << "request size: " << requestMap.size() << ": [";
     // for (auto &e : requestMap) {
@@ -813,9 +821,14 @@ int Gale::computeCombinedRelation(std::map<RelationType,
     std::vector<int *> dClustersIds(numRelations);
     std::vector<int *> dSimplexOffsets(numRelations);
     RelationArrays rarrs;
+    cudaEvent_t startEvents[numRelations];
+    cudaEvent_t endEvents[numRelations];
+    float kernelTime = 0, returnTime = 0;
 
     for (int curStream = 0; curStream < numRelations; ++curStream) {
         // (relation, [(tid, clusterId), ...])
+        cudaEventCreate(&startEvents[curStream]);
+        cudaEventCreate(&endEvents[curStream]);
         RelationType &relation = relationOrders[curStream];
         CHECK(cudaStreamCreate(&threadStreams[curStream]));
         // int relationId = static_cast<int>(relation);
@@ -1064,6 +1077,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 CHECK(cudaMemsetAsync(rarrs.dVertexEdgeMatrix, -1, sizeof(int) * localVertexSum * veColumnNum, threadStreams[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                #endif
                 computeMultiVertexEdges<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
                     dEdgeList_, rarrs.dVertexEdgeMatrix, rarrs.dVertexEdgeSizes,
                     clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
@@ -1071,6 +1087,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
+
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(endEvents[curStream], threadStreams[curStream]);
+                #endif
 
                 rarrs.hVertexEdgeSizes = new int[localVertexSum];
                 rarrs.hVertexEdgeMatrix = new int[localVertexSum * veColumnNum];
@@ -1110,6 +1130,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 CHECK(cudaMemsetAsync(rarrs.dVertexTriangleMatrix, -1, sizeof(int) * localVertexSum * vfColumnNum, threadStreams[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                #endif
                 computeMultiVertexTriangles<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
                     dTriangleList_, rarrs.dVertexTriangleMatrix, rarrs.dVertexTriangleSizes,
                     clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
@@ -1117,6 +1140,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
+
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                #endif
 
                 rarrs.hVertexTriangleSizes = new int [localVertexSum];
                 rarrs.hVertexTriangleMatrix = new int [localVertexSum * vfColumnNum];
@@ -1151,6 +1178,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 CHECK(cudaMemsetAsync(rarrs.dVertexStarMatrix, -1, sizeof(int) * localVertexSum * vtColumnNum, threadStreams[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                #endif
                 computeMultiVertexStars<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
                     rarrs.dVertexStarMatrix, rarrs.dVertexStarSizes,
                     clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
@@ -1158,6 +1188,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     dVertexIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(endEvents[curStream], threadStreams[curStream]);
+                #endif
 
                 rarrs.hVertexStarSizes = new int[localVertexSum];
                 rarrs.hVertexStarMatrix = new int[localVertexSum * vtColumnNum];
@@ -1192,6 +1225,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 CHECK(cudaMemsetAsync(rarrs.dVertexNeighborMatrix, -1, sizeof(int) * localVertexSum * vvColumnNum, threadStreams[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                #endif
                 computeMultiVertexNeighbors<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
                     rarrs.dVertexNeighborMatrix, rarrs.dVertexNeighborSizes,
                     clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
@@ -1199,6 +1235,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     dVertexIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
+                #ifdef MEASURE_WAITING
+                cudaEventRecord(endEvents[curStream], threadStreams[curStream]);
+                #endif
 
                 rarrs.hVertexNeighborSizes = new int[localVertexSum];
                 rarrs.hVertexNeighborMatrix = new int[localVertexSum * vvColumnNum];
@@ -1439,6 +1478,12 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
                         __FILE__, __LINE__); if (abort) exit(status);
                 }
+                #ifdef MEASURE_WAITING
+                float milliseconds = 0;
+                cudaEventElapsedTime(&milliseconds, startEvents[curStream], endEvents[curStream]);
+                kernelTime += milliseconds;
+                Timer tmp;
+                #endif
 
                 for (int i = 0; i < threadNum; ++i) {
                     // std::unique_lock<std::mutex> lck(VVMutex_);
@@ -1467,6 +1512,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     sem_post(&relationSems_[tid]);
                 }
 
+                #ifdef MEASURE_WAITING
+                returnTime += tmp.getElapsedTime();
+                #endif
+
                 CHECK(cudaFree(dClustersIds[curStream]));
                 CHECK(cudaFree(dSimplexOffsets[curStream]));
                 CHECK(cudaFree(rarrs.dVertexEdgeSizes));
@@ -1484,6 +1533,12 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
                         __FILE__, __LINE__); if (abort) exit(status);
                 }
+                #ifdef MEASURE_WAITING
+                float milliseconds = 0;
+                cudaEventElapsedTime(&milliseconds, startEvents[curStream], endEvents[curStream]);
+                kernelTime += milliseconds;
+                Timer tmp;
+                #endif
 
                 for (int i = 0; i < threadNum; ++i) {
                     // std::unique_lock<std::mutex> lck(VVMutex_);
@@ -1511,6 +1566,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     // lck.unlock();
                     sem_post(&relationSems_[tid]);
                 }
+                #ifdef MEASURE_WAITING
+                returnTime += tmp.getElapsedTime();
+                #endif
 
                 CHECK(cudaFree(dClustersIds[curStream]));
                 CHECK(cudaFree(dSimplexOffsets[curStream]));
@@ -1529,6 +1587,12 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
                         __FILE__, __LINE__); if (abort) exit(status);
                 }
+                #ifdef MEASURE_WAITING
+                float milliseconds = 0;
+                cudaEventElapsedTime(&milliseconds, startEvents[curStream], endEvents[curStream]);
+                kernelTime += milliseconds;
+                Timer tmp;
+                #endif
 
                 for (int i = 0; i < threadNum; ++i) {
                     // std::unique_lock<std::mutex> lck(VVMutex_);
@@ -1556,6 +1620,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     // lck.unlock();
                     sem_post(&relationSems_[tid]);
                 }
+                #ifdef MEASURE_WAITING
+                returnTime += tmp.getElapsedTime();
+                #endif
 
                 CHECK(cudaFree(dClustersIds[curStream]));
                 CHECK(cudaFree(dSimplexOffsets[curStream]));
@@ -1574,6 +1641,12 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
                         __FILE__, __LINE__); if (abort) exit(status);
                 }
+                #ifdef MEASURE_WAITING
+                float milliseconds = 0;
+                cudaEventElapsedTime(&milliseconds, startEvents[curStream], endEvents[curStream]);
+                kernelTime += milliseconds;
+                Timer tmp;
+                #endif
 
                 for (int i = 0; i < threadNum; ++i) {
                     SimplexId tid = jobs[i].first;
@@ -1601,6 +1674,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     if (baseClusters_[relationId][tid] == 0)
                         baseClusters_[relationId][tid] = baseClusterId;
                 }
+                #ifdef MEASURE_WAITING
+                returnTime += tmp.getElapsedTime();
+                #endif
+
                 CHECK(cudaFree(dClustersIds[curStream]));
                 CHECK(cudaFree(dSimplexOffsets[curStream]));
                 CHECK(cudaFree(rarrs.dVertexNeighborSizes));
@@ -1613,6 +1690,11 @@ int Gale::computeCombinedRelation(std::map<RelationType,
         }
         CHECK(cudaStreamDestroy(threadStreams[curStream]));
     }
+
+    #ifdef MEASURE_WAITING
+    kernelTimes_[producerId].push_back(kernelTime/1000);    // convert to seconds
+    returnTimes_[producerId].push_back(returnTime);
+    #endif
     
     return res;
 }
@@ -1621,7 +1703,7 @@ int Gale::computeCombinedRelation(std::map<RelationType,
 /**
  * Procedure of the leader producer.
 */
-void Gale::leaderProducer(const int id) {
+void Gale::leaderProducer(const int pid) {
     volatile SimplexId leaderCluster = 0;
     volatile RelationType leaderFunc = RelationType::BlankRelation;
 
@@ -1771,9 +1853,9 @@ void Gale::leaderProducer(const int id) {
                     requestMap[jobType].push_back(std::make_pair(tid, currClusters_[tid]));
                     // curq.push_back(std::make_tuple(tid, currClusters_[tid], jobType));
                 }
-                computeCombinedRelation(requestMap, relationOrders);
-                qTimes_[id].push_back(t.getElapsedTime());
-                qSizes_[id].push_back(localQ.size());
+                computeCombinedRelation(requestMap, relationOrders, pid);
+                qTimes_[pid].push_back(t.getElapsedTime());
+                qSizes_[pid].push_back(localQ.size());
             }
             else {
                 // clean the memory storage

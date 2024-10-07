@@ -447,12 +447,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -477,12 +478,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -512,12 +514,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -541,12 +544,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -634,12 +638,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -663,12 +668,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -709,12 +715,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -739,12 +746,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -775,12 +783,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -804,12 +813,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -840,12 +850,13 @@ class Gale final : public AbstractTriangulation {
                 jobQueue.push(tid);
                 qlock.unlock();
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -869,12 +880,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -904,12 +916,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -933,12 +946,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -976,12 +990,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -1023,12 +1038,13 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutex_);
                 jobQueue.push(tid);
                 qlock.unlock();
-                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_WAITING
-                // waitingCounts_[tid]++;
-                // waitingTimes_[tid] += timers_[tid].getElapsedTime();
-                waitingCounts_[tid][currRelations_[tid]]++;
-                waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
+                sem_wait(&relationSems_[tid]);
+                // waitingCounts_[tid][currRelations_[tid]]++;
+                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
+                #else
+                sem_wait(&relationSems_[tid]);
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -1067,7 +1083,8 @@ class Gale final : public AbstractTriangulation {
         int computeRelation(const RelationType relation, const SimplexId clusterId, bool global = false, int threadId = 0, bool signal = false);
 
         /* Compute the relations for different starting clusters */
-        int computeCombinedRelation(std::map<RelationType, std::vector<std::pair<int,int>>> &requestMap, std::vector<RelationType> &relationOrders);
+        int computeCombinedRelation(std::map<RelationType, std::vector<std::pair<int,int>>> &requestMap, 
+                                    std::vector<RelationType> &relationOrders, const int producerId);
 
         bool doublePrecision_;
         int cellDimension_;
@@ -1131,11 +1148,14 @@ class Gale final : public AbstractTriangulation {
         mutable std::queue<int> jobQueue;
         #ifdef MEASURE_WAITING
         mutable std::vector<Timer> timers_;
+        mutable std::vector<std::vector<double>> consumerTimes_;
         // mutable std::vector<double> waitingTimes_;
         // mutable std::vector<int> waitingCounts_;
         mutable std::vector<std::unordered_map<RelationType, int>> waitingCounts_;
         mutable std::vector<std::unordered_map<RelationType, double>> waitingTimes_;
         std::vector<std::vector<int>> qSizes_;
+        std::vector<std::vector<float>> kernelTimes_;
+        std::vector<std::vector<float>> returnTimes_;
         std::vector<std::vector<double>> qTimes_;
         #endif
     };
