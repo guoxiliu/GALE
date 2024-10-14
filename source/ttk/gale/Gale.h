@@ -7,6 +7,7 @@
 #include <atomic>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/shared_mutex.hpp>
+#include <cuda_runtime.h>
 #include <map>
 #include <mutex>
 #include <omp.h>
@@ -1086,9 +1087,11 @@ class Gale final : public AbstractTriangulation {
         bool doublePrecision_;
         int cellDimension_;
         int clusterNumber_;
+        int precompClusterNumber_;
         int vertexNumber_, edgeNumber_, triangleNumber_, cellNumber_;
         std::vector<RelationType> preconditionedRelations_{};
         std::vector<MeshSegment> allClusters_;
+        std::vector<cudaStream_t> threadStreams_;
 
         /* Data allocated on the host memory */
         // pointers will be initialized to nullptr directly
@@ -1107,31 +1110,13 @@ class Gale final : public AbstractTriangulation {
 
         /* Relation matrices on the host and device */
         bool *hBoundaryTriangles_, *dBoundaryTriangles_;
-        struct RelationArrays {
-            bool *hBoundaryVertices, *hBoundaryEdges;
-            bool *dBoundaryVertices, *dBoundaryEdges;
 
-            int *hEdgeStarSizes, *hEdgeStarMatrix;
-            int *dEdgeStarSizes, *dEdgeStarMatrix;
-            
-            int *hEdgeTriangleSizes, *hEdgeTriangleMatrix;
-            int *dEdgeTriangleSizes, *dEdgeTriangleMatrix;
-
-            int *hTriangleStarSizes, *hTriangleStarMatrix;
-            int *dTriangleStarSizes, *dTriangleStarMatrix;
-
-            int *hVertexEdgeSizes, *hVertexEdgeMatrix;
-            int *dVertexEdgeSizes, *dVertexEdgeMatrix;
-
-            int *hVertexNeighborSizes, *hVertexNeighborMatrix;
-            int *dVertexNeighborSizes, *dVertexNeighborMatrix;
-            
-            int *hVertexStarSizes, *hVertexStarMatrix;
-            int *dVertexStarSizes, *dVertexStarMatrix;
-
-            int *hVertexTriangleSizes, *hVertexTriangleMatrix;
-            int *dVertexTriangleSizes, *dVertexTriangleMatrix;
+        struct RelationComputation {
+            int *hSizeArray, *dSizeArray;
+            int *hDataArray, *dDataArray;
+            int *dClusterIds, *dSimplexOffsets;
         };
+        std::vector<RelationComputation> relationCompVecs_;
 
         /* Multithreading support */
         std::thread producer_;

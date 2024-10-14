@@ -63,11 +63,12 @@ Gale::~Gale() {
     // }
     
     // time for consumer thread to make the request 
-    for (int i = 0; i < threadNumber_; ++i) {
-        for (int j = 0; j < consumerTimes_[i].size(); ++j) {
-            std::cout << "consumer " << i << ": " << consumerTimes_[i][j] << std::endl;
-        }
-    }
+    // for (int i = 0; i < threadNumber_; ++i) {
+    //     for (int j = 0; j < consumerTimes_[i].size(); ++j) {
+    //         std::cout << "consumer " << i << ": " << consumerTimes_[i][j] << std::endl;
+    //     }
+    // }
+
     for (int j = 0; j < qSizes_.size(); ++j) {
         std::cout << "queue length: " << qSizes_[j] << ", total time: " << qTimes_[j] << ", kernel time: " << kernelTimes_[j] << ", return time: " << returnTimes_[j] << std::endl;
     }
@@ -809,30 +810,22 @@ int Gale::computeCombinedRelation(std::map<RelationType,
 
     int res = 0;
     int numRelations = relationOrders.size();
-    std::vector<cudaStream_t> threadStreams(numRelations);
     std::vector<std::vector<SimplexId>> hEndClusters(numRelations);
     std::vector<std::vector<int>> hSimplexOffsets(numRelations);
-    std::vector<int *> dClustersIds(numRelations);
-    std::vector<int *> dSimplexOffsets(numRelations);
-    RelationArrays rarrs;
     cudaEvent_t startEvents[numRelations];
     cudaEvent_t endEvents[numRelations];
     float kernelTime = 0, returnTime = 0;
 
+    // launch GPU kernels for different topological relations
     for (int curStream = 0; curStream < numRelations; ++curStream) {
         // (relation, [(tid, clusterId), ...])
         cudaEventCreate(&startEvents[curStream]);
         cudaEventCreate(&endEvents[curStream]);
         RelationType &relation = relationOrders[curStream];
-        CHECK(cudaStreamCreate(&threadStreams[curStream]));
-        // int relationId = static_cast<int>(relation);
         std::vector<std::pair<int,int>> &jobs = requestMap[relation];
-
         int threadNum = jobs.size();
-        // int gpuBlocks = blocksPerThread_ * threadNum;
-        int gpuThreads = blockSize_ / threadsPerCluster_ * blocksPerThread_;
 
-        // launches different kernels on different streams
+        // launches kernels on different streams
         switch (relation) {
             case RelationType::BERelation:
             {
@@ -844,32 +837,27 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 for (int i = 0; i < threadNum; ++i) {
                     hSimplexOffsets[curStream][i] = localEdgeSum;
                     hClusterIds[i] = jobs[i].second;
-                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + gpuThreads, clusterNumber_) - 1;
+                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
                     // maxEndCluster = std::max(hEndClusters[curStream][i], maxEndCluster);
                     int localEdgeNum = hEdgeIntervals_[hEndClusters[curStream][i]] - hEdgeIntervals_[hClusterIds[i] - 1];
                     localEdgeSum += localEdgeNum;
                 }
-                CHECK(cudaMallocAsync((void **)&dClustersIds[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&dSimplexOffsets[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dBoundaryEdges, sizeof(bool) * localEdgeSum, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dClustersIds[curStream], hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dSimplexOffsets[curStream], hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemsetAsync(rarrs.dBoundaryEdges, false, sizeof(bool) * localEdgeSum, threadStreams[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, false, sizeof(bool) * localEdgeSum, threadStreams_[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
-                computeMultiBoundaryEdges<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
+                computeMultiBoundaryEdges<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
                     dEdgeList_, dTriangleList_,
-                    rarrs.dBoundaryEdges, dBoundaryTriangles_,
-                    clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
+                    (bool *)relationCompVecs_[curStream].dDataArray, dBoundaryTriangles_,
+                    clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
                     dConnectivity_, dOffsets_, dIndexArray_,
                     dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
 
-                rarrs.hBoundaryEdges = new bool[localEdgeSum];
-
-                CHECK(cudaMemcpyAsync(rarrs.hBoundaryEdges, rarrs.dBoundaryEdges, sizeof(bool) * localEdgeSum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-
+                relationCompVecs_[curStream].hDataArray = (int *)malloc(sizeof(bool) * localEdgeSum);
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(bool) * localEdgeSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
                 break;
             }
 
@@ -883,32 +871,27 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 for (int i = 0; i < threadNum; ++i) {
                     hSimplexOffsets[curStream][i] = localVertexSum;
                     hClusterIds[i] = jobs[i].second;
-                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + gpuThreads, clusterNumber_) - 1;
+                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
                     // maxEndCluster = std::max(hEndClusters[curStream][i], maxEndCluster);
                     int localVertexNum = hVertexIntervals_[hEndClusters[curStream][i]] - hVertexIntervals_[hClusterIds[i] - 1];
                     localVertexSum += localVertexNum;
                 }
 
-                CHECK(cudaMallocAsync((void **)&dClustersIds[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&dSimplexOffsets[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dBoundaryVertices, sizeof(bool) * localVertexSum, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dClustersIds[curStream], hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dSimplexOffsets[curStream], hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemsetAsync(rarrs.dBoundaryVertices, false, sizeof(bool) * localVertexSum, threadStreams[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, false, sizeof(bool) * localVertexSum, threadStreams_[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
-                computeMultiBoundaryVertices<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
-                    dTriangleList_, dBoundaryTriangles_, rarrs.dBoundaryVertices,
-                    clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream], 
+                computeMultiBoundaryVertices<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                    dTriangleList_, dBoundaryTriangles_, (bool *)relationCompVecs_[curStream].dDataArray,
+                    clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets, 
                     dConnectivity_, dOffsets_, dIndexArray_,
                     dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
 
-                rarrs.hBoundaryVertices = new bool[localVertexSum];
-
-                CHECK(cudaMemcpyAsync(rarrs.hBoundaryVertices, rarrs.dBoundaryVertices, sizeof(bool) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-
+                relationCompVecs_[curStream].hDataArray = (int *)malloc(sizeof(bool) * localVertexSum);
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(bool) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
                 break;
             }
             
@@ -922,36 +905,31 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 for (int i = 0; i < threadNum; ++i) {
                     hSimplexOffsets[curStream][i] = localEdgeSum;
                     hClusterIds[i] = jobs[i].second;
-                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + gpuThreads, clusterNumber_) - 1;
+                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
                     // maxEndCluster = std::max(hEndClusters[curStream][i], maxEndCluster);
                     int localEdgeNums = hEdgeIntervals_[hEndClusters[curStream][i]] - hEdgeIntervals_[hClusterIds[i] - 1];
                     localEdgeSum += localEdgeNums;
                 }
-                CHECK(cudaMallocAsync((void **)&dClustersIds[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&dSimplexOffsets[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dEdgeTriangleSizes, sizeof(int) * localEdgeSum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dEdgeTriangleMatrix, sizeof(int) * localEdgeSum * efColumnNum, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dClustersIds[curStream], hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dSimplexOffsets[curStream], hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemsetAsync(rarrs.dEdgeTriangleSizes, 0, sizeof(int) * localEdgeSum, threadStreams[curStream]));
-                CHECK(cudaMemsetAsync(rarrs.dEdgeTriangleMatrix, -1, sizeof(int) * localEdgeSum * efColumnNum, threadStreams[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localEdgeSum, threadStreams_[curStream]));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localEdgeSum * efColumnNum, threadStreams_[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
-                computeMultiEdgeTriangles<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
+                computeMultiEdgeTriangles<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
                     dEdgeList_, dTriangleList_,
-                    rarrs.dEdgeTriangleMatrix, rarrs.dEdgeTriangleSizes,
-                    clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
+                    relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
+                    clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
                     dConnectivity_, dOffsets_, dIndexArray_,
                     dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
 
-                rarrs.hEdgeTriangleSizes = new int[localEdgeSum];
-                rarrs.hEdgeTriangleMatrix = new int[localEdgeSum * efColumnNum];
+                relationCompVecs_[curStream].hSizeArray = new int[localEdgeSum];
+                relationCompVecs_[curStream].hDataArray = new int[localEdgeSum * efColumnNum];
 
-                CHECK(cudaMemcpyAsync(rarrs.hEdgeTriangleSizes, rarrs.dEdgeTriangleSizes, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(rarrs.hEdgeTriangleMatrix, rarrs.dEdgeTriangleMatrix, sizeof(int) * localEdgeSum * efColumnNum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localEdgeSum * efColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
                 break;
             }
 
@@ -965,36 +943,31 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 for (int i = 0; i < threadNum; ++i) {
                     hSimplexOffsets[curStream][i] = localEdgeSum;
                     hClusterIds[i] = jobs[i].second;
-                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + gpuThreads, clusterNumber_) - 1;
+                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
                     // maxEndCluster = std::max(hEndClusters[curStream][i], maxEndCluster);
                     int localEdgeNums = hEdgeIntervals_[hEndClusters[curStream][i]] - hEdgeIntervals_[hClusterIds[i] - 1];
                     localEdgeSum += localEdgeNums;
                 }
-                CHECK(cudaMallocAsync((void **)&dClustersIds[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&dSimplexOffsets[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dEdgeStarSizes, sizeof(int) * localEdgeSum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dEdgeStarMatrix, sizeof(int) * localEdgeSum * etColumnNum, threadStreams[curStream]));
 
-                CHECK(cudaMemcpyAsync(dClustersIds[curStream], hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dSimplexOffsets[curStream], hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemset(rarrs.dEdgeStarSizes, 0, sizeof(int) * localEdgeSum));
-                CHECK(cudaMemset(rarrs.dEdgeStarMatrix, -1, sizeof(int) * localEdgeSum * etColumnNum));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemset(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localEdgeSum));
+                CHECK(cudaMemset(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localEdgeSum * etColumnNum));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
-                computeMultiEdgeStars<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
-                    dEdgeList_, rarrs.dEdgeStarMatrix, rarrs.dEdgeStarSizes,
-                    clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream], 
+                computeMultiEdgeStars<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                    dEdgeList_, relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
+                    clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets, 
                     dConnectivity_, dOffsets_,
                     dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
 
-                rarrs.hEdgeStarSizes = new int[localEdgeSum];
-                rarrs.hEdgeStarMatrix = new int[localEdgeSum * etColumnNum];
+                relationCompVecs_[curStream].hSizeArray = new int[localEdgeSum];
+                relationCompVecs_[curStream].hDataArray = new int[localEdgeSum * etColumnNum];
 
-                CHECK(cudaMemcpyAsync(rarrs.hEdgeStarSizes, rarrs.dEdgeStarSizes, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(rarrs.hEdgeStarMatrix, rarrs.dEdgeStarMatrix, sizeof(int) * localEdgeSum * etColumnNum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-                
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localEdgeSum * etColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
                 break;
             }
 
@@ -1008,37 +981,31 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 for (int i = 0; i < threadNum; ++i) {
                     hSimplexOffsets[curStream][i] = localTriangleSum;
                     hClusterIds[i] = jobs[i].second;
-                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + gpuThreads, clusterNumber_) - 1;
+                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
                     // maxEndCluster = std::max(hEndClusters[curStream][i], maxEndCluster);
                     int localTriangleNums = hTriangleIntervals_[hEndClusters[curStream][i]] - hTriangleIntervals_[hClusterIds[i] - 1];
                     localTriangleSum += localTriangleNums;
                 }
 
-                CHECK(cudaMallocAsync((void **)&dClustersIds[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&dSimplexOffsets[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dTriangleStarSizes, sizeof(int) * localTriangleSum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dTriangleStarMatrix, sizeof(int) * localTriangleSum * ftColumnNum, threadStreams[curStream]));
-
-                CHECK(cudaMemcpyAsync(dClustersIds[curStream], hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dSimplexOffsets[curStream], hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemset(rarrs.dTriangleStarSizes, 0, sizeof(int) * localTriangleSum));
-                CHECK(cudaMemset(rarrs.dTriangleStarMatrix, -1, sizeof(int) * localTriangleSum * ftColumnNum));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemset(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localTriangleSum));
+                CHECK(cudaMemset(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localTriangleSum * ftColumnNum));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
-                computeMultiTriangleStars<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
-                    dTriangleList_, rarrs.dTriangleStarMatrix, rarrs.dTriangleStarSizes,
-                    clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
+                computeMultiTriangleStars<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                    dTriangleList_, relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
+                    clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
                     dConnectivity_, dOffsets_,
                     dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
 
-                rarrs.hTriangleStarSizes = new int[localTriangleSum];
-                rarrs.hTriangleStarMatrix = new int[localTriangleSum * ftColumnNum];
+                relationCompVecs_[curStream].hSizeArray = new int[localTriangleSum];
+                relationCompVecs_[curStream].hDataArray = new int[localTriangleSum * ftColumnNum];
 
-                CHECK(cudaMemcpyAsync(rarrs.hTriangleStarSizes, rarrs.dTriangleStarSizes, sizeof(int) * localTriangleSum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(rarrs.hTriangleStarMatrix, rarrs.dTriangleStarMatrix, sizeof(int) * localTriangleSum * ftColumnNum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localTriangleSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localTriangleSum * ftColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
                 break;
             }
 
@@ -1052,46 +1019,38 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 for (int i = 0; i < threadNum; ++i) {
                     hSimplexOffsets[curStream][i] = localVertexSum;
                     hClusterIds[i] = jobs[i].second;
-                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + gpuThreads, clusterNumber_) - 1;
+                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
                     // maxEndCluster = std::max(hEndClusters[curStream][i], maxEndCluster);
                     int localVertexNum = hVertexIntervals_[hEndClusters[curStream][i]] - hVertexIntervals_[hClusterIds[i] - 1];
                     localVertexSum += localVertexNum;
                 }
 
-                // CHECK(cudaMallocAsync((void **)&dEdgeLists[curStream], sizeof(int) * hEdgeIntervals_[maxEndCluster] * 2, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&dClustersIds[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&dSimplexOffsets[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dVertexEdgeSizes, sizeof(int) * localVertexSum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dVertexEdgeMatrix, sizeof(int) * localVertexSum * veColumnNum, threadStreams[curStream]));
-
-                // CHECK(cudaMemcpyAsync(dEdgeLists[curStream], edgeList_.data(), sizeof(SimplexId) * hEdgeIntervals_[maxEndCluster] * 2, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dClustersIds[curStream], hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dSimplexOffsets[curStream], hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemsetAsync(rarrs.dVertexEdgeSizes, 0, sizeof(int) * localVertexSum, threadStreams[curStream]));
-                CHECK(cudaMemsetAsync(rarrs.dVertexEdgeMatrix, -1, sizeof(int) * localVertexSum * veColumnNum, threadStreams[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localVertexSum, threadStreams_[curStream]));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localVertexSum * veColumnNum, threadStreams_[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
                 #ifdef MEASURE_WAITING
-                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
                 #endif
-                computeMultiVertexEdges<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
-                    dEdgeList_, rarrs.dVertexEdgeMatrix, rarrs.dVertexEdgeSizes,
-                    clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
+                computeMultiVertexEdges<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                    dEdgeList_, relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
+                    clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
                     dConnectivity_, dOffsets_, dIndexArray_,
                     dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
 
                 #ifdef MEASURE_WAITING
-                cudaEventRecord(endEvents[curStream], threadStreams[curStream]);
+                cudaEventRecord(endEvents[curStream], threadStreams_[curStream]);
                 #endif
 
-                rarrs.hVertexEdgeSizes = new int[localVertexSum];
-                rarrs.hVertexEdgeMatrix = new int[localVertexSum * veColumnNum];
+                relationCompVecs_[curStream].hSizeArray = new int[localVertexSum];
+                relationCompVecs_[curStream].hDataArray = new int[localVertexSum * veColumnNum];
 
-                CHECK(cudaMemcpyAsync(rarrs.hVertexEdgeSizes, rarrs.dVertexEdgeSizes, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(rarrs.hVertexEdgeMatrix, rarrs.dVertexEdgeMatrix, sizeof(int) * localVertexSum * veColumnNum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localVertexSum * veColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
                 break;
             }
 
@@ -1105,46 +1064,38 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 for (int i = 0; i < threadNum; ++i) {
                     hSimplexOffsets[curStream][i] = localVertexSum;
                     hClusterIds[i] = jobs[i].second;
-                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + gpuThreads, clusterNumber_) - 1;
+                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
                     // maxEndCluster = std::max(hEndClusters[curStream][i], maxEndCluster);
                     int localVertexNum = hVertexIntervals_[hEndClusters[curStream][i]] - hVertexIntervals_[hClusterIds[i] - 1];
                     localVertexSum += localVertexNum;
                 }
 
-                CHECK(cudaMallocAsync((void **)&dClustersIds[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&dSimplexOffsets[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                // CHECK(cudaMallocAsync((void **)&dTriangleLists[curStream], sizeof(int) * hTriangleIntervals_[maxEndCluster] * 3, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dVertexTriangleSizes, sizeof(int) * localVertexSum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dVertexTriangleMatrix, sizeof(int) * localVertexSum * vfColumnNum, threadStreams[curStream]));
-
-                // CHECK(cudaMemcpyAsync(dTriangleLists[curStream], triangleList_.data(), sizeof(SimplexId) * hTriangleIntervals_[maxEndCluster] * 3, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dClustersIds[curStream], hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dSimplexOffsets[curStream], hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemsetAsync(rarrs.dVertexTriangleSizes, 0, sizeof(int) * localVertexSum, threadStreams[curStream]));
-                CHECK(cudaMemsetAsync(rarrs.dVertexTriangleMatrix, -1, sizeof(int) * localVertexSum * vfColumnNum, threadStreams[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localVertexSum, threadStreams_[curStream]));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localVertexSum * vfColumnNum, threadStreams_[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
                 #ifdef MEASURE_WAITING
-                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
                 #endif
-                computeMultiVertexTriangles<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
-                    dTriangleList_, rarrs.dVertexTriangleMatrix, rarrs.dVertexTriangleSizes,
-                    clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
+                computeMultiVertexTriangles<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                    dTriangleList_, relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
+                    clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
                     dConnectivity_, dOffsets_, dIndexArray_,
                     dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
 
                 #ifdef MEASURE_WAITING
-                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
                 #endif
 
-                rarrs.hVertexTriangleSizes = new int [localVertexSum];
-                rarrs.hVertexTriangleMatrix = new int [localVertexSum * vfColumnNum];
+                relationCompVecs_[curStream].hSizeArray = new int [localVertexSum];
+                relationCompVecs_[curStream].hDataArray = new int [localVertexSum * vfColumnNum];
 
-                CHECK(cudaMemcpyAsync(rarrs.hVertexTriangleSizes, rarrs.dVertexTriangleSizes, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(rarrs.hVertexTriangleMatrix, rarrs.dVertexTriangleMatrix, sizeof(int) * localVertexSum * vfColumnNum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-                
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localVertexSum * vfColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
                 break;
             }
 
@@ -1157,41 +1108,36 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 for (int i = 0; i < threadNum; ++i) {
                     hSimplexOffsets[curStream][i] = localVertexSum;
                     hClusterIds[i] = jobs[i].second;
-                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + gpuThreads, clusterNumber_) - 1;
+                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
                     int localVertexNum = hVertexIntervals_[hEndClusters[curStream][i]] - hVertexIntervals_[hClusterIds[i] - 1];
                     localVertexSum += localVertexNum;
                 }
 
-                CHECK(cudaMallocAsync((void **)&dClustersIds[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&dSimplexOffsets[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dVertexStarSizes, sizeof(int) * localVertexSum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dVertexStarMatrix, sizeof(int) * localVertexSum * vtColumnNum, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dClustersIds[curStream], hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dSimplexOffsets[curStream], hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemsetAsync(rarrs.dVertexStarSizes, 0, sizeof(int) * localVertexSum, threadStreams[curStream]));
-                CHECK(cudaMemsetAsync(rarrs.dVertexStarMatrix, -1, sizeof(int) * localVertexSum * vtColumnNum, threadStreams[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localVertexSum, threadStreams_[curStream]));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localVertexSum * vtColumnNum, threadStreams_[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
                 #ifdef MEASURE_WAITING
-                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
                 #endif
-                computeMultiVertexStars<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
-                    rarrs.dVertexStarMatrix, rarrs.dVertexStarSizes,
-                    clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
+                computeMultiVertexStars<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                    relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
+                    clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
                     dConnectivity_, dOffsets_,
                     dVertexIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
                 #ifdef MEASURE_WAITING
-                cudaEventRecord(endEvents[curStream], threadStreams[curStream]);
+                cudaEventRecord(endEvents[curStream], threadStreams_[curStream]);
                 #endif
 
-                rarrs.hVertexStarSizes = new int[localVertexSum];
-                rarrs.hVertexStarMatrix = new int[localVertexSum * vtColumnNum];
+                relationCompVecs_[curStream].hSizeArray = new int[localVertexSum];
+                relationCompVecs_[curStream].hDataArray = new int[localVertexSum * vtColumnNum];
 
-                CHECK(cudaMemcpyAsync(rarrs.hVertexStarSizes, rarrs.dVertexStarSizes, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(rarrs.hVertexStarMatrix, rarrs.dVertexStarMatrix, sizeof(int) * localVertexSum * vtColumnNum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localVertexSum * vtColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
                 break;
             }
 
@@ -1204,41 +1150,36 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 for (int i = 0; i < threadNum; ++i) {
                     hSimplexOffsets[curStream][i] = localVertexSum;
                     hClusterIds[i] = jobs[i].second;
-                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + gpuThreads, clusterNumber_) - 1;
+                    hEndClusters[curStream][i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
                     int localVertexNum = hVertexIntervals_[hEndClusters[curStream][i]] - hVertexIntervals_[hClusterIds[i] - 1];
                     localVertexSum += localVertexNum;
                 }
 
-                CHECK(cudaMallocAsync((void **)&dClustersIds[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&dSimplexOffsets[curStream], sizeof(int) * threadNum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dVertexNeighborSizes, sizeof(int) * localVertexSum, threadStreams[curStream]));
-                CHECK(cudaMallocAsync((void **)&rarrs.dVertexNeighborMatrix, sizeof(int) * localVertexSum * vvColumnNum, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dClustersIds[curStream], hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(dSimplexOffsets[curStream], hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams[curStream]));
-                CHECK(cudaMemsetAsync(rarrs.dVertexNeighborSizes, 0, sizeof(int) * localVertexSum, threadStreams[curStream]));
-                CHECK(cudaMemsetAsync(rarrs.dVertexNeighborMatrix, -1, sizeof(int) * localVertexSum * vvColumnNum, threadStreams[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localVertexSum, threadStreams_[curStream]));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localVertexSum * vvColumnNum, threadStreams_[curStream]));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
                 #ifdef MEASURE_WAITING
-                cudaEventRecord(startEvents[curStream], threadStreams[curStream]);
+                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
                 #endif
-                computeMultiVertexNeighbors<<<dimBlock, blockSize_, 0, threadStreams[curStream]>>>(
-                    rarrs.dVertexNeighborMatrix, rarrs.dVertexNeighborSizes,
-                    clusterNumber_, dClustersIds[curStream], dSimplexOffsets[curStream],
+                computeMultiVertexNeighbors<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                    relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
+                    clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
                     dConnectivity_, dOffsets_,
                     dVertexIntervals_, dCellIntervals_,
                     dExternalCells_, dExternalCellOffsets_, 
                     cellDimension_, threadsPerCluster_);
                 #ifdef MEASURE_WAITING
-                cudaEventRecord(endEvents[curStream], threadStreams[curStream]);
+                cudaEventRecord(endEvents[curStream], threadStreams_[curStream]);
                 #endif
 
-                rarrs.hVertexNeighborSizes = new int[localVertexSum];
-                rarrs.hVertexNeighborMatrix = new int[localVertexSum * vvColumnNum];
+                relationCompVecs_[curStream].hSizeArray = new int[localVertexSum];
+                relationCompVecs_[curStream].hDataArray = new int[localVertexSum * vvColumnNum];
 
-                CHECK(cudaMemcpyAsync(rarrs.hVertexNeighborSizes, rarrs.dVertexNeighborSizes, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-                CHECK(cudaMemcpyAsync(rarrs.hVertexNeighborMatrix, rarrs.dVertexNeighborMatrix, sizeof(int) * localVertexSum * vvColumnNum, cudaMemcpyDeviceToHost, threadStreams[curStream]));
-
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localVertexSum * vvColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
                 break;
             }
 
@@ -1255,18 +1196,26 @@ int Gale::computeCombinedRelation(std::map<RelationType,
         std::vector<std::pair<int,int>> &jobs = requestMap[relation];
         int threadNum = jobs.size();
 
+        cudaError_t status = cudaStreamSynchronize(threadStreams_[curStream]);
+        if (status != cudaSuccess) {
+            fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
+                __FILE__, __LINE__); if (abort) exit(status);
+        }
+
+        #ifdef MEASURE_WAITING
+        float milliseconds = 0;
+        cudaEventElapsedTime(&milliseconds, startEvents[curStream], endEvents[curStream]);
+        kernelTime += milliseconds;
+        Timer tmp;
+        #endif
+
         // launches different kernels on different streams
         switch (relation) {
             case RelationType::BERelation: 
             {
-                cudaError_t status = cudaStreamSynchronize(threadStreams[curStream]);
-                if (status != cudaSuccess) {
-                    fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(status),
-                            __FILE__, __LINE__);
-                    if (abort)
-                        exit(status);
-                }
-
+                // #ifdef TTK_ENABLE_OPENMP
+                // #pragma omp parallel for num_threads(threadNum)
+                // #endif
                 for (int i = 0; i < threadNum; ++i) {
                     SimplexId tid = jobs[i].first;
                     SimplexId baseClusterId = jobs[i].second;
@@ -1276,7 +1225,7 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                             int relativeEid = hEdgeIntervals_[sid - 1] - hEdgeIntervals_[baseClusterId - 1] + hSimplexOffsets[curStream][i];
                             allClusters_[sid].boundaryEdges_.resize(localEdgeNum);
                             for (int eid = 0; eid < localEdgeNum; ++eid) {
-                                allClusters_[sid].boundaryEdges_[eid] = rarrs.hBoundaryEdges[relativeEid++];
+                                allClusters_[sid].boundaryEdges_[eid] = relationCompVecs_[curStream].hDataArray[relativeEid++];
                             }
                         }
                     }
@@ -1285,61 +1234,41 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     sem_post(&relationSems_[tid]);
                 }
 
-                CHECK(cudaFree(dClustersIds[curStream]));
-                CHECK(cudaFree(dSimplexOffsets[curStream]));
-                CHECK(cudaFree(rarrs.dBoundaryEdges));
-                delete[] rarrs.hBoundaryEdges;
-
+                free(relationCompVecs_[curStream].hDataArray);
                 break;
             }
             case RelationType::BVRelation:
             {
-                cudaError_t status = cudaStreamSynchronize(threadStreams[curStream]);
-                if (status != cudaSuccess) {
-                    fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(status),
-                            __FILE__, __LINE__);
-                    if (abort)
-                        exit(status);
-                }
-
+                // #ifdef TTK_ENABLE_OPENMP
+                // #pragma omp parallel for num_threads(threadNum)
+                // #endif
                 for (int i = 0; i < threadNum; ++i) {
                     SimplexId tid = jobs[i].first;
                     SimplexId baseClustersId = jobs[i].second;
-                    // std::unique_lock<std::mutex> lck(VVMutex_);
                     for (int sid = baseClustersId; sid <= hEndClusters[curStream][i]; ++sid) {
                         if (allClusters_[sid].boundaryVertices_.empty()) {
                             int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid-1];
                             int relativeVid = hVertexIntervals_[sid - 1] - hVertexIntervals_[baseClustersId - 1] + hSimplexOffsets[curStream][i];
                             allClusters_[sid].boundaryVertices_.resize(localVertexNum);
                             for (int vid = 0; vid < localVertexNum; ++vid) {
-                                allClusters_[sid].boundaryVertices_[vid] = rarrs.hBoundaryVertices[relativeVid++];
+                                allClusters_[sid].boundaryVertices_[vid] = relationCompVecs_[curStream].hDataArray[relativeVid++];
                             }
                         }
                     }
                     if (baseClusters_[relationId][tid] == 0)
                         baseClusters_[relationId][tid] = baseClustersId;
-                    // lck.unlock();
                     sem_post(&relationSems_[tid]);
                 }
 
-                CHECK(cudaFree(dClustersIds[curStream]));
-                CHECK(cudaFree(dSimplexOffsets[curStream]));
-                CHECK(cudaFree(rarrs.dBoundaryVertices));
-                delete[] rarrs.hBoundaryVertices;
-
+                free(relationCompVecs_[curStream].hDataArray);
                 break;
             }
             
             case RelationType::EFRelation:
             {
-                cudaError_t status = cudaStreamSynchronize(threadStreams[curStream]);
-                if (status != cudaSuccess) {
-                    fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(status),
-                            __FILE__, __LINE__);
-                    if (abort)
-                        exit(status);
-                }
-
+                // #ifdef TTK_ENABLE_OPENMP
+                // #pragma omp parallel for num_threads(threadNum)
+                // #endif
                 for (int i = 0; i < threadNum; ++i) {
                     SimplexId tid = jobs[i].first;
                     SimplexId baseClusterId = jobs[i].second;
@@ -1352,9 +1281,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                             edgeTriangleOffsets[0] = 0;
                             for (int eid = 0; eid < localEdgeNum; ++eid) {
                                 edgeTriangleData.insert(edgeTriangleData.end(), 
-                                rarrs.hEdgeTriangleMatrix + reid * efColumnNum,
-                                rarrs.hEdgeTriangleMatrix + reid * efColumnNum + rarrs.hEdgeTriangleSizes[reid]);
-                                edgeTriangleOffsets[eid+1] = edgeTriangleOffsets[eid] + rarrs.hEdgeTriangleSizes[reid];
+                                relationCompVecs_[curStream].hDataArray + reid * efColumnNum,
+                                relationCompVecs_[curStream].hDataArray + reid * efColumnNum + relationCompVecs_[curStream].hSizeArray[reid]);
+                                edgeTriangleOffsets[eid+1] = edgeTriangleOffsets[eid] + relationCompVecs_[curStream].hSizeArray[reid];
                                 ++reid;
                             }
                             allClusters_[sid].edgeTriangles_.setData(std::move(edgeTriangleData), std::move(edgeTriangleOffsets));
@@ -1365,26 +1294,16 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     sem_post(&relationSems_[tid]);
                 }
 
-                CHECK(cudaFree(dClustersIds[curStream]));
-                CHECK(cudaFree(dSimplexOffsets[curStream]));
-                CHECK(cudaFree(rarrs.dEdgeTriangleSizes));
-                CHECK(cudaFree(rarrs.dEdgeTriangleMatrix));
-                delete[] rarrs.hEdgeTriangleMatrix;
-                delete[] rarrs.hEdgeTriangleSizes;
-                
+                delete[] relationCompVecs_[curStream].hDataArray;
+                delete[] relationCompVecs_[curStream].hSizeArray;
                 break;
             }
             
             case RelationType::ETRelation: 
             {
-                cudaError_t status = cudaStreamSynchronize(threadStreams[curStream]);
-                if (status != cudaSuccess) {
-                    fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(status),
-                            __FILE__, __LINE__);
-                    if (abort)
-                        exit(status);
-                }
-
+                // #ifdef TTK_ENABLE_OPENMP
+                // #pragma omp parallel for num_threads(threadNum)
+                // #endif
                 for (int i = 0; i < threadNum; ++i) {
                     SimplexId tid = jobs[i].first;
                     SimplexId baseClusterId = jobs[i].second;
@@ -1397,9 +1316,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                             edgeStarOffsets[0] = 0;
                             for (int j = 0; j < localEdgeNum; ++j) {
                                 edgeStarData.insert(edgeStarData.end(), 
-                                rarrs.hEdgeStarMatrix + reid * etColumnNum,
-                                rarrs.hEdgeStarMatrix + reid * etColumnNum + rarrs.hEdgeStarSizes[reid]);
-                                edgeStarOffsets[j+1] = edgeStarOffsets[j] + rarrs.hEdgeStarSizes[reid];
+                                relationCompVecs_[curStream].hDataArray + reid * etColumnNum,
+                                relationCompVecs_[curStream].hDataArray + reid * etColumnNum + relationCompVecs_[curStream].hSizeArray[reid]);
+                                edgeStarOffsets[j+1] = edgeStarOffsets[j] + relationCompVecs_[curStream].hSizeArray[reid];
                                 ++reid;
                             }
                             allClusters_[sid].edgeStars_.setData(std::move(edgeStarData), std::move(edgeStarOffsets));
@@ -1410,26 +1329,16 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     sem_post(&relationSems_[tid]);
                 }
 
-                CHECK(cudaFree(dClustersIds[curStream]));
-                CHECK(cudaFree(dSimplexOffsets[curStream]));
-                CHECK(cudaFree(rarrs.dEdgeStarSizes));
-                CHECK(cudaFree(rarrs.dEdgeStarMatrix));
-                delete[] rarrs.hEdgeStarMatrix;
-                delete[] rarrs.hEdgeStarSizes;
-
+                delete[] relationCompVecs_[curStream].hDataArray;
+                delete[] relationCompVecs_[curStream].hSizeArray;
                 break;
             }
 
             case RelationType::FTRelation:
             {
-                cudaError_t status = cudaStreamSynchronize(threadStreams[curStream]);
-                if (status != cudaSuccess) {
-                    fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(status),
-                            __FILE__, __LINE__);
-                    if (abort)
-                        exit(status);
-                }
-                
+                // #ifdef TTK_ENABLE_OPENMP
+                // #pragma omp parallel for num_threads(threadNum)
+                // #endif
                 for (int i = 0; i < threadNum; ++i) {
                     SimplexId tid = jobs[i].first;
                     SimplexId baseClusterId = jobs[i].second;
@@ -1442,9 +1351,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                             triangleStarOffsets[0] = 0;
                             for (int j = 0; j < localTriangleNum; ++j) {
                                 triangleStarData.insert(triangleStarData.end(), 
-                                rarrs.hTriangleStarMatrix + reid * ftColumnNum,
-                                rarrs.hTriangleStarMatrix + reid * ftColumnNum + rarrs.hTriangleStarSizes[reid]);
-                                triangleStarOffsets[j+1] = triangleStarOffsets[j] + rarrs.hTriangleStarSizes[reid];
+                                relationCompVecs_[curStream].hDataArray + reid * ftColumnNum,
+                                relationCompVecs_[curStream].hDataArray + reid * ftColumnNum + relationCompVecs_[curStream].hSizeArray[reid]);
+                                triangleStarOffsets[j+1] = triangleStarOffsets[j] + relationCompVecs_[curStream].hSizeArray[reid];
                                 ++reid;
                             }
                             allClusters_[sid].triangleStars_.setData(std::move(triangleStarData), std::move(triangleStarOffsets));
@@ -1455,30 +1364,16 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     sem_post(&relationSems_[tid]);
                 }
 
-                CHECK(cudaFree(dClustersIds[curStream]));
-                CHECK(cudaFree(dSimplexOffsets[curStream]));
-                CHECK(cudaFree(rarrs.dTriangleStarSizes));
-                CHECK(cudaFree(rarrs.dTriangleStarMatrix));
-                delete[] rarrs.hTriangleStarMatrix;
-                delete[] rarrs.hTriangleStarSizes;
-
+                delete[] relationCompVecs_[curStream].hDataArray;
+                delete[] relationCompVecs_[curStream].hSizeArray;
                 break;
             }
 
             case RelationType::VERelation:
             {
-                cudaError_t status = cudaStreamSynchronize(threadStreams[curStream]);
-                if (status != cudaSuccess) {
-                    fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
-                        __FILE__, __LINE__); if (abort) exit(status);
-                }
-                #ifdef MEASURE_WAITING
-                float milliseconds = 0;
-                cudaEventElapsedTime(&milliseconds, startEvents[curStream], endEvents[curStream]);
-                kernelTime += milliseconds;
-                Timer tmp;
-                #endif
-
+                // #ifdef TTK_ENABLE_OPENMP
+                // #pragma omp parallel for num_threads(threadNum)
+                // #endif
                 for (int i = 0; i < threadNum; ++i) {
                     // std::unique_lock<std::mutex> lck(VVMutex_);
                     SimplexId tid = jobs[i].first;
@@ -1493,9 +1388,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                             for (int j = 0; j < localVertexNum; ++j) {
                                 int rj = j + diff; // relative j value in the large matrix
                                 vertexEdgeData.insert(vertexEdgeData.end(), 
-                                rarrs.hVertexEdgeMatrix + rj * veColumnNum,
-                                rarrs.hVertexEdgeMatrix + rj * veColumnNum + rarrs.hVertexEdgeSizes[rj]);
-                                vertexEdgeOffsets[j+1] = vertexEdgeOffsets[j] + rarrs.hVertexEdgeSizes[rj];
+                                relationCompVecs_[curStream].hDataArray + rj * veColumnNum,
+                                relationCompVecs_[curStream].hDataArray + rj * veColumnNum + relationCompVecs_[curStream].hSizeArray[rj]);
+                                vertexEdgeOffsets[j+1] = vertexEdgeOffsets[j] + relationCompVecs_[curStream].hSizeArray[rj];
                             }
                             allClusters_[sid].vertexEdges_.setData(std::move(vertexEdgeData), std::move(vertexEdgeOffsets));
                         }
@@ -1510,30 +1405,16 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 returnTime += tmp.getElapsedTime();
                 #endif
 
-                CHECK(cudaFree(dClustersIds[curStream]));
-                CHECK(cudaFree(dSimplexOffsets[curStream]));
-                CHECK(cudaFree(rarrs.dVertexEdgeSizes));
-                CHECK(cudaFree(rarrs.dVertexEdgeMatrix));
-                delete[] rarrs.hVertexEdgeSizes;
-                delete[] rarrs.hVertexEdgeMatrix;
-
+                delete[] relationCompVecs_[curStream].hSizeArray;
+                delete[] relationCompVecs_[curStream].hDataArray;
                 break;
             }
             
             case RelationType::VFRelation:
             {
-                cudaError_t status = cudaStreamSynchronize(threadStreams[curStream]);
-                if (status != cudaSuccess) {
-                    fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
-                        __FILE__, __LINE__); if (abort) exit(status);
-                }
-                #ifdef MEASURE_WAITING
-                float milliseconds = 0;
-                cudaEventElapsedTime(&milliseconds, startEvents[curStream], endEvents[curStream]);
-                kernelTime += milliseconds;
-                Timer tmp;
-                #endif
-
+                // #ifdef TTK_ENABLE_OPENMP
+                // #pragma omp parallel for num_threads(threadNum)
+                // #endif
                 for (int i = 0; i < threadNum; ++i) {
                     // std::unique_lock<std::mutex> lck(VVMutex_);
                     SimplexId tid = jobs[i].first;
@@ -1547,9 +1428,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                             vertexTriangleOffsets[0] = 0;
                             for (int vid = 0; vid < localVertexNum; ++vid) {
                                 vertexTriangleData.insert(vertexTriangleData.end(), 
-                                rarrs.hVertexTriangleMatrix + rvid * vfColumnNum,
-                                rarrs.hVertexTriangleMatrix + rvid * vfColumnNum + rarrs.hVertexTriangleSizes[rvid]);
-                                vertexTriangleOffsets[vid+1] = vertexTriangleOffsets[vid] + rarrs.hVertexTriangleSizes[rvid];
+                                relationCompVecs_[curStream].hDataArray + rvid * vfColumnNum,
+                                relationCompVecs_[curStream].hDataArray + rvid * vfColumnNum + relationCompVecs_[curStream].hSizeArray[rvid]);
+                                vertexTriangleOffsets[vid+1] = vertexTriangleOffsets[vid] + relationCompVecs_[curStream].hSizeArray[rvid];
                                 ++rvid;
                             }
                             allClusters_[sid].vertexTriangles_.setData(std::move(vertexTriangleData), std::move(vertexTriangleOffsets));
@@ -1564,48 +1445,36 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 returnTime += tmp.getElapsedTime();
                 #endif
 
-                CHECK(cudaFree(dClustersIds[curStream]));
-                CHECK(cudaFree(dSimplexOffsets[curStream]));
-                CHECK(cudaFree(rarrs.dVertexTriangleSizes));
-                CHECK(cudaFree(rarrs.dVertexTriangleMatrix));
-                delete[] rarrs.hVertexTriangleMatrix;
-                delete[] rarrs.hVertexTriangleSizes;
-
+                delete[] relationCompVecs_[curStream].hDataArray;
+                delete[] relationCompVecs_[curStream].hSizeArray;
                 break;
             }
             
             case RelationType::VTRelation:
             {
-                cudaError_t status = cudaStreamSynchronize(threadStreams[curStream]);
-                if (status != cudaSuccess) {
-                    fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
-                        __FILE__, __LINE__); if (abort) exit(status);
-                }
-                #ifdef MEASURE_WAITING
-                float milliseconds = 0;
-                cudaEventElapsedTime(&milliseconds, startEvents[curStream], endEvents[curStream]);
-                kernelTime += milliseconds;
-                Timer tmp;
-                #endif
+                
 
+                // #ifdef TTK_ENABLE_OPENMP
+                // #pragma omp parallel for num_threads(threadNum)
+                // #endif
                 for (int i = 0; i < threadNum; ++i) {
                     // std::unique_lock<std::mutex> lck(VVMutex_);
                     SimplexId tid = jobs[i].first;
                     SimplexId baseClusterId = jobs[i].second;
                     for (SimplexId sid = baseClusterId; sid <= hEndClusters[curStream][i]; ++sid) {
+                        std::vector<SimplexId> vertexStarData{};
+                        int diff = hVertexIntervals_[sid - 1] - hVertexIntervals_[baseClusterId - 1] + hSimplexOffsets[curStream][i];
+                        int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
+                        std::vector<SimplexId> vertexStarOffsets(localVertexNum + 1);
+                        vertexStarOffsets[0] = 0;
+                        for (int j = 0; j < localVertexNum; ++j) {
+                            int rj = j + diff; // relative j value in the large matrix
+                            vertexStarData.insert(vertexStarData.end(), 
+                            relationCompVecs_[curStream].hDataArray + rj * vtColumnNum,
+                            relationCompVecs_[curStream].hDataArray + rj * vtColumnNum + relationCompVecs_[curStream].hSizeArray[rj]);
+                            vertexStarOffsets[j+1] = vertexStarOffsets[j] + relationCompVecs_[curStream].hSizeArray[rj];
+                        }
                         if (allClusters_[sid].vertexStars_.empty()) {
-                            std::vector<SimplexId> vertexStarData{};
-                            int diff = hVertexIntervals_[sid - 1] - hVertexIntervals_[baseClusterId - 1] + hSimplexOffsets[curStream][i];
-                            int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
-                            std::vector<SimplexId> vertexStarOffsets(localVertexNum + 1);
-                            vertexStarOffsets[0] = 0;
-                            for (int j = 0; j < localVertexNum; ++j) {
-                                int rj = j + diff; // relative j value in the large matrix
-                                vertexStarData.insert(vertexStarData.end(), 
-                                rarrs.hVertexStarMatrix + rj * vtColumnNum,
-                                rarrs.hVertexStarMatrix + rj * vtColumnNum + rarrs.hVertexStarSizes[rj]);
-                                vertexStarOffsets[j+1] = vertexStarOffsets[j] + rarrs.hVertexStarSizes[rj];
-                            }
                             allClusters_[sid].vertexStars_.setData(std::move(vertexStarData), std::move(vertexStarOffsets));
                         }
                     }
@@ -1618,51 +1487,37 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 returnTime += tmp.getElapsedTime();
                 #endif
 
-                CHECK(cudaFree(dClustersIds[curStream]));
-                CHECK(cudaFree(dSimplexOffsets[curStream]));
-                CHECK(cudaFree(rarrs.dVertexStarSizes));
-                CHECK(cudaFree(rarrs.dVertexStarMatrix));
-                delete[] rarrs.hVertexStarMatrix;
-                delete[] rarrs.hVertexStarSizes;
-
+                delete[] relationCompVecs_[curStream].hDataArray;
+                delete[] relationCompVecs_[curStream].hSizeArray;
                 break;
             }
 
             case RelationType::VVRelation:
             {
-                cudaError_t status = cudaStreamSynchronize(threadStreams[curStream]);
-                if (status != cudaSuccess) {
-                    fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
-                        __FILE__, __LINE__); if (abort) exit(status);
-                }
-                #ifdef MEASURE_WAITING
-                float milliseconds = 0;
-                cudaEventElapsedTime(&milliseconds, startEvents[curStream], endEvents[curStream]);
-                kernelTime += milliseconds;
-                Timer tmp;
-                #endif
-
+                // #ifdef TTK_ENABLE_OPENMP
+                // #pragma omp parallel for num_threads(threadNum)
+                // #endif
                 for (int i = 0; i < threadNum; ++i) {
                     SimplexId tid = jobs[i].first;
                     SimplexId baseClusterId = jobs[i].second;
                     for (SimplexId sid = baseClusterId; sid <= hEndClusters[curStream][i]; ++sid) {
-                        boost::unique_lock<boost::shared_mutex> writeLock(clusterMutexes_[sid]);
+                        // boost::unique_lock<boost::shared_mutex> writeLock(clusterMutexes_[sid]);
+                        std::vector<SimplexId> vertexNeighborData{};
+                        int diff = hVertexIntervals_[sid - 1] - hVertexIntervals_[baseClusterId - 1] + hSimplexOffsets[curStream][i];
+                        int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
+                        std::vector<SimplexId> vertexNeighborOffsets(localVertexNum + 1);
+                        vertexNeighborOffsets[0] = 0;
+                        for (int j = 0; j < localVertexNum; ++j) {
+                            int rj = j + diff; // relative j value in the large matrix
+                            vertexNeighborData.insert(vertexNeighborData.end(), 
+                            relationCompVecs_[curStream].hDataArray + rj * vvColumnNum,
+                            relationCompVecs_[curStream].hDataArray + rj * vvColumnNum + relationCompVecs_[curStream].hSizeArray[rj]);
+                            vertexNeighborOffsets[j+1] = vertexNeighborOffsets[j] + relationCompVecs_[curStream].hSizeArray[rj];
+                        }
                         if (allClusters_[sid].vertexNeighbors_.empty()) {
-                            std::vector<SimplexId> vertexNeighborData{};
-                            int diff = hVertexIntervals_[sid - 1] - hVertexIntervals_[baseClusterId - 1] + hSimplexOffsets[curStream][i];
-                            int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
-                            std::vector<SimplexId> vertexNeighborOffsets(localVertexNum + 1);
-                            vertexNeighborOffsets[0] = 0;
-                            for (int j = 0; j < localVertexNum; ++j) {
-                                int rj = j + diff; // relative j value in the large matrix
-                                vertexNeighborData.insert(vertexNeighborData.end(), 
-                                rarrs.hVertexNeighborMatrix + rj * vvColumnNum,
-                                rarrs.hVertexNeighborMatrix + rj * vvColumnNum + rarrs.hVertexNeighborSizes[rj]);
-                                vertexNeighborOffsets[j+1] = vertexNeighborOffsets[j] + rarrs.hVertexNeighborSizes[rj];
-                            }
                             allClusters_[sid].vertexNeighbors_.setData(std::move(vertexNeighborData), std::move(vertexNeighborOffsets));
                         }
-                        writeLock.unlock();
+                        // writeLock.unlock();
                     }
                     sem_post(&relationSems_[tid]);
                     if (baseClusters_[relationId][tid] == 0)
@@ -1672,17 +1527,11 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 returnTime += tmp.getElapsedTime();
                 #endif
 
-                CHECK(cudaFree(dClustersIds[curStream]));
-                CHECK(cudaFree(dSimplexOffsets[curStream]));
-                CHECK(cudaFree(rarrs.dVertexNeighborSizes));
-                CHECK(cudaFree(rarrs.dVertexNeighborMatrix));
-                delete[] rarrs.hVertexNeighborMatrix;
-                delete[] rarrs.hVertexNeighborSizes;
-
+                delete[] relationCompVecs_[curStream].hDataArray;
+                delete[] relationCompVecs_[curStream].hSizeArray;
                 break;
             }
         }
-        CHECK(cudaStreamDestroy(threadStreams[curStream]));
     }
 
     #ifdef MEASURE_WAITING
@@ -1833,6 +1682,21 @@ void Gale::leaderProducer() {
             qlock.unlock();
 
             if (!localQ.empty()) {
+                // initialization that executes only once
+                for (static bool first = true; first; first = false) {
+                    threadStreams_.resize(preconditionedRelations_.size());
+                    relationCompVecs_.resize(preconditionedRelations_.size());
+                    // preallocate a large chunk of memory for GPU computation 
+                    int allocatedSize = threadNumber_ * precompClusterNumber_ * 500;
+                    for (int i = 0; i < relationCompVecs_.size(); ++i) {
+                        CHECK(cudaStreamCreate(&threadStreams_[i]));
+                        CHECK(cudaMallocAsync((void **)&relationCompVecs_[i].dClusterIds, sizeof(int) * threadNumber_, threadStreams_[i]));
+                        CHECK(cudaMallocAsync((void **)&relationCompVecs_[i].dSimplexOffsets, sizeof(int) * threadNumber_, threadStreams_[i]));
+                        CHECK(cudaMallocAsync((void **)&relationCompVecs_[i].dSizeArray, sizeof(int) * allocatedSize, threadStreams_[i]));
+                        CHECK(cudaMallocAsync((void **)&relationCompVecs_[i].dDataArray, sizeof(int) * allocatedSize * 80, threadStreams_[i]));
+                    }
+                }
+
                 Timer t;
                 // handle the waiting jobs in the queue
                 // combine the requests from all waiting consumers
@@ -1856,6 +1720,13 @@ void Gale::leaderProducer() {
                 for (int i = 0; i < threadNumber_; ++i) {
                     leaderCluster = currClusters_[i];
                     if (leaderCluster < 0) {
+                        for (int i = 0; i < relationCompVecs_.size(); ++i) {
+                            CHECK(cudaStreamDestroy(threadStreams_[i]));
+                            CHECK(cudaFree(relationCompVecs_[i].dClusterIds));
+                            CHECK(cudaFree(relationCompVecs_[i].dSimplexOffsets));
+                            CHECK(cudaFree(relationCompVecs_[i].dSizeArray));
+                            CHECK(cudaFree(relationCompVecs_[i].dDataArray));
+                        }
                         return;
                     }
                     else if (leaderCluster == 0) continue;
@@ -2166,7 +2037,7 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
         computeCellIntervals();
         computeVertexIntervals();
     }
-    
+    precompClusterNumber_ = blockSize_ / threadsPerCluster_ * blocksPerThread_;
     allClusters_ = std::vector<MeshSegment>(clusterNumber_);
     clusterMutexes_ = std::vector<boost::shared_mutex>(clusterNumber_);
     for (int cid = 1; cid < clusterNumber_; ++cid) {
@@ -2176,12 +2047,12 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
     producer_ = std::thread(&Gale::leaderProducer, this);
     printf("[Gale] GPU threads per cluster: %d, thread num: %d, block number: %d, block size: %d, cluster number: %d, cell number: %d, vertex number: %d\n", threadsPerCluster_, threadNumber_, blocksPerThread_, blockSize_, clusterNumber_, cellNumber_, vertexNumber_);
 
-    #ifdef MEASURE_WAITING
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-    cudaEventRecord(start, 0);
-    #endif
+    // #ifdef MEASURE_WAITING
+    // cudaEvent_t start, stop;
+    // cudaEventCreate(&start);
+    // cudaEventCreate(&stop);
+    // cudaEventRecord(start, 0);
+    // #endif
 
     // copy input mesh arrays to the GPU
     CHECK(cudaMallocAsync(&dConnectivity_, sizeof(int) * (cellNumber_ * 4), 0));
@@ -2197,13 +2068,13 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
     CHECK(cudaMemcpy(dExternalCells_, hExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], cudaMemcpyHostToDevice));
     CHECK(cudaMemcpyAsync(dVertexIntervals_, hVertexIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice, 0));
 
-    #ifdef MEASURE_WAITING
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(stop);
-    float elapsedTime;
-    cudaEventElapsedTime(&elapsedTime, start, stop);
-    printf("[Gale] Cuda memory copy time measured for initialization: %f s\n", elapsedTime / 1000);
-    #endif
+    // #ifdef MEASURE_WAITING
+    // cudaEventRecord(stop, 0);
+    // cudaEventSynchronize(stop);
+    // float elapsedTime;
+    // cudaEventElapsedTime(&elapsedTime, start, stop);
+    // printf("[Gale] Cuda memory copy time measured for initialization: %f s\n", elapsedTime / 1000);
+    // #endif
 }
 
 /**
