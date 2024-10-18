@@ -1,15 +1,7 @@
 #pragma once
 
 #include <Utils.cuh>
-
-const int efColumnNum = 20;
-const int etColumnNum = 20;
-const int ftColumnNum = 5;
-const int vvColumnNum = 30;
-const int vtColumnNum = 60;
-const int veColumnNum = 30;
-const int vfColumnNum = 80;
-
+#include <DataTypes.h>
 
 __global__ void countCells(int *localCellCounts, const int *connectivity, const int *offset, const int *vertexMap, const int cellNumber, const int dimension) {
     /* Divide the job by cells */
