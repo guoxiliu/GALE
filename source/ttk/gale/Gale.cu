@@ -22,7 +22,9 @@ Gale::Gale(int tnum, int tnumPerCluster) {
     threadsPerCluster_ = tnumPerCluster;
     currClusters_ = std::vector<SimplexId>(threadNumber_, 0);
     currRelations_ = std::vector<RelationType>(threadNumber_, RelationType::BlankRelation);
-    relationSems_ = std::vector<sem_t>(threadNumber_);
+    // relationSems_ = std::vector<sem_t>(threadNumber_);
+    consumerMutexes_ = std::vector<std::mutex>(threadNumber_);
+    relationCVs_ = std::vector<std::condition_variable>(25);
     gpuThreadPositions_ = std::vector<int>(threadNumber_);
     for (int i = 0; i < 25; ++i) {
         baseClusters_[i] = std::vector<int>(threadNumber_, 0);
@@ -62,16 +64,16 @@ Gale::~Gale() {
     //     // std::cout << "waiting count " << i << ": " << waitingCounts_[i] << ", waiting time: " << waitingTimes_[i] << std::endl;
     // }
     
-    // time for consumer thread to make the request 
-    // for (int i = 0; i < threadNumber_; ++i) {
-    //     for (int j = 0; j < consumerTimes_[i].size(); ++j) {
-    //         std::cout << "consumer " << i << ": " << consumerTimes_[i][j] << std::endl;
-    //     }
-    // }
-
-    for (int j = 0; j < qSizes_.size(); ++j) {
-        std::cout << "queue length: " << qSizes_[j] << ", total time: " << qTimes_[j] << ", kernel time: " << kernelTimes_[j] << ", return time: " << returnTimes_[j] << std::endl;
+    // time for consumer thread to wait for the request 
+    for (int i = 0; i < threadNumber_; ++i) {
+        for (int j = 0; j < consumerTimes_[i].size(); ++j) {
+            std::cout << "consumer " << i << ": " << consumerTimes_[i][j] << std::endl;
+        }
     }
+
+    // for (int j = 0; j < qSizes_.size(); ++j) {
+    //     std::cout << "queue length: " << qSizes_[j] << ", total time: " << qTimes_[j] << ", kernel time: " << kernelTimes_[j] << ", return time: " << returnTimes_[j] << std::endl;
+    // }
 
     #endif
 
@@ -282,7 +284,8 @@ int Gale::computeRelation(const RelationType relation,
             if (signal) {
                 // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
                 // else res = 1;
-                sem_post(&relationSems_[threadId]);
+                // sem_post(&relationSems_[threadId]);
+                relationCVs_[static_cast<int>(relation)].notify_one();
             }
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
@@ -331,7 +334,8 @@ int Gale::computeRelation(const RelationType relation,
             if (signal) {
                 // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
                 // else res = 1;
-                sem_post(&relationSems_[threadId]);
+                // sem_post(&relationSems_[threadId]);
+                relationCVs_[static_cast<int>(relation)].notify_one();
             }
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
@@ -374,7 +378,8 @@ int Gale::computeRelation(const RelationType relation,
             if (signal) {
                 // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
                 // else res = 1;
-                sem_post(&relationSems_[threadId]);
+                // sem_post(&relationSems_[threadId]);
+                relationCVs_[static_cast<int>(relation)].notify_one();
             }
 
             CHECK(cudaFree(dTriangleStarSizes));
@@ -430,7 +435,8 @@ int Gale::computeRelation(const RelationType relation,
             if (signal) {
                 // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
                 // else res = 1;
-                sem_post(&relationSems_[threadId]);
+                // sem_post(&relationSems_[threadId]);
+                relationCVs_[static_cast<int>(relation)].notify_one();
             }
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
@@ -488,7 +494,8 @@ int Gale::computeRelation(const RelationType relation,
             if (signal) {
                 // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
                 // else res = 1;
-                sem_post(&relationSems_[threadId]);
+                // sem_post(&relationSems_[threadId]);
+                relationCVs_[static_cast<int>(relation)].notify_one();
             }
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
@@ -546,7 +553,8 @@ int Gale::computeRelation(const RelationType relation,
             if (signal) {
                 // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
                 // else res = 1;
-                sem_post(&relationSems_[threadId]);
+                // sem_post(&relationSems_[threadId]);
+                relationCVs_[static_cast<int>(relation)].notify_one();
             }
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
@@ -604,7 +612,8 @@ int Gale::computeRelation(const RelationType relation,
             if (signal) {
                 // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
                 // else res = 1;
-                sem_post(&relationSems_[threadId]);
+                // sem_post(&relationSems_[threadId]);
+                relationCVs_[static_cast<int>(relation)].notify_one();
             }
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
@@ -662,7 +671,8 @@ int Gale::computeRelation(const RelationType relation,
             if (signal) {
                 // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
                 // else res = 1;
-                sem_post(&relationSems_[threadId]);
+                // sem_post(&relationSems_[threadId]);
+                relationCVs_[static_cast<int>(relation)].notify_one();
             }
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
@@ -717,7 +727,8 @@ int Gale::computeRelation(const RelationType relation,
             }
             // lck.unlock();
             if (signal) {
-                sem_post(&relationSems_[threadId]);
+                // sem_post(&relationSems_[threadId]);
+                relationCVs_[static_cast<int>(relation)].notify_one();
             }
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
@@ -775,7 +786,8 @@ int Gale::computeRelation(const RelationType relation,
             if (signal) {
             // if (clusterId <= endCluster) sem_post(&VVSems_[threadId]);
             // else res = 1;
-                sem_post(&relationSems_[threadId]);
+                // sem_post(&relationSems_[threadId]);
+                relationCVs_[static_cast<int>(relation)].notify_one();
             }
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
@@ -1225,14 +1237,18 @@ int Gale::computeCombinedRelation(std::map<RelationType,
 
         for (int i = 0; i < threadNum; ++i) {
             SimplexId tid = jobs[i].first;
-            SimplexId baseClusterId = jobs[i].second;
-            sem_post(&relationSems_[tid]);
-            #ifdef MEASURE_WAITING
-            returnTime += tmp.getElapsedTime();
-            #endif
+            {
+                std::lock_guard<std::mutex> lck(consumerMutexes_[tid]);
+                consumerStatus_[tid] = true;
+            }
+            // sem_post(&relationSems_[tid]);
             if (baseClusters_[relationId][tid] == 0)
-                baseClusters_[relationId][tid] = baseClusterId;
+                baseClusters_[relationId][tid] = jobs[i].second;
         }
+        relationCVs_[static_cast<int>(relation)].notify_all();
+        #ifdef MEASURE_WAITING
+        returnTime += tmp.getElapsedTime();
+        #endif
 
     //     // launches different kernels on different streams
     //     switch (relation) {
@@ -1913,9 +1929,9 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
         exit(EXIT_FAILURE);
     }
     
-    for (int i = 0; i < threadNumber_; ++i) {
-        sem_init(&relationSems_[i], 0, 0);
-    }
+    // for (int i = 0; i < threadNumber_; ++i) {
+    //     sem_init(&relationSems_[i], 0, 0);
+    // }
     if (blockNum > 0) blocksPerThread_ = blockNum;
     if (blockSize > 0) {
         blockSize_ = blockSize;
