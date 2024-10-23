@@ -18,7 +18,7 @@
 #include <semaphore.h>
 
 /* Uncomment to track detailed timing of consumer and producer threads*/
-#define MEASURE_TIME 1
+// #define MEASURE_TIME 1
 
 // Find the global edge/triangle index from the edge/triangle list
 // (x, e): x specifies the segment index, e specifies the edge pair
@@ -1385,7 +1385,7 @@ class Gale final : public AbstractTriangulation {
         int vertexNumber_, edgeNumber_, triangleNumber_, cellNumber_;
         std::vector<RelationType> preconditionedRelations_{};
         std::unordered_map<RelationType, int> relationMaps_;
-        std::unordered_map<int, cudaStream_t> threadStreams_;
+        // std::unordered_map<int, cudaStream_t> threadStreams_;
         mutable std::vector<MeshSegment> allClusters_;
 
         /* Data allocated on the host memory */

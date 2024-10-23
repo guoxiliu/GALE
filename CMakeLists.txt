@@ -81,7 +81,7 @@ message("VTK_DIR: ${VTK_DIR}")
 # set(CMAKE_CUDA_ARCHITECTURES 60 61 75)
 set(CMAKE_CUDA_ARCHITECTURES 60)
 set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --ptxas-options=-v")
+# set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --ptxas-options=-v")
 
 # add_subdirectory("test")
 

@@ -4,5 +4,5 @@ target_include_directories(ftmTree
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         # $<INSTALL_INTERFACE:include/ttk/base>
 )
-target_link_libraries(ftmTree PUBLIC abstractTriangulation geometry Boost::boost Boost::system)
+target_link_libraries(ftmTree PUBLIC abstractTriangulation geometry Boost::boost)
 set_compile_options(ftmTree)
