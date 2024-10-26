@@ -822,8 +822,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
 
     int res = 0;
     int numRelations = relationOrders.size();
+    #ifdef MEASURE_WAITING
     cudaEvent_t startEvents[numRelations];
     cudaEvent_t endEvents[numRelations];
+    #endif
     float kernelTime = 0, returnTime = 0;
 
     // launch GPU kernels for different topological relations

@@ -58,27 +58,27 @@ namespace ttk {
      * automatically generate such a preconditioned buffer).
      * @see examples/c++/main.cpp for an example use.
      */
-    template <class triangulationType = AbstractTriangulation>
+    template <class triangulationType>
     int execute(const SimplexId *const offsets,
                 const triangulationType *triangulation);
 
     int executeLegacy(const SimplexId *const offsets,
                       const AbstractTriangulation *triangulation);
 
-    template <class triangulationType = AbstractTriangulation>
+    template <class triangulationType>
     int executeProgressive(const SimplexId *const offsets,
                            const triangulationType *triangulation);
 
-    template <class triangulationType = AbstractTriangulation>
+    template <class triangulationType>
     void checkProgressivityRequirement(const triangulationType *triangulation);
 
-    template <class triangulationType = AbstractTriangulation>
+    template <class triangulationType>
     std::pair<SimplexId, SimplexId> getNumberOfLowerUpperComponents(
       const SimplexId vertexId,
       const SimplexId *const offsets,
       const triangulationType *triangulation) const;
 
-    template <class triangulationType = AbstractTriangulation>
+    template <class triangulationType>
     char getCriticalType(const SimplexId &vertexId,
                          const SimplexId *const offsets,
                          const triangulationType *triangulation) const;
