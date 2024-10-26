@@ -17,7 +17,7 @@
 #include <semaphore.h>
 
 /* Uncomment to track waiting time of consumer threads*/
-#define MEASURE_WAITING 1
+// #define MEASURE_WAITING 1
 
 // Find the global edge/triangle index from the edge/triangle list
 // (x, e): x specifies the segment index, e specifies the edge pair

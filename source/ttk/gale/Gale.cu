@@ -823,7 +823,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
     RelationArrays rarrs;
     cudaEvent_t startEvents[numRelations];
     cudaEvent_t endEvents[numRelations];
+    #ifdef MEASURE_TIME
     float kernelTime = 0, returnTime = 0;
+    #endif
 
     for (int curStream = 0; curStream < numRelations; ++curStream) {
         // (relation, [(tid, clusterId), ...])
@@ -1839,7 +1841,9 @@ void Gale::leaderProducer(const int pid) {
             qlock.unlock();
 
             if (!localQ.empty()) {
+                #ifdef MEASURE_TIME
                 Timer t;
+                #endif
                 // handle the waiting jobs in the queue
                 // combine the requests from all waiting consumers
                 std::vector<RelationType> relationOrders;
@@ -1854,8 +1858,10 @@ void Gale::leaderProducer(const int pid) {
                     // curq.push_back(std::make_tuple(tid, currClusters_[tid], jobType));
                 }
                 computeCombinedRelation(requestMap, relationOrders, pid);
+                #ifdef MEASURE_TIME
                 qTimes_[pid].push_back(t.getElapsedTime());
                 qSizes_[pid].push_back(localQ.size());
+                #endif
             }
             else {
                 // clean the memory storage

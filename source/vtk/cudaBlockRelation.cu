@@ -1,4 +1,5 @@
 #include <Relations.cuh>
+#include <array>
 #include <cstddef>
 #include <iostream>
 #include <set>
