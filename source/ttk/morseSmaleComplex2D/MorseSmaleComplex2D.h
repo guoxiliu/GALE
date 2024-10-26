@@ -31,14 +31,14 @@ namespace ttk {
     /**
      * Main function for computing the whole Morse-Smale complex.
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int execute(const triangulationType &triangulation);
 
     /**
      * Compute the descending 1-separatrices by reading into the discrete
      * gradient.
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int getAscendingSeparatrices1(
       const std::vector<dcg::Cell> &criticalPoints,
       std::vector<Separatrix> &separatrices,
@@ -47,7 +47,7 @@ namespace ttk {
   };
 } // namespace ttk
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::MorseSmaleComplex2D::execute(const triangulationType &triangulation) {
 #ifndef TTK_ENABLE_KAMIKAZE
   if(!inputScalarField_) {
@@ -159,7 +159,7 @@ int ttk::MorseSmaleComplex2D::execute(const triangulationType &triangulation) {
   return 0;
 }
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::MorseSmaleComplex2D::getAscendingSeparatrices1(
   const std::vector<Cell> &criticalPoints,
   std::vector<Separatrix> &separatrices,

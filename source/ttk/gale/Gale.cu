@@ -1493,11 +1493,6 @@ void Gale::leaderProducer(const int pid) {
                     }
                     else if (leaderCluster == 0) continue;
                     if (!jobQueues_[pid].empty()) break;
-                    // SimplexId startCluster = baseClusters_[static_cast<int>(currRelations_[i])][i];
-                    // for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                    //     if (clusterMutexes_[cid].try_lock())
-                    //         allClusters_[cid].clear();
-                    // }
                     RelationType relation = currRelations_[i];
                     SimplexId startCluster = baseClusters_[static_cast<int>(relation)][i];
                     // leaderCluster = (leaderCluster - startCluster) * removalRatio + startCluster;
