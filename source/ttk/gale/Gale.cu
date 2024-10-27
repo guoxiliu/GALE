@@ -390,28 +390,22 @@ int Gale::computeRelation(const RelationType relation,
 
         case RelationType::EFRelation:
         {
-            int *dEdgeTriangleMatrix, *dEdgeTriangleSizes;
             int edgeIdOffset = hEdgeIntervals_[clusterId - 1];
             int localEdgeSum = hEdgeIntervals_[endCluster] - edgeIdOffset;
-            CHECK(cudaMalloc((void **)&dEdgeTriangleSizes, sizeof(int) * localEdgeSum));
-            CHECK(cudaMalloc((void **)&dEdgeTriangleMatrix, sizeof(int) * localEdgeSum * efColumnNum));
-            CHECK(cudaMemset(dEdgeTriangleSizes, 0, sizeof(int) * localEdgeSum));
-            CHECK(cudaMemset(dEdgeTriangleMatrix, -1, sizeof(int) * localEdgeSum * efColumnNum));
+            CHECK(cudaMemset(relationCompVecs_[0].dSizeArray, 0, sizeof(int) * localEdgeSum));
+            CHECK(cudaMemset(relationCompVecs_[0].dDataArray, -1, sizeof(int) * localEdgeSum * efColumnNum));
 
             computeEdgeTriangles<<<numBlocks, blockSize_>>>(
                 dEdgeList_, dTriangleList_,
-                dEdgeTriangleMatrix, dEdgeTriangleSizes,
+                relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_, dIndexArray_,
                 dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            int *hEdgeTriangleSizes = new int[localEdgeSum];
-            int *hEdgeTriangleMatrix = new int[localEdgeSum * efColumnNum];
-
-            CHECK(cudaMemcpy(hEdgeTriangleSizes, dEdgeTriangleSizes, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hEdgeTriangleMatrix, dEdgeTriangleMatrix, sizeof(int) * localEdgeSum * efColumnNum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hDataArray, relationCompVecs_[0].dDataArray, sizeof(int) * localEdgeSum * efColumnNum, cudaMemcpyDeviceToHost));
 
             // std::unique_lock<std::mutex> lck(EFMutex_);
             for (int sid = clusterId; sid <= endCluster; ++sid) {
@@ -422,8 +416,8 @@ int Gale::computeRelation(const RelationType relation,
                     edgeTriangleOffsets[0] = 0;
                     int reid = hEdgeIntervals_[sid - 1] - edgeIdOffset;
                     for (int eid = 0; eid < localEdgeNum; ++eid) {
-                        edgeTriangleData.insert(edgeTriangleData.end(), hEdgeTriangleMatrix + reid * efColumnNum, hEdgeTriangleMatrix + reid * efColumnNum + hEdgeTriangleSizes[reid]);
-                        edgeTriangleOffsets[eid+1] = edgeTriangleOffsets[eid] + hEdgeTriangleSizes[reid];
+                        edgeTriangleData.insert(edgeTriangleData.end(), relationCompVecs_[0].hDataArray + reid * efColumnNum, relationCompVecs_[0].hDataArray + reid * efColumnNum + relationCompVecs_[0].hSizeArray[reid]);
+                        edgeTriangleOffsets[eid+1] = edgeTriangleOffsets[eid] + relationCompVecs_[0].hSizeArray[reid];
                         ++reid;
                     }
                     allClusters_[sid].edgeTriangles_.setData(std::move(edgeTriangleData), std::move(edgeTriangleOffsets));
@@ -439,37 +433,26 @@ int Gale::computeRelation(const RelationType relation,
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
 
-            CHECK(cudaFree(dEdgeTriangleSizes));
-            CHECK(cudaFree(dEdgeTriangleMatrix));
-
-            delete[] hEdgeTriangleMatrix;
-            delete[] hEdgeTriangleSizes;
             break;
         }
 
         case RelationType::ETRelation:
         {
-            int *dEdgeStarMatrix, *dEdgeStarSizes;
             int edgeIdOffset = hEdgeIntervals_[clusterId - 1];
             int localEdgeSum = hEdgeIntervals_[endCluster] - edgeIdOffset;
-            CHECK(cudaMalloc((void **)&dEdgeStarSizes, sizeof(int) * localEdgeSum));
-            CHECK(cudaMalloc((void **)&dEdgeStarMatrix, sizeof(int) * localEdgeSum * etColumnNum));
-            CHECK(cudaMemset(dEdgeStarSizes, 0, sizeof(int) * localEdgeSum));
-            CHECK(cudaMemset(dEdgeStarMatrix, -1, sizeof(int) * localEdgeSum * etColumnNum));
+            CHECK(cudaMemset(relationCompVecs_[0].dSizeArray, 0, sizeof(int) * localEdgeSum));
+            CHECK(cudaMemset(relationCompVecs_[0].dDataArray, -1, sizeof(int) * localEdgeSum * etColumnNum));
 
             computeEdgeStars<<<numBlocks, blockSize_>>>(
-                dEdgeList_, dEdgeStarMatrix, dEdgeStarSizes,
+                dEdgeList_, relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_,
                 dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            int *hEdgeStarSizes_ = new int[localEdgeSum];
-            int *hEdgeStarMatrix_ = new int[localEdgeSum * etColumnNum];
-
-            CHECK(cudaMemcpy(hEdgeStarSizes_, dEdgeStarSizes, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hEdgeStarMatrix_, dEdgeStarMatrix, sizeof(int) * localEdgeSum * etColumnNum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hDataArray, relationCompVecs_[0].dDataArray, sizeof(int) * localEdgeSum * etColumnNum, cudaMemcpyDeviceToHost));
 
             // std::unique_lock<std::mutex> lck(ETMutex_);
             for (int sid = clusterId; sid <= endCluster; ++sid) {
@@ -480,8 +463,8 @@ int Gale::computeRelation(const RelationType relation,
                     edgeStarOffsets[0] = 0;
                     int reid = hEdgeIntervals_[sid - 1] - edgeIdOffset;
                     for (int eid = 0; eid < localEdgeNum; ++eid) {
-                        edgeStarData.insert(edgeStarData.end(), hEdgeStarMatrix_ + reid * etColumnNum, hEdgeStarMatrix_ + reid * etColumnNum + hEdgeStarSizes_[reid]);
-                        edgeStarOffsets[eid+1] = edgeStarOffsets[eid] + hEdgeStarSizes_[reid];
+                        edgeStarData.insert(edgeStarData.end(), relationCompVecs_[0].hDataArray + reid * etColumnNum, relationCompVecs_[0].hDataArray + reid * etColumnNum + relationCompVecs_[0].hSizeArray[reid]);
+                        edgeStarOffsets[eid+1] = edgeStarOffsets[eid] + relationCompVecs_[0].hSizeArray[reid];
                         ++reid;
                     }
                     allClusters_[sid].edgeStars_.setData(std::move(edgeStarData), std::move(edgeStarOffsets));
@@ -497,37 +480,26 @@ int Gale::computeRelation(const RelationType relation,
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
 
-            CHECK(cudaFree(dEdgeStarSizes));
-            CHECK(cudaFree(dEdgeStarMatrix));
-
-            delete[] hEdgeStarMatrix_;
-            delete[] hEdgeStarSizes_;
             break;
         }
 
         case RelationType::FTRelation:
         {
-            int *dTriangleStarMatrix, *dTriangleStarSizes;
             int triangleIdOffset = hTriangleIntervals_[clusterId - 1];
             int localTriangleSum = hTriangleIntervals_[endCluster] - triangleIdOffset;
-            CHECK(cudaMalloc((void **)&dTriangleStarSizes, sizeof(int) * localTriangleSum));
-            CHECK(cudaMalloc((void **)&dTriangleStarMatrix, sizeof(int) * localTriangleSum * ftColumnNum));
-            CHECK(cudaMemset(dTriangleStarSizes, 0, sizeof(int) * localTriangleSum));
-            CHECK(cudaMemset(dTriangleStarMatrix, -1, sizeof(int) * localTriangleSum * ftColumnNum));
+            CHECK(cudaMemset(relationCompVecs_[0].dSizeArray, 0, sizeof(int) * localTriangleSum));
+            CHECK(cudaMemset(relationCompVecs_[0].dDataArray, -1, sizeof(int) * localTriangleSum * ftColumnNum));
 
             computeTriangleStars<<<numBlocks, blockSize_>>>(
-                dTriangleList_, dTriangleStarMatrix, dTriangleStarSizes,
+                dTriangleList_, relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_,
                 dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            int *hTriangleStarSizes = new int[localTriangleSum];
-            int *hTriangleStarMatrix = new int[localTriangleSum * ftColumnNum];
-
-            CHECK(cudaMemcpy(hTriangleStarSizes, dTriangleStarSizes, sizeof(int) * localTriangleSum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hTriangleStarMatrix, dTriangleStarMatrix, sizeof(int) * localTriangleSum * ftColumnNum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localTriangleSum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hDataArray, relationCompVecs_[0].dDataArray, sizeof(int) * localTriangleSum * ftColumnNum, cudaMemcpyDeviceToHost));
 
             // std::unique_lock<std::mutex> lck(FTMutex_);
             for (int sid = clusterId; sid <= endCluster; ++sid) {
@@ -538,8 +510,8 @@ int Gale::computeRelation(const RelationType relation,
                     triangleStarOffsets[0] = 0;
                     int rfid = hTriangleIntervals_[sid - 1] - triangleIdOffset;
                     for (int fid = 0; fid < localTriangleNum; ++fid) {
-                        triangleStarData.insert(triangleStarData.end(), hTriangleStarMatrix + rfid * ftColumnNum, hTriangleStarMatrix + rfid * ftColumnNum + hTriangleStarSizes[rfid]);
-                        triangleStarOffsets[fid+1] = triangleStarOffsets[fid] + hTriangleStarSizes[rfid];
+                        triangleStarData.insert(triangleStarData.end(), relationCompVecs_[0].hDataArray + rfid * ftColumnNum, relationCompVecs_[0].hDataArray + rfid * ftColumnNum + relationCompVecs_[0].hSizeArray[rfid]);
+                        triangleStarOffsets[fid+1] = triangleStarOffsets[fid] + relationCompVecs_[0].hSizeArray[rfid];
                         ++rfid;
                     }
                     allClusters_[sid].triangleStars_.setData(std::move(triangleStarData), std::move(triangleStarOffsets));
@@ -555,37 +527,26 @@ int Gale::computeRelation(const RelationType relation,
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
 
-            CHECK(cudaFree(dTriangleStarSizes));
-            CHECK(cudaFree(dTriangleStarMatrix));
-            delete[] hTriangleStarMatrix;
-            delete[] hTriangleStarSizes;
-
             break;
         }
 
         case RelationType::VERelation:
         {
-            int *dVertexEdgeMatrix, *dVertexEdgeSizes;
             int vertexIdOffset = hVertexIntervals_[clusterId - 1];
             int localVertexSum = hVertexIntervals_[endCluster] - vertexIdOffset;
-            CHECK(cudaMalloc((void **)&dVertexEdgeSizes, sizeof(int) * localVertexSum));
-            CHECK(cudaMalloc((void **)&dVertexEdgeMatrix, sizeof(int) * localVertexSum * veColumnNum));
-            CHECK(cudaMemset(dVertexEdgeSizes, 0, sizeof(int) * localVertexSum));
-            CHECK(cudaMemset(dVertexEdgeMatrix, -1, sizeof(int) * localVertexSum * veColumnNum));
+            CHECK(cudaMemset(relationCompVecs_[0].dSizeArray, 0, sizeof(int) * localVertexSum));
+            CHECK(cudaMemset(relationCompVecs_[0].dDataArray, -1, sizeof(int) * localVertexSum * veColumnNum));
 
             computeVertexEdges<<<numBlocks, blockSize_>>>(
-                dEdgeList_, dVertexEdgeMatrix, dVertexEdgeSizes,
+                dEdgeList_, relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_, dIndexArray_,
                 dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            int *hVertexEdgeSizes = new int[localVertexSum];
-            int *hVertexEdgeMatrix = new int[localVertexSum * veColumnNum];
-
-            CHECK(cudaMemcpy(hVertexEdgeSizes, dVertexEdgeSizes, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hVertexEdgeMatrix, dVertexEdgeMatrix, sizeof(int) * localVertexSum * veColumnNum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hDataArray, relationCompVecs_[0].dDataArray, sizeof(int) * localVertexSum * veColumnNum, cudaMemcpyDeviceToHost));
 
             // std::unique_lock<std::mutex> lck(VEMutex_);
             for (int sid = clusterId; sid <= endCluster; ++sid) {
@@ -596,8 +557,8 @@ int Gale::computeRelation(const RelationType relation,
                     vertexEdgeOffsets[0] = 0;
                     int rvid = hVertexIntervals_[sid - 1] - vertexIdOffset;
                     for (int vid = 0; vid < localVertexNum; ++vid) {
-                        vertexEdgeData.insert(vertexEdgeData.end(), hVertexEdgeMatrix + rvid * veColumnNum, hVertexEdgeMatrix + rvid * veColumnNum + hVertexEdgeSizes[rvid]);
-                        vertexEdgeOffsets[vid+1] = vertexEdgeOffsets[vid] + hVertexEdgeSizes[rvid];
+                        vertexEdgeData.insert(vertexEdgeData.end(), relationCompVecs_[0].hDataArray + rvid * veColumnNum, relationCompVecs_[0].hDataArray + rvid * veColumnNum + relationCompVecs_[0].hSizeArray[rvid]);
+                        vertexEdgeOffsets[vid+1] = vertexEdgeOffsets[vid] + relationCompVecs_[0].hSizeArray[rvid];
                         ++rvid;
                     }
                     allClusters_[sid].vertexEdges_.setData(std::move(vertexEdgeData), std::move(vertexEdgeOffsets));
@@ -613,37 +574,26 @@ int Gale::computeRelation(const RelationType relation,
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
 
-            CHECK(cudaFree(dVertexEdgeSizes));
-            CHECK(cudaFree(dVertexEdgeMatrix));
-            delete[] hVertexEdgeMatrix;
-            delete[] hVertexEdgeSizes;
-
             break;
         }
 
         case RelationType::VFRelation:
         {
-            int *dVertexTriangleMatrix, *dVertexTriangleSizes;
             int vertexIdOffset = hVertexIntervals_[clusterId - 1];
             int localVertexSum = hVertexIntervals_[endCluster] - vertexIdOffset;
-            CHECK(cudaMalloc((void **)&dVertexTriangleSizes, sizeof(int) * localVertexSum));
-            CHECK(cudaMalloc((void **)&dVertexTriangleMatrix, sizeof(int) * localVertexSum * vfColumnNum));
-            CHECK(cudaMemset(dVertexTriangleSizes, 0, sizeof(int) * localVertexSum));
-            CHECK(cudaMemset(dVertexTriangleMatrix, -1, sizeof(int) * localVertexSum * vfColumnNum));
+            CHECK(cudaMemset(relationCompVecs_[0].dSizeArray, 0, sizeof(int) * localVertexSum));
+            CHECK(cudaMemset(relationCompVecs_[0].dDataArray, -1, sizeof(int) * localVertexSum * vfColumnNum));
 
             computeVertexTriangles<<<numBlocks, blockSize_>>>(
-                dTriangleList_, dVertexTriangleMatrix, dVertexTriangleSizes,
+                dTriangleList_, relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_, dIndexArray_,
                 dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            int *hVertexTriangleSizes = new int[localVertexSum];
-            int *hVertexTriangleMatrix = new int[localVertexSum * vfColumnNum];
-
-            CHECK(cudaMemcpy(hVertexTriangleSizes, dVertexTriangleSizes, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hVertexTriangleMatrix, dVertexTriangleMatrix, sizeof(int) * localVertexSum * vfColumnNum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hDataArray, relationCompVecs_[0].dDataArray, sizeof(int) * localVertexSum * vfColumnNum, cudaMemcpyDeviceToHost));
 
             // std::unique_lock<std::mutex> lck(VFMutex_);
             for (int sid = clusterId; sid <= endCluster; ++sid) {
@@ -654,8 +604,8 @@ int Gale::computeRelation(const RelationType relation,
                     vertexTriangleOffsets[0] = 0;
                     int rvid = hVertexIntervals_[sid - 1] - vertexIdOffset;
                     for (int vid = 0; vid < localVertexNum; ++vid) {
-                        vertexTriangleData.insert(vertexTriangleData.end(), hVertexTriangleMatrix + rvid * vfColumnNum, hVertexTriangleMatrix + rvid * vfColumnNum + hVertexTriangleSizes[rvid]);
-                        vertexTriangleOffsets[vid+1] = vertexTriangleOffsets[vid] + hVertexTriangleSizes[rvid];
+                        vertexTriangleData.insert(vertexTriangleData.end(), relationCompVecs_[0].hDataArray + rvid * vfColumnNum, relationCompVecs_[0].hDataArray + rvid * vfColumnNum + relationCompVecs_[0].hSizeArray[rvid]);
+                        vertexTriangleOffsets[vid+1] = vertexTriangleOffsets[vid] + relationCompVecs_[0].hSizeArray[rvid];
                         ++rvid;
                     }
                     allClusters_[sid].vertexTriangles_.setData(std::move(vertexTriangleData), std::move(vertexTriangleOffsets));
@@ -671,37 +621,26 @@ int Gale::computeRelation(const RelationType relation,
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
 
-            CHECK(cudaFree(dVertexTriangleSizes));
-            CHECK(cudaFree(dVertexTriangleMatrix));
-            delete[] hVertexTriangleMatrix;
-            delete[] hVertexTriangleSizes;
-
             break;
         }
 
         case RelationType::VTRelation:
         {
-            int *dVertexStarMatrix, *dVertexStarSizes;
             int vertexIdOffset = hVertexIntervals_[clusterId - 1];
             int localVertexNum = hVertexIntervals_[endCluster] - vertexIdOffset;
-            CHECK(cudaMalloc((void **)&dVertexStarSizes, sizeof(int) * localVertexNum));
-            CHECK(cudaMalloc((void **)&dVertexStarMatrix, sizeof(int) * localVertexNum * vtColumnNum));
-            CHECK(cudaMemset(dVertexStarSizes, 0, sizeof(int) * localVertexNum));
-            CHECK(cudaMemset(dVertexStarMatrix, -1, sizeof(int) * localVertexNum * vtColumnNum));
+            CHECK(cudaMemset(relationCompVecs_[0].dSizeArray, 0, sizeof(int) * localVertexNum));
+            CHECK(cudaMemset(relationCompVecs_[0].dDataArray, -1, sizeof(int) * localVertexNum * vtColumnNum));
 
             computeVertexStars<<<numBlocks, blockSize_>>>(
-                dVertexStarMatrix, dVertexStarSizes,
+                relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_,
                 dVertexIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            int *hVertexStarSizes = new int[localVertexNum];
-            int *hVertexStarMatrix = new int[localVertexNum * vtColumnNum];
-
-            CHECK(cudaMemcpy(hVertexStarSizes, dVertexStarSizes, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hVertexStarMatrix, dVertexStarMatrix, sizeof(int) * localVertexNum * vtColumnNum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hDataArray, relationCompVecs_[0].dDataArray, sizeof(int) * localVertexNum * vtColumnNum, cudaMemcpyDeviceToHost));
 
             // std::unique_lock<std::mutex> lck(VTMutex_);
             for (int sid = clusterId; sid <= endCluster; ++sid) {
@@ -712,8 +651,8 @@ int Gale::computeRelation(const RelationType relation,
                     vertexStarOffsets[0] = 0;
                     int rvid = hVertexIntervals_[sid - 1] - vertexIdOffset;
                     for (int vid = 0; vid < localVertexNum; ++vid) {
-                        vertexStarData.insert(vertexStarData.end(), hVertexStarMatrix + rvid * vtColumnNum, hVertexStarMatrix + rvid * vtColumnNum + hVertexStarSizes[rvid]);
-                        vertexStarOffsets[vid+1] = vertexStarOffsets[vid] + hVertexStarSizes[rvid];
+                        vertexStarData.insert(vertexStarData.end(), relationCompVecs_[0].hDataArray + rvid * vtColumnNum, relationCompVecs_[0].hDataArray + rvid * vtColumnNum + relationCompVecs_[0].hSizeArray[rvid]);
+                        vertexStarOffsets[vid+1] = vertexStarOffsets[vid] + relationCompVecs_[0].hSizeArray[rvid];
                         ++rvid;
                     }
                     allClusters_[sid].vertexStars_.setData(std::move(vertexStarData), std::move(vertexStarOffsets));
@@ -726,37 +665,26 @@ int Gale::computeRelation(const RelationType relation,
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
 
-            CHECK(cudaFree(dVertexStarSizes));
-            CHECK(cudaFree(dVertexStarMatrix));
-            delete[] hVertexStarMatrix;
-            delete[] hVertexStarSizes;
-
             break;
         }
 
         case RelationType::VVRelation:
         {
-            int *dVertexNeighborMatrix, *dVertexNeighborSizes;
             int vertexIdOffset = hVertexIntervals_[clusterId - 1];
             int localVertexNum = hVertexIntervals_[endCluster] - vertexIdOffset;
-            CHECK(cudaMalloc((void **)&dVertexNeighborSizes, sizeof(int) * localVertexNum));
-            CHECK(cudaMalloc((void **)&dVertexNeighborMatrix, sizeof(int) * localVertexNum * vvColumnNum));
-            CHECK(cudaMemset(dVertexNeighborSizes, 0, sizeof(int) * localVertexNum));
-            CHECK(cudaMemset(dVertexNeighborMatrix, -1, sizeof(int) * localVertexNum * vvColumnNum));
+            CHECK(cudaMemset(relationCompVecs_[0].dSizeArray, 0, sizeof(int) * localVertexNum));
+            CHECK(cudaMemset(relationCompVecs_[0].dDataArray, -1, sizeof(int) * localVertexNum * vvColumnNum));
             
             computeVertexNeighbors<<<numBlocks, blockSize_>>>(
-                dVertexNeighborMatrix, dVertexNeighborSizes,
+                relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
                 dConnectivity_, dOffsets_,
                 dVertexIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            int *hVertexNeighborSizes_ = new int[localVertexNum];
-            int *hVertexNeighborMatrix_ = new int[localVertexNum * vvColumnNum];
-
-            CHECK(cudaMemcpy(hVertexNeighborSizes_, dVertexNeighborSizes, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
-            CHECK(cudaMemcpy(hVertexNeighborMatrix_, dVertexNeighborMatrix, sizeof(int) * localVertexNum * vvColumnNum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
+            CHECK(cudaMemcpy(relationCompVecs_[0].hDataArray, relationCompVecs_[0].dDataArray, sizeof(int) * localVertexNum * vvColumnNum, cudaMemcpyDeviceToHost));
 
             // std::unique_lock<std::mutex> lck(VVMutex_);
             for (int sid = clusterId; sid <= endCluster; ++sid) {
@@ -767,8 +695,8 @@ int Gale::computeRelation(const RelationType relation,
                     vertexNeighborOffsets[0] = 0;
                     int rvid = hVertexIntervals_[sid - 1] - vertexIdOffset;
                     for (int vid = 0; vid < localVertexNum; ++vid) {
-                        vertexNeighborData.insert(vertexNeighborData.end(), hVertexNeighborMatrix_ + rvid * vvColumnNum, hVertexNeighborMatrix_ + rvid * vvColumnNum + hVertexNeighborSizes_[rvid]);
-                        vertexNeighborOffsets[vid+1] = vertexNeighborOffsets[vid] + hVertexNeighborSizes_[rvid];
+                        vertexNeighborData.insert(vertexNeighborData.end(), relationCompVecs_[0].hDataArray + rvid * vvColumnNum, relationCompVecs_[0].hDataArray + rvid * vvColumnNum + relationCompVecs_[0].hSizeArray[rvid]);
+                        vertexNeighborOffsets[vid+1] = vertexNeighborOffsets[vid] + relationCompVecs_[0].hSizeArray[rvid];
                         ++rvid;
                     }
                     allClusters_[sid].vertexNeighbors_.setData(std::move(vertexNeighborData), std::move(vertexNeighborOffsets));
@@ -783,12 +711,7 @@ int Gale::computeRelation(const RelationType relation,
             }
             if (baseClusters_[relationId][threadId] == 0)
                 baseClusters_[relationId][threadId] = clusterId;
-
-            CHECK(cudaFree(dVertexNeighborSizes));
-            CHECK(cudaFree(dVertexNeighborMatrix));
-
-            delete[] hVertexNeighborMatrix_;
-            delete[] hVertexNeighborSizes_;
+            
             break;
         }
 
@@ -1396,7 +1319,7 @@ void Gale::leaderProducer(const int pid) {
         consumerCounters_[pid] = 0;
         RelationComputation relationComp;
         // pre-allocate the memory for the computation
-        int allocatedSize = threadNumber_ * precompClusterNumber_ * 200;
+        int allocatedSize = threadNumber_ * precompClusterNumber_ * 2000;
         CHECK(cudaMallocAsync((void **)&relationComp.dClusterIds, sizeof(int) * threadNumber_, 0));
         CHECK(cudaMallocAsync((void **)&relationComp.dSimplexOffsets, sizeof(int) * threadNumber_, 0));
         switch (preconditionedRelations_[pid]) {
