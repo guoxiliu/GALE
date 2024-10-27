@@ -416,7 +416,7 @@ namespace ttk {
       return 0;
     }
 
-    template <typename dataType, typename triangulationType = AbstractTriangulation>
+    template <typename dataType, typename triangulationType>
     int execute(const triangulationType &triangulation) {
       switch(dimensionality_) {
         case 2:

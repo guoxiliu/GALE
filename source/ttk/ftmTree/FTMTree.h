@@ -44,7 +44,7 @@ namespace ttk {
 
       // Initialize structures then build tree
       // Need triangulation, scalars and all params set before call
-      template <typename scalarType, class triangulationType = AbstractTriangulation>
+      template <typename scalarType, class triangulationType>
       void build(const triangulationType *mesh);
     };
 

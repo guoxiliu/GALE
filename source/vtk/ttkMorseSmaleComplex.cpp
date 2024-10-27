@@ -68,7 +68,7 @@ void setArray(vtkArrayType &vtkArray, vectorType &vector) {
     SetVoidArray(vtkArray, vector.data(), vector.size(), 1);
 }
 
-template <typename scalarType, typename triangulationType = AbstractTriangulation>
+template <typename scalarType, typename triangulationType>
 int dispatch(vtkDataArray *const inputScalars,
             vtkPolyData *const outputCriticalPoints,
             vtkPolyData *const outputSeparatrices1,

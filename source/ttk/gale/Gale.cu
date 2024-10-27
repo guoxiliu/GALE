@@ -1231,7 +1231,8 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
 
     // Get the relation arrays from the GPU
     // (relation, [(tid, clusterId), ...])
-    cudaError_t status = cudaEventSynchronize(endEvent);
+    // cudaError_t status = cudaEventSynchronize(endEvent);
+    cudaError_t status = cudaStreamSynchronize(0);
     if (status != cudaSuccess) {
         fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
             __FILE__, __LINE__); if (abort) exit(status);

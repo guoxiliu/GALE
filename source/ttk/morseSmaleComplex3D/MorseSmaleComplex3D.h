@@ -33,14 +33,14 @@ namespace ttk {
     /**
      * Main function for computing the whole Morse-Smale complex.
      */
-    template <typename dataType, typename triangulationType = AbstractTriangulation>
+    template <typename dataType, typename triangulationType>
     int execute(const triangulationType &triangulation);
 
     /**
      * Compute the descending 1-separatrices by reading into the discrete
      * gradient.
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int getAscendingSeparatrices1(
       const std::vector<dcg::Cell> &criticalPoints,
       std::vector<Separatrix> &separatrices,
@@ -51,7 +51,7 @@ namespace ttk {
      * Compute the saddle-connectors by reading into the discrete
      * gradient.
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int getSaddleConnectors(
       const std::vector<dcg::Cell> &criticalPoints,
       std::vector<Separatrix> &separatrices,
@@ -62,7 +62,7 @@ namespace ttk {
      * Compute the 2-separatrices by reading into the discrete
      * gradient from the maxima.
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int getDescendingSeparatrices2(
       const std::vector<dcg::Cell> &criticalPoints,
       std::vector<Separatrix> &separatrices,
@@ -80,7 +80,7 @@ namespace ttk {
      * outputSeparatrices2_cells_
      * inputScalarField_
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int setDescendingSeparatrices2(
       const std::vector<Separatrix> &separatrices,
       const std::vector<std::vector<dcg::Cell>> &separatricesGeometry,
@@ -92,7 +92,7 @@ namespace ttk {
      *
      * (primal: star of edgeId -> dual: vertices of polygon)
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int getDualPolygon(const SimplexId edgeId,
                        SimplexId *const polygon,
                        const size_t polSize,
@@ -101,7 +101,7 @@ namespace ttk {
     /**
      * Sort the polygon vertices to be clockwise
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int sortDualPolygonVertices(SimplexId *const polygon,
                                 const size_t polSize,
                                 const triangulationType &triangulation) const;
@@ -110,7 +110,7 @@ namespace ttk {
      * Compute the 2-separatrices by reading into the discrete
      * gradient from the minima.
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int getAscendingSeparatrices2(
       const std::vector<dcg::Cell> &criticalPoints,
       std::vector<Separatrix> &separatrices,
@@ -128,7 +128,7 @@ namespace ttk {
      * outputSeparatrices2_cells_
      * inputScalarField_
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int setAscendingSeparatrices2(
       const std::vector<Separatrix> &separatrices,
       const std::vector<std::vector<dcg::Cell>> &separatricesGeometry,
@@ -145,7 +145,7 @@ namespace ttk {
   };
 } // namespace ttk
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::MorseSmaleComplex3D::setAscendingSeparatrices2(
   const std::vector<Separatrix> &separatrices,
   const std::vector<std::vector<dcg::Cell>> &separatricesGeometry,
@@ -395,7 +395,7 @@ int ttk::MorseSmaleComplex3D::setAscendingSeparatrices2(
   return 0;
 }
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::MorseSmaleComplex3D::setDescendingSeparatrices2(
   const std::vector<Separatrix> &separatrices,
   const std::vector<std::vector<dcg::Cell>> &separatricesGeometry,
@@ -605,7 +605,7 @@ int ttk::MorseSmaleComplex3D::setDescendingSeparatrices2(
   return 0;
 }
 
-template <typename dataType, typename triangulationType = AbstractTriangulation>
+template <typename dataType, typename triangulationType>
 int ttk::MorseSmaleComplex3D::execute(const triangulationType &triangulation) {
 #ifndef TTK_ENABLE_KAMIKAZE
   if(!inputScalarField_) {
@@ -779,7 +779,7 @@ int ttk::MorseSmaleComplex3D::execute(const triangulationType &triangulation) {
   return 0;
 }
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::MorseSmaleComplex3D::getAscendingSeparatrices1(
   const std::vector<Cell> &criticalPoints,
   std::vector<Separatrix> &separatrices,
@@ -842,7 +842,7 @@ int ttk::MorseSmaleComplex3D::getAscendingSeparatrices1(
   return 0;
 }
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::MorseSmaleComplex3D::getSaddleConnectors(
   const std::vector<Cell> &criticalPoints,
   std::vector<Separatrix> &separatrices,
@@ -924,7 +924,7 @@ int ttk::MorseSmaleComplex3D::getSaddleConnectors(
   return 0;
 }
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::MorseSmaleComplex3D::getAscendingSeparatrices2(
   const std::vector<Cell> &criticalPoints,
   std::vector<Separatrix> &separatrices,
@@ -977,7 +977,7 @@ int ttk::MorseSmaleComplex3D::getAscendingSeparatrices2(
   return 0;
 }
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::MorseSmaleComplex3D::getDescendingSeparatrices2(
   const std::vector<Cell> &criticalPoints,
   std::vector<Separatrix> &separatrices,
@@ -1030,7 +1030,7 @@ int ttk::MorseSmaleComplex3D::getDescendingSeparatrices2(
   return 0;
 }
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::MorseSmaleComplex3D::getDualPolygon(
   const SimplexId edgeId,
   SimplexId *const polygon,
@@ -1046,7 +1046,7 @@ int ttk::MorseSmaleComplex3D::getDualPolygon(
   return 0;
 }
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::MorseSmaleComplex3D::sortDualPolygonVertices(
   SimplexId *const polygon,
   const size_t polSize,
