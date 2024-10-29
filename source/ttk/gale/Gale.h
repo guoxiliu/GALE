@@ -144,12 +144,12 @@ class Gale final : public AbstractTriangulation {
                 preconditionedRelations_.push_back(RelationType::BERelation);
                 jobQueues_.push_back(std::queue<int>{});
                 producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
-                #ifdef MEASURE_TIME
-                qTimes_.push_back(std::vector<double>{});
-                qSizes_.push_back(std::vector<int>{});
-                kernelTimes_.push_back(std::vector<float>{});
-                returnTimes_.push_back(std::vector<float>{});
-                #endif
+                // #ifdef MEASURE_TIME
+                // qTimes_.push_back(std::vector<double>{});
+                // qSizes_.push_back(std::vector<int>{});
+                // kernelTimes_.push_back(std::vector<float>{});
+                // returnTimes_.push_back(std::vector<float>{});
+                // #endif
             } else {
                 // unsupported dimension
                 printErr("Unsupported dimension for boundary precondition.");
@@ -196,12 +196,12 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::BVRelation);
             jobQueues_.push_back(std::queue<int>{});
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
-            #ifdef MEASURE_TIME
-            qTimes_.push_back(std::vector<double>{});
-            qSizes_.push_back(std::vector<int>{});
-            kernelTimes_.push_back(std::vector<float>{});
-            returnTimes_.push_back(std::vector<float>{});
-            #endif
+            // #ifdef MEASURE_TIME
+            // qTimes_.push_back(std::vector<double>{});
+            // qSizes_.push_back(std::vector<int>{});
+            // kernelTimes_.push_back(std::vector<float>{});
+            // returnTimes_.push_back(std::vector<float>{});
+            // #endif
             return 0;
         }
 
@@ -216,12 +216,12 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::ETRelation);
             jobQueues_.push_back(std::queue<int>{});
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
-            #ifdef MEASURE_TIME
-            qTimes_.push_back(std::vector<double>{});
-            qSizes_.push_back(std::vector<int>{});
-            kernelTimes_.push_back(std::vector<float>{});
-            returnTimes_.push_back(std::vector<float>{});
-            #endif
+            // #ifdef MEASURE_TIME
+            // qTimes_.push_back(std::vector<double>{});
+            // qSizes_.push_back(std::vector<int>{});
+            // kernelTimes_.push_back(std::vector<float>{});
+            // returnTimes_.push_back(std::vector<float>{});
+            // #endif
             return 0;
         }
 
@@ -235,12 +235,12 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::EFRelation);
             jobQueues_.push_back(std::queue<int>{});
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
-            #ifdef MEASURE_TIME
-            qTimes_.push_back(std::vector<double>{});
-            qSizes_.push_back(std::vector<int>{});
-            kernelTimes_.push_back(std::vector<float>{});
-            returnTimes_.push_back(std::vector<float>{});
-            #endif
+            // #ifdef MEASURE_TIME
+            // qTimes_.push_back(std::vector<double>{});
+            // qSizes_.push_back(std::vector<int>{});
+            // kernelTimes_.push_back(std::vector<float>{});
+            // returnTimes_.push_back(std::vector<float>{});
+            // #endif
             return 0;
         }
 
@@ -255,12 +255,12 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::FTRelation);
             jobQueues_.push_back(std::queue<int>{});
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
-            #ifdef MEASURE_TIME
-            qTimes_.push_back(std::vector<double>{});
-            qSizes_.push_back(std::vector<int>{});
-            kernelTimes_.push_back(std::vector<float>{});
-            returnTimes_.push_back(std::vector<float>{});
-            #endif
+            // #ifdef MEASURE_TIME
+            // qTimes_.push_back(std::vector<double>{});
+            // qSizes_.push_back(std::vector<int>{});
+            // kernelTimes_.push_back(std::vector<float>{});
+            // returnTimes_.push_back(std::vector<float>{});
+            // #endif
             return 0;
         }
 
@@ -274,12 +274,12 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::VERelation);
             jobQueues_.push_back(std::queue<int>{});
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
-            #ifdef MEASURE_TIME
-            qTimes_.push_back(std::vector<double>{});
-            qSizes_.push_back(std::vector<int>{});
-            kernelTimes_.push_back(std::vector<float>{});
-            returnTimes_.push_back(std::vector<float>{});
-            #endif
+            // #ifdef MEASURE_TIME
+            // qTimes_.push_back(std::vector<double>{});
+            // qSizes_.push_back(std::vector<int>{});
+            // kernelTimes_.push_back(std::vector<float>{});
+            // returnTimes_.push_back(std::vector<float>{});
+            // #endif
             return 0;
         }
 
@@ -293,12 +293,12 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::VVRelation);
             jobQueues_.push_back(std::queue<int>{});
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
-            #ifdef MEASURE_TIME
-            qTimes_.push_back(std::vector<double>{});
-            qSizes_.push_back(std::vector<int>{});
-            kernelTimes_.push_back(std::vector<float>{});
-            returnTimes_.push_back(std::vector<float>{});
-            #endif
+            // #ifdef MEASURE_TIME
+            // qTimes_.push_back(std::vector<double>{});
+            // qSizes_.push_back(std::vector<int>{});
+            // kernelTimes_.push_back(std::vector<float>{});
+            // returnTimes_.push_back(std::vector<float>{});
+            // #endif
             return 0;
         }
 
@@ -312,12 +312,12 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::VTRelation);
             jobQueues_.push_back(std::queue<int>{});
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
-            #ifdef MEASURE_TIME
-            qTimes_.push_back(std::vector<double>{});
-            qSizes_.push_back(std::vector<int>{});
-            kernelTimes_.push_back(std::vector<float>{});
-            returnTimes_.push_back(std::vector<float>{});
-            #endif
+            // #ifdef MEASURE_TIME
+            // qTimes_.push_back(std::vector<double>{});
+            // qSizes_.push_back(std::vector<int>{});
+            // kernelTimes_.push_back(std::vector<float>{});
+            // returnTimes_.push_back(std::vector<float>{});
+            // #endif
             return 0;
         }
 
@@ -331,12 +331,12 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::VFRelation);
             jobQueues_.push_back(std::queue<int>{});
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
-            #ifdef MEASURE_TIME
-            qTimes_.push_back(std::vector<double>{});
-            qSizes_.push_back(std::vector<int>{});
-            kernelTimes_.push_back(std::vector<float>{});
-            returnTimes_.push_back(std::vector<float>{});
-            #endif
+            // #ifdef MEASURE_TIME
+            // qTimes_.push_back(std::vector<double>{});
+            // qSizes_.push_back(std::vector<int>{});
+            // kernelTimes_.push_back(std::vector<float>{});
+            // returnTimes_.push_back(std::vector<float>{});
+            // #endif
             return 0;
         }
 
@@ -538,13 +538,10 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
+                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -570,14 +567,7 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
-                #ifdef MEASURE_TIME
                 sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
-                #endif
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
@@ -601,6 +591,10 @@ class Gale final : public AbstractTriangulation {
                     }
                 }
                 consumerCounters_[curStream].fetch_sub(1);
+                #ifdef MEASURE_TIME
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
             return allClusters_[segId].edgeStars_.size(localEdgeId);
@@ -629,13 +623,10 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
+                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -660,14 +651,7 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
-                #ifdef MEASURE_TIME
                 sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
-                #endif
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
@@ -691,6 +675,10 @@ class Gale final : public AbstractTriangulation {
                     }
                 }
                 consumerCounters_[curStream].fetch_sub(1);
+                #ifdef MEASURE_TIME
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
             return allClusters_[segId].edgeTriangles_.size(localEdgeId);
@@ -777,13 +765,10 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
+                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -808,14 +793,7 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
-                #ifdef MEASURE_TIME
                 sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
-                #endif
                 // waitings_[tid] = 0;
                 
                 // copy the data from GPU to CPU
@@ -839,6 +817,10 @@ class Gale final : public AbstractTriangulation {
                     }
                 }
                 consumerCounters_[curStream].fetch_sub(1);
+                #ifdef MEASURE_TIME
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                #endif
             }
             SimplexId localTriangleId = triangleId - hTriangleIntervals_[segId - 1];
             return allClusters_[segId].triangleStars_.size(localTriangleId);
@@ -878,13 +860,10 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
+                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -910,14 +889,7 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
-                #ifdef MEASURE_TIME
                 sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
-                #endif
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
@@ -941,6 +913,10 @@ class Gale final : public AbstractTriangulation {
                     }
                 }
                 consumerCounters_[curStream].fetch_sub(1);
+                #ifdef MEASURE_TIME
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
             return allClusters_[segId].vertexNeighbors_.size(localVertexId);
@@ -970,13 +946,10 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
+                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -1001,14 +974,7 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
-                #ifdef MEASURE_TIME
                 sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
-                #endif
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
@@ -1032,6 +998,10 @@ class Gale final : public AbstractTriangulation {
                     }
                 }
                 consumerCounters_[curStream].fetch_sub(1);
+                #ifdef MEASURE_TIME
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
             return allClusters_[segId].vertexEdges_.size(localVertexId);
@@ -1061,13 +1031,10 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
+                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -1092,14 +1059,7 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
-                #ifdef MEASURE_TIME
                 sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
-                #endif
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
@@ -1123,6 +1083,10 @@ class Gale final : public AbstractTriangulation {
                     }
                 }
                 consumerCounters_[curStream].fetch_sub(1);
+                #ifdef MEASURE_TIME
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
             return allClusters_[segId].vertexStars_.size(localVertexId);
@@ -1151,13 +1115,10 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
+                sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
                 #endif
                 // waitings_[tid] = 0;
             }
@@ -1182,14 +1143,7 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
-                #ifdef MEASURE_TIME
                 sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
-                #endif
                 // waitings_[tid] = 0;
                 
                 // copy the data from GPU to CPU
@@ -1213,6 +1167,10 @@ class Gale final : public AbstractTriangulation {
                     }
                 }
                 consumerCounters_[curStream].fetch_sub(1);
+                #ifdef MEASURE_TIME
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
             return allClusters_[segId].vertexTriangles_.size(localVertexId);
@@ -1249,14 +1207,7 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
-                #ifdef MEASURE_TIME
                 sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
-                #endif
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
@@ -1274,6 +1225,10 @@ class Gale final : public AbstractTriangulation {
                     }
                 }
                 consumerCounters_[curStream].fetch_sub(1);
+                #ifdef MEASURE_TIME
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
             return allClusters_[segId].boundaryEdges_.at(localEdgeId);
@@ -1314,14 +1269,7 @@ class Gale final : public AbstractTriangulation {
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
                 jobQueues_[qid].push(tid);
                 qlock.unlock();
-                #ifdef MEASURE_TIME
                 sem_wait(&relationSems_[tid]);
-                consumerTimes_[tid].push_back(timers_[tid].getElapsedTime());
-                // waitingCounts_[tid][currRelations_[tid]]++;
-                // waitingTimes_[tid][currRelations_[tid]] += timers_[tid].getElapsedTime();
-                #else
-                sem_wait(&relationSems_[tid]);
-                #endif
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
@@ -1339,6 +1287,10 @@ class Gale final : public AbstractTriangulation {
                     }
                 }
                 consumerCounters_[curStream].fetch_sub(1);
+                #ifdef MEASURE_TIME
+                waitingCounts_[tid]++;
+                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
             return allClusters_[segId].boundaryVertices_.at(localVertexId);
@@ -1428,15 +1380,15 @@ class Gale final : public AbstractTriangulation {
         mutable std::vector<std::queue<int>> jobQueues_;
         #ifdef MEASURE_TIME
         mutable std::vector<Timer> timers_;
-        mutable std::vector<std::vector<double>> consumerTimes_;
-        // mutable std::vector<double> waitingTimes_;
-        // mutable std::vector<int> waitingCounts_;
-        mutable std::vector<std::unordered_map<RelationType, int>> waitingCounts_;
-        mutable std::vector<std::unordered_map<RelationType, double>> waitingTimes_;
-        std::vector<std::vector<int>> qSizes_;
-        std::vector<std::vector<float>> kernelTimes_;
-        std::vector<std::vector<float>> returnTimes_;
-        std::vector<std::vector<double>> qTimes_;
+        // mutable std::vector<std::vector<double>> consumerTimes_;
+        mutable std::vector<double> waitingTimes_;
+        mutable std::vector<int> waitingCounts_;
+        // mutable std::vector<std::unordered_map<RelationType, int>> waitingCounts_;
+        // mutable std::vector<std::unordered_map<RelationType, double>> waitingTimes_;
+        // std::vector<std::vector<int>> qSizes_;
+        // std::vector<std::vector<float>> kernelTimes_;
+        // std::vector<std::vector<float>> returnTimes_;
+        // std::vector<std::vector<double>> qTimes_;
         #endif
     };
 }
