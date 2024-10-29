@@ -29,11 +29,10 @@ Gale::Gale(int tnum, int tnumPerCluster) {
     }
     #ifdef MEASURE_TIME
     timers_ = std::vector<Timer>(threadNumber_);
-    // waitingTimes_ = std::vector<double>(threadNumber_, 0);
-    // waitingCounts_ = std::vector<int>(threadNumber_, 0);
-    waitingTimes_.resize(threadNumber_);
-    waitingCounts_.resize(threadNumber_);
-    consumerTimes_.resize(threadNumber_);
+    waitingTimes_ = std::vector<double>(threadNumber_, 0);
+    waitingCounts_ = std::vector<int>(threadNumber_, 0);
+    // waitingTimes_.resize(threadNumber_);
+    // waitingCounts_.resize(threadNumber_);
     #endif
 
     // GPU parameters
@@ -61,21 +60,21 @@ Gale::~Gale() {
     //         // std::cout << static_cast<int>(e.first) << " missing counts: " << e.second << ", waiting time: " << waitingTimes_[i].at(e.first) << "; ";
     //     }
     //     std::cout << std::endl;
-    //     // std::cout << "waiting count " << i << ": " << waitingCounts_[i] << ", waiting time: " << waitingTimes_[i] << std::endl;
     // }
     
     // time for consumer thread to wait for the relation 
     for (int i = 0; i < threadNumber_; ++i) {
-        for (int j = 0; j < consumerTimes_[i].size(); ++j) {
-            std::cout << "consumer " << i << ": " << consumerTimes_[i][j] << std::endl;
-        }
+        // for (int j = 0; j < consumerTimes_[i].size(); ++j) {
+        //     std::cout << "consumer " << i << ": " << consumerTimes_[i][j] << std::endl;
+        // }
+        std::cout << "consumer " << i << ": " << waitingTimes_[i] << ", " << waitingCounts_[i] << std::endl;
     }
 
-    for (int i = 0; i < producers_.size(); ++i) {
-        for (int j = 0; j < qSizes_[i].size(); ++j) {
-            std::cout << "queue length: " << qSizes_[i][j] << ", total time: " << qTimes_[i][j] << ", kernel time: " << kernelTimes_[i][j] << ", return time: " << returnTimes_[i][j] << std::endl;
-        }
-    }
+    // for (int i = 0; i < producers_.size(); ++i) {
+    //     for (int j = 0; j < qSizes_[i].size(); ++j) {
+    //         std::cout << "queue length: " << qSizes_[i][j] << ", total time: " << qTimes_[i][j] << ", kernel time: " << kernelTimes_[i][j] << ", return time: " << returnTimes_[i][j] << std::endl;
+    //     }
+    // }
 
     #endif
 
@@ -736,13 +735,13 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
 
     int res = 0;
 
-    #ifdef MEASURE_TIME
-    float kernelTime = 0, returnTime = 0;
-    cudaEvent_t startEvent;
-    cudaEvent_t endEvent;
-    cudaEventCreate(&startEvent);
-    cudaEventCreate(&endEvent);
-    #endif
+    // #ifdef MEASURE_TIME
+    // float kernelTime = 0, returnTime = 0;
+    // cudaEvent_t startEvent;
+    // cudaEvent_t endEvent;
+    // cudaEventCreate(&startEvent);
+    // cudaEventCreate(&endEvent);
+    // #endif
 
     // launch GPU kernels for the topological relation
     RelationType &relation = preconditionedRelations_[producerId];
@@ -979,9 +978,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, -1, sizeof(int) * localVertexSum * veColumnNum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
-            #ifdef MEASURE_TIME
-            cudaEventRecord(startEvent);
-            #endif
+            // #ifdef MEASURE_TIME
+            // cudaEventRecord(startEvent);
+            // #endif
             computeMultiVertexEdges<<<dimBlock, blockSize_>>>(
                 dEdgeList_, relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
@@ -990,9 +989,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            #ifdef MEASURE_TIME
-            cudaEventRecord(endEvent);
-            #endif
+            // #ifdef MEASURE_TIME
+            // cudaEventRecord(endEvent);
+            // #endif
             
             while (consumerCounters_[producerId].load() > 0) {
                 // busy wait, can use a sleep to reduce the CPU usage
@@ -1028,9 +1027,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, -1, sizeof(int) * localVertexSum * vfColumnNum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
-            #ifdef MEASURE_TIME
-            cudaEventRecord(startEvent);
-            #endif
+            // #ifdef MEASURE_TIME
+            // cudaEventRecord(startEvent);
+            // #endif
             computeMultiVertexTriangles<<<dimBlock, blockSize_>>>(
                 dTriangleList_, relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
@@ -1039,9 +1038,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            #ifdef MEASURE_TIME
-            cudaEventRecord(startEvent);
-            #endif
+            // #ifdef MEASURE_TIME
+            // cudaEventRecord(startEvent);
+            // #endif
 
             while (consumerCounters_[producerId].load() > 0) {
                 // busy wait, can use a sleep to reduce the CPU usage
@@ -1075,9 +1074,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, -1, sizeof(int) * localVertexSum * vtColumnNum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
-            #ifdef MEASURE_TIME
-            cudaEventRecord(startEvent);
-            #endif
+            // #ifdef MEASURE_TIME
+            // cudaEventRecord(startEvent);
+            // #endif
             computeMultiVertexStars<<<dimBlock, blockSize_>>>(
                 relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
@@ -1085,9 +1084,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 dVertexIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
-            #ifdef MEASURE_TIME
-            cudaEventRecord(endEvent);
-            #endif
+            // #ifdef MEASURE_TIME
+            // cudaEventRecord(endEvent);
+            // #endif
 
             while (consumerCounters_[producerId].load() > 0) {
                 // busy wait, can use a sleep to reduce the CPU usage
@@ -1121,9 +1120,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, -1, sizeof(int) * localVertexSum * vvColumnNum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
-            #ifdef MEASURE_TIME
-            cudaEventRecord(startEvent);
-            #endif
+            // #ifdef MEASURE_TIME
+            // cudaEventRecord(startEvent);
+            // #endif
             computeMultiVertexNeighbors<<<dimBlock, blockSize_>>>(
                 relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
@@ -1131,9 +1130,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 dVertexIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
-            #ifdef MEASURE_TIME
-            cudaEventRecord(endEvent);
-            #endif
+            // #ifdef MEASURE_TIME
+            // cudaEventRecord(endEvent);
+            // #endif
 
             while (consumerCounters_[producerId].load() > 0) {
                 // busy wait, can use a sleep to reduce the CPU usage
@@ -1154,18 +1153,18 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
 
     // Get the relation arrays from the GPU
     // (relation, [(tid, clusterId), ...])
-    #ifdef MEASURE_TIME
-    cudaError_t status = cudaEventSynchronize(endEvent);
+    cudaError_t status = cudaStreamSynchronize(0);
     if (status != cudaSuccess) {
         fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
             __FILE__, __LINE__); if (abort) exit(status);
     }
 
-    float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, startEvent, endEvent);
-    kernelTime += milliseconds;
-    Timer tmp;
-    #endif
+    // #ifdef MEASURE_TIME
+    // float milliseconds = 0;
+    // cudaEventElapsedTime(&milliseconds, startEvent, endEvent);
+    // kernelTime += milliseconds;
+    // Timer tmp;
+    // #endif
 
     for (int i = 0; i < threadNum; ++i) {
         SimplexId tid = threadIds[i];
@@ -1175,14 +1174,12 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
         if (baseClusters_[relationId][tid] == 0)
             baseClusters_[relationId][tid] = baseClusterId;
     }
-    #ifdef MEASURE_TIME
-    returnTime += tmp.getElapsedTime();
-    #endif
 
-    #ifdef MEASURE_TIME
-    kernelTimes_[producerId].push_back(kernelTime/1000);    // convert to seconds
-    returnTimes_[producerId].push_back(returnTime);
-    #endif
+    // #ifdef MEASURE_TIME
+    // returnTime += tmp.getElapsedTime();
+    // kernelTimes_[producerId].push_back(kernelTime/1000);    // convert to seconds
+    // returnTimes_[producerId].push_back(returnTime);
+    // #endif
     
     return res;
 }
@@ -1395,10 +1392,10 @@ void Gale::leaderProducer(const int pid) {
                 // handle the waiting threadIds in the queue
                 // combine the requests from all waiting consumers
                 computeCombinedRelation(localQ, pid);
-                #ifdef MEASURE_TIME
-                qTimes_[pid].push_back(t.getElapsedTime());
-                qSizes_[pid].push_back(localQ.size());
-                #endif
+                // #ifdef MEASURE_TIME
+                // qTimes_[pid].push_back(t.getElapsedTime());
+                // qSizes_[pid].push_back(localQ.size());
+                // #endif
             }
             else {
                 // clean the memory storage
