@@ -527,7 +527,6 @@ class Gale final : public AbstractTriangulation {
             
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[edgeList_[edgeId][0]];
-            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].edgeStars_.empty()) {
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
@@ -559,6 +558,7 @@ class Gale final : public AbstractTriangulation {
 
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].edgeStars_.empty()) {
+                readLock.unlock();
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
@@ -612,7 +612,6 @@ class Gale final : public AbstractTriangulation {
         
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[edgeList_[edgeId][0]];
-            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].edgeTriangles_.empty()) {
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
@@ -643,6 +642,7 @@ class Gale final : public AbstractTriangulation {
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::EFRelation;
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].edgeTriangles_.empty()) {
+                readLock.unlock();
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
@@ -754,7 +754,6 @@ class Gale final : public AbstractTriangulation {
 
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[triangleList_[triangleId][0]];
-            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].triangleStars_.empty()) {
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
@@ -785,6 +784,7 @@ class Gale final : public AbstractTriangulation {
             currClusters_[tid] = hIndexArray_[triangleList_[triangleId][0]], currRelations_[tid] = RelationType::FTRelation;
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].triangleStars_.empty()) {
+                readLock.unlock();
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
@@ -847,9 +847,7 @@ class Gale final : public AbstractTriangulation {
             const int &localNeighborId, SimplexId &neighborId) const override {
 
             SimplexId segId = hIndexArray_[vertexId];
-            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].vertexNeighbors_.empty()) {
-                readLock.unlock();
                 int tid = omp_get_thread_num();
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
@@ -934,9 +932,7 @@ class Gale final : public AbstractTriangulation {
 
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[vertexId];
-            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].vertexEdges_.empty()) {
-                readLock.unlock();
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
@@ -966,6 +962,7 @@ class Gale final : public AbstractTriangulation {
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::VERelation;
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].vertexEdges_.empty()) {
+                readLock.unlock();
                 // waitings_[tid] = 1;
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
@@ -1018,7 +1015,6 @@ class Gale final : public AbstractTriangulation {
             const int &localStarId, SimplexId &starId) const override {
             
             SimplexId segId = hIndexArray_[vertexId];
-            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].vertexStars_.empty()) {
                 int tid = omp_get_thread_num();
                 #ifdef MEASURE_TIME
@@ -1051,6 +1047,7 @@ class Gale final : public AbstractTriangulation {
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::VTRelation;
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].vertexStars_.empty()) {
+                readLock.unlock();
                 // waitings_[tid] = 1;
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
@@ -1104,7 +1101,6 @@ class Gale final : public AbstractTriangulation {
 
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[vertexId];
-            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].vertexTriangles_.empty()) {
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
@@ -1135,6 +1131,7 @@ class Gale final : public AbstractTriangulation {
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::VFRelation;
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].vertexTriangles_.empty()) {
+                readLock.unlock();
                 // waitings_[tid] = 1;
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
@@ -1199,6 +1196,7 @@ class Gale final : public AbstractTriangulation {
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::BERelation;
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].boundaryEdges_.empty()) {
+                readLock.unlock();
                 // waitings_[tid] = 1;
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
@@ -1261,6 +1259,7 @@ class Gale final : public AbstractTriangulation {
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::BVRelation;
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].boundaryVertices_.empty()) {
+                readLock.unlock();
                 // waitings_[tid] = 1;
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
