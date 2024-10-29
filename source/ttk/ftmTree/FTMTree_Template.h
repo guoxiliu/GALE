@@ -27,7 +27,7 @@
 // PROCESS
 // -------
 
-template <typename scalarType, class triangulationType = AbstractTriangulation>
+template <typename scalarType, class triangulationType>
 void ttk::ftm::FTMTree::build(const triangulationType *mesh) {
   // -----
   // INPUT

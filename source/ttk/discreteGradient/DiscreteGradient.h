@@ -356,14 +356,14 @@ saddle-connectors.
        * Compute the initial gradient field of the input scalar function on the
 triangulation.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int buildGradient(const triangulationType &triangulation);
 
       /**
        * Automatic detection of the PL critical points and simplification
 according to them.
        */
-      template <typename dataType, typename triangulationType = AbstractTriangulation>
+      template <typename dataType, typename triangulationType>
       int reverseGradient(const triangulationType &triangulation,
                           const bool detectCriticalPoints = true);
 
@@ -371,7 +371,7 @@ according to them.
        * Compute the (saddle1, saddle2) pairs not detected by the
        * contour tree.
        */
-      template <typename dataType, typename triangulationType = AbstractTriangulation>
+      template <typename dataType, typename triangulationType>
       void computeSaddleSaddlePersistencePairs(
         std::vector<std::tuple<SimplexId, SimplexId, dataType>>
           &pl_saddleSaddlePairs,
@@ -446,14 +446,14 @@ triangulation (equal to dimensionality+1).
       /**
        * Get the number of cells of the given dimension.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       SimplexId getNumberOfCells(const int dimension,
                                  const triangulationType &triangulation) const;
 
       /**
        * Return true if the given cell is at boundary, false otherwise.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       bool isBoundary(const Cell &cell,
                       const triangulationType &triangulation) const;
 
@@ -468,7 +468,7 @@ discrete gradient, false otherwise.
        * Return the identifier of the cell paired to the cell given by the user
 in the gradient.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       SimplexId getPairedCell(const Cell &cell,
                               const triangulationType &triangulation,
                               bool isReverse = false) const;
@@ -476,7 +476,7 @@ in the gradient.
       /**
        * Return the VPath coming from the given cell.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int getAscendingPath(const Cell &cell,
                            std::vector<Cell> &vpath,
                            const triangulationType &triangulation,
@@ -485,7 +485,7 @@ in the gradient.
       /**
        * Return the VPath terminating at the given cell.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int getDescendingPath(const Cell &cell,
                             std::vector<Cell> &vpath,
                             const triangulationType &triangulation) const;
@@ -494,7 +494,7 @@ in the gradient.
        * Return the VPath terminating at the given 2-saddle restricted to the
 2-separatrice of the 1-saddle.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       bool getDescendingPathThroughWall(const Cell &saddle2,
                                         const Cell &saddle1,
                                         const std::vector<bool> &isVisited,
@@ -508,7 +508,7 @@ in the gradient.
        * Return the VPath coming from the given 1-saddle restricted to the
 2-separatrice of the 2-saddle.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       bool getAscendingPathThroughWall(const Cell &saddle1,
                                        const Cell &saddle2,
                                        const std::vector<bool> &isVisited,
@@ -521,7 +521,7 @@ in the gradient.
       /**
        * Return the 2-separatrice terminating at the given 2-saddle.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int getDescendingWall(const Cell &cell,
                             VisitedMask &mask,
                             const triangulationType &triangulation,
@@ -531,7 +531,7 @@ in the gradient.
       /**
        * Return the 2-separatrice coming from the given 1-saddle.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int getAscendingWall(const Cell &cell,
                            VisitedMask &mask,
                            const triangulationType &triangulation,
@@ -542,7 +542,7 @@ in the gradient.
        * Get the vertex id of with the maximum scalar field value on
        * the given cell.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       SimplexId
         getCellGreaterVertex(const Cell c,
                              const triangulationType &triangulation) const;
@@ -551,7 +551,7 @@ in the gradient.
        * Get the vertex id of with the minimum scalar field value on
        * the given cell.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       SimplexId
         getCellLowerVertex(const Cell c,
                            const triangulationType &triangulation) const;
@@ -564,7 +564,7 @@ in the gradient.
        * outputCriticalPoints_points_
        * inputScalarField_
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int setCriticalPoints(const std::vector<Cell> &criticalPoints,
                             std::vector<size_t> &nCriticalPointsByDim,
                             std::vector<std::array<float, 3>> &points,
@@ -578,7 +578,7 @@ in the gradient.
        * Detect the critical points and build their geometric embedding.
        * The output vectors are modified accordingly.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int setCriticalPoints(std::vector<std::array<float, 3>> &points,
                             std::vector<char> &cellDimensions,
                             std::vector<SimplexId> &cellIds,
@@ -589,7 +589,7 @@ in the gradient.
       /**
        * Get the output critical points as a STL vector of cells.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int getCriticalPoints(std::vector<Cell> &criticalPoints,
                             const triangulationType &triangulation) const;
 
@@ -606,7 +606,7 @@ in the gradient.
       /**
        * Build the glyphs representing the discrete gradient vector field.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int setGradientGlyphs(std::vector<std::array<float, 3>> &points,
                             std::vector<char> &points_pairOrigins,
                             std::vector<char> &cells_pairTypes,
@@ -627,7 +627,7 @@ in the gradient.
        * @return Lower star as 4 sets of cells (0-cells, 1-cells, 2-cells and
        * 3-cells)
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       inline void lowerStar(lowerStarType &ls,
                             const SimplexId a,
                             const SimplexId *const offsets,
@@ -662,7 +662,7 @@ in the gradient.
        * @param[in] alpha Cell of lower dimension
        * @param[in] beta Cell of higher dimension
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       inline void pairCells(CellExt &alpha,
                             CellExt &beta,
                             const triangulationType &triangulation);
@@ -673,14 +673,14 @@ in the gradient.
        * Grayscale Digital Images", V. Robins, P. J. Wood,
        * A. P. Sheppard
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int processLowerStars(const SimplexId *const offsets,
                             const triangulationType &triangulation);
 
       /**
        * Compute the difference of function values of a pair of cells.
        */
-      template <typename dataType, typename triangulationType = AbstractTriangulation>
+      template <typename dataType, typename triangulationType>
       dataType getPersistence(const Cell &up,
                               const Cell &down,
                               const dataType *const scalars,
@@ -689,7 +689,7 @@ in the gradient.
       /**
        * Get the list of maxima candidates for simplification.
        */
-      template <typename dataType, typename triangulationType = AbstractTriangulation>
+      template <typename dataType, typename triangulationType>
       int getRemovableMaxima(
         const std::vector<std::pair<SimplexId, char>> &criticalPoints,
         const bool allowBoundary,
@@ -700,7 +700,7 @@ in the gradient.
       /**
        * Get the list of 1-saddles candidates for simplification.
        */
-      template <typename dataType, typename triangulationType = AbstractTriangulation>
+      template <typename dataType, typename triangulationType>
       int getRemovableSaddles1(
         const std::vector<std::pair<SimplexId, char>> &criticalPoints,
         const bool allowBoundary,
@@ -711,7 +711,7 @@ in the gradient.
       /**
        * Get the list of 2-saddles candidates for simplification.
        */
-      template <typename dataType, typename triangulationType = AbstractTriangulation>
+      template <typename dataType, typename triangulationType>
       int getRemovableSaddles2(
         const std::vector<std::pair<SimplexId, char>> &criticalPoints,
         const bool allowBoundary,
@@ -724,7 +724,7 @@ in the gradient.
 (2-saddle,...,1-saddle) vpaths
        * to the simplification process.
        */
-      template <typename dataType, typename triangulationType = AbstractTriangulation>
+      template <typename dataType, typename triangulationType>
       int initializeSaddleSaddleConnections1(
         const std::vector<char> &isRemovableSaddle1,
         const std::vector<char> &isRemovableSaddle2,
@@ -749,7 +749,7 @@ in the gradient.
        * Core of the simplification process, modify the gradient and
        * reverse the selected (2-saddle,...,1-saddle) vpaths to simplify.
        */
-      template <typename dataType, typename triangulationType = AbstractTriangulation>
+      template <typename dataType, typename triangulationType>
       int processSaddleSaddleConnections1(
         const int iterationThreshold,
         const std::vector<char> &isPL,
@@ -772,7 +772,7 @@ in the gradient.
        * High-level function that manages the global simplification of
 (2-saddle,...,1-saddle) vpaths.
        */
-      template <typename dataType, typename triangulationType = AbstractTriangulation>
+      template <typename dataType, typename triangulationType>
       int simplifySaddleSaddleConnections1(
         const std::vector<std::pair<SimplexId, char>> &criticalPoints,
         const std::vector<char> &isPL,
@@ -787,7 +787,7 @@ in the gradient.
 (1-saddle,...,2-saddle) vpaths
        * to the simplification process.
        */
-      template <typename dataType, typename triangulationType = AbstractTriangulation>
+      template <typename dataType, typename triangulationType>
       int initializeSaddleSaddleConnections2(
         const std::vector<char> &isRemovableSaddle1,
         const std::vector<char> &isRemovableSaddle2,
@@ -812,7 +812,7 @@ in the gradient.
        * Core of the simplification process, modify the gradient and
        * reverse the selected (1-saddle,...,2-saddle) vpaths to simplify.
        */
-      template <typename dataType, typename triangulationType = AbstractTriangulation>
+      template <typename dataType, typename triangulationType>
       int processSaddleSaddleConnections2(
         const int iterationThreshold,
         const std::vector<char> &isPL,
@@ -835,7 +835,7 @@ in the gradient.
        * High-level function that manages the global simplification of
 (1-saddle,...,2-saddle) vpaths.
        */
-      template <typename dataType, typename triangulationType = AbstractTriangulation>
+      template <typename dataType, typename triangulationType>
       int simplifySaddleSaddleConnections2(
         const std::vector<std::pair<SimplexId, char>> &criticalPoints,
         const std::vector<char> &isPL,
@@ -856,7 +856,7 @@ in the gradient.
        * Process the saddle connectors by increasing value of persistence until
 a given threshold is met.
        */
-      template <typename dataType, typename triangulationType = AbstractTriangulation>
+      template <typename dataType, typename triangulationType>
       int filterSaddleConnectors(const bool allowBoundary,
                                  const triangulationType &triangulation);
 
@@ -887,28 +887,28 @@ gradient, false otherwise.
       /**
        * Reverse the given ascending VPath.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int reverseAscendingPath(const std::vector<Cell> &vpath,
                                const triangulationType &triangulation);
 
       /**
        * Reverse the given descending VPath.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int reverseDescendingPath(const std::vector<Cell> &vpath,
                                 const triangulationType &triangulation);
 
       /**
        * Reverse the given ascending VPath restricted on a 2-separatrice.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int reverseAscendingPathOnWall(const std::vector<Cell> &vpath,
                                      const triangulationType &triangulation);
 
       /**
        * Reverse the given descending VPath restricted on a 2-separatrice.
        */
-      template <typename triangulationType = AbstractTriangulation>
+      template <typename triangulationType>
       int reverseDescendingPathOnWall(const std::vector<Cell> &vpath,
                                       const triangulationType &triangulation);
 
