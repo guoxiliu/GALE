@@ -747,7 +747,7 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
     RelationType &relation = preconditionedRelations_[producerId];
     int threadNum = threadIds.size();
     std::vector<SimplexId> hEndClusters(threadNum);
-    int *hSimplexOffsets = new int[threadNum];
+    int hSimplexOffsets[threadNum];
 
     // launches kernels on different streams
     switch (relation) {
@@ -785,7 +785,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             }
             consumerCounters_[producerId] = threadNum;
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
-            delete[] hSimplexOffsets;
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
             break;
@@ -825,7 +824,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             }
             consumerCounters_[producerId] = threadNum;
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
-            delete[] hSimplexOffsets;
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
             break;
@@ -842,8 +840,8 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 hClusterIds[i] = currClusters_[threadIds[i]];
                 hEndClusters[i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
                 // maxEndCluster = std::max(hEndClusters[i], maxEndCluster);
-                int localEdgeNums = hEdgeIntervals_[hEndClusters[i]] - hEdgeIntervals_[hClusterIds[i] - 1];
-                localEdgeSum += localEdgeNums;
+                int localEdgeNum = hEdgeIntervals_[hEndClusters[i]] - hEdgeIntervals_[hClusterIds[i] - 1];
+                localEdgeSum += localEdgeNum;
             }
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].dSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum, cudaMemcpyHostToDevice));
@@ -866,7 +864,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             }
             consumerCounters_[producerId] = threadNum;
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
-            delete[] hSimplexOffsets;
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localEdgeSum * efColumnNum, cudaMemcpyDeviceToHost));
@@ -884,8 +881,8 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 hClusterIds[i] = currClusters_[threadIds[i]];
                 hEndClusters[i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
                 // maxEndCluster = std::max(hEndClusters[i], maxEndCluster);
-                int localEdgeNums = hEdgeIntervals_[hEndClusters[i]] - hEdgeIntervals_[hClusterIds[i] - 1];
-                localEdgeSum += localEdgeNums;
+                int localEdgeNum = hEdgeIntervals_[hEndClusters[i]] - hEdgeIntervals_[hClusterIds[i] - 1];
+                localEdgeSum += localEdgeNum;
             }
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice));
@@ -908,7 +905,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             }
             consumerCounters_[producerId] = threadNum;
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
-            delete[] hSimplexOffsets;
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localEdgeSum * etColumnNum, cudaMemcpyDeviceToHost));
@@ -926,8 +922,8 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 hClusterIds[i] = currClusters_[threadIds[i]];
                 hEndClusters[i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
                 // maxEndCluster = std::max(hEndClusters[i], maxEndCluster);
-                int localTriangleNums = hTriangleIntervals_[hEndClusters[i]] - hTriangleIntervals_[hClusterIds[i] - 1];
-                localTriangleSum += localTriangleNums;
+                int localTriangleNum = hTriangleIntervals_[hEndClusters[i]] - hTriangleIntervals_[hClusterIds[i] - 1];
+                localTriangleSum += localTriangleNum;
             }
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice));
@@ -950,7 +946,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             }
             consumerCounters_[producerId] = threadNum;
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
-            delete[] hSimplexOffsets;
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localTriangleSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localTriangleSum * ftColumnNum, cudaMemcpyDeviceToHost));
@@ -999,7 +994,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             }
             consumerCounters_[producerId] = threadNum;
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
-            delete[] hSimplexOffsets;
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localVertexSum * veColumnNum, cudaMemcpyDeviceToHost));
@@ -1048,7 +1042,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             }
             consumerCounters_[producerId] = threadNum;
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
-            delete[] hSimplexOffsets;
             
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localVertexSum * vfColumnNum, cudaMemcpyDeviceToHost));
@@ -1094,7 +1087,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             }
             consumerCounters_[producerId] = threadNum;
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
-            delete[] hSimplexOffsets;
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localVertexSum * vtColumnNum, cudaMemcpyDeviceToHost));
@@ -1140,7 +1132,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             }
             consumerCounters_[producerId] = threadNum;
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
-            delete[] hSimplexOffsets;
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localVertexSum * vvColumnNum, cudaMemcpyDeviceToHost));
@@ -1316,55 +1307,57 @@ void Gale::leaderProducer(const int pid) {
         consumerCounters_[pid] = 0;
         RelationComputation relationComp;
         // pre-allocate the memory for the computation
-        int allocatedSize = threadNumber_ * precompClusterNumber_ * 2000;
+        int vertexAllocNum = threadNumber_ * precompClusterNumber_ * 150;
+        int edgeAllocNum = vertexAllocNum*5;
+        int triangleAllocNum = vertexAllocNum*6;
         CHECK(cudaMallocAsync((void **)&relationComp.dClusterIds, sizeof(int) * threadNumber_, 0));
         CHECK(cudaMallocAsync((void **)&relationComp.dSimplexOffsets, sizeof(int) * threadNumber_, 0));
         switch (preconditionedRelations_[pid]) {
             case RelationType::BERelation:
-                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * allocatedSize, 0));
+                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * edgeAllocNum, 0));
             case RelationType::BVRelation:
-                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * allocatedSize, 0));
+                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * vertexAllocNum, 0));
             case RelationType::EFRelation:
-                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * allocatedSize, 0));
-                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * allocatedSize * efColumnNum, 0));
-                relationComp.hSizeArray = new int[allocatedSize];
-                relationComp.hDataArray = new int[allocatedSize * efColumnNum];
+                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * edgeAllocNum, 0));
+                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * edgeAllocNum * efColumnNum, 0));
+                relationComp.hSizeArray = new int[edgeAllocNum];
+                relationComp.hDataArray = new int[edgeAllocNum * efColumnNum];
                 break;
             case RelationType::ETRelation:
-                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * allocatedSize, 0));
-                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * allocatedSize * etColumnNum, 0));
-                relationComp.hSizeArray = new int[allocatedSize];
-                relationComp.hDataArray = new int[allocatedSize * etColumnNum];
+                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * edgeAllocNum, 0));
+                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * edgeAllocNum * etColumnNum, 0));
+                relationComp.hSizeArray = new int[edgeAllocNum];
+                relationComp.hDataArray = new int[edgeAllocNum * etColumnNum];
                 break;
             case RelationType::FTRelation:
-                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * allocatedSize, 0));
-                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * allocatedSize * ftColumnNum, 0));
-                relationComp.hSizeArray = new int[allocatedSize];
-                relationComp.hDataArray = new int[allocatedSize * ftColumnNum];
+                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * triangleAllocNum, 0));
+                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * triangleAllocNum * ftColumnNum, 0));
+                relationComp.hSizeArray = new int[triangleAllocNum];
+                relationComp.hDataArray = new int[triangleAllocNum * ftColumnNum];
                 break;
             case RelationType::VERelation:
-                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * allocatedSize, 0));
-                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * allocatedSize * veColumnNum, 0));
-                relationComp.hSizeArray = new int[allocatedSize];
-                relationComp.hDataArray = new int[allocatedSize * veColumnNum];
+                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * vertexAllocNum, 0));
+                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * vertexAllocNum * veColumnNum, 0));
+                relationComp.hSizeArray = new int[vertexAllocNum];
+                relationComp.hDataArray = new int[vertexAllocNum * veColumnNum];
                 break;
             case RelationType::VFRelation:
-                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * allocatedSize, 0));
-                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * allocatedSize * vfColumnNum, 0));
-                relationComp.hSizeArray = new int[allocatedSize];
-                relationComp.hDataArray = new int[allocatedSize * vfColumnNum];
+                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * vertexAllocNum, 0));
+                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * vertexAllocNum * vfColumnNum, 0));
+                relationComp.hSizeArray = new int[vertexAllocNum];
+                relationComp.hDataArray = new int[vertexAllocNum * vfColumnNum];
                 break;
             case RelationType::VTRelation:
-                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * allocatedSize, 0));
-                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * allocatedSize * vtColumnNum, 0));
-                relationComp.hSizeArray = new int[allocatedSize];
-                relationComp.hDataArray = new int[allocatedSize * vtColumnNum];
+                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * vertexAllocNum, 0));
+                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * vertexAllocNum * vtColumnNum, 0));
+                relationComp.hSizeArray = new int[vertexAllocNum];
+                relationComp.hDataArray = new int[vertexAllocNum * vtColumnNum];
                 break;
             case RelationType::VVRelation:
-                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * allocatedSize, 0));
-                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * allocatedSize * vvColumnNum, 0));
-                relationComp.hSizeArray = new int[allocatedSize];
-                relationComp.hDataArray = new int[allocatedSize * vvColumnNum];
+                CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * vertexAllocNum, 0));
+                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * vertexAllocNum * vvColumnNum, 0));
+                relationComp.hSizeArray = new int[vertexAllocNum];
+                relationComp.hDataArray = new int[vertexAllocNum * vvColumnNum];
                 break;
             default:
                 break;
@@ -1413,118 +1406,118 @@ void Gale::leaderProducer(const int pid) {
                     }
                     else if (leaderCluster == 0) continue;
                     if (!jobQueues_[pid].empty()) break;
-                    RelationType relation = currRelations_[i];
-                    SimplexId startCluster = baseClusters_[static_cast<int>(relation)][i];
-                    // leaderCluster = (leaderCluster - startCluster) * removalRatio + startCluster;
-                    if (startCluster == 0) continue;
-                    // different relations correspond to different vectors
-                    switch (relation)
-                    {
-                        case RelationType::BVRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                if (clusterMutexes_[cid].try_lock()) {
-                                    allClusters_[cid].boundaryVertices_ = std::vector<bool>();
-                                    clusterMutexes_[cid].unlock();
-                                }
-                            }
-                            break;
-                        }
+                    // RelationType relation = currRelations_[i];
+                    // SimplexId startCluster = baseClusters_[static_cast<int>(relation)][i];
+                    // // leaderCluster = (leaderCluster - startCluster) * removalRatio + startCluster;
+                    // if (startCluster == 0) continue;
+                    // // different relations correspond to different vectors
+                    // switch (relation)
+                    // {
+                    //     case RelationType::BVRelation:
+                    //     {
+                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                    //             if (clusterMutexes_[cid].try_lock()) {
+                    //                 allClusters_[cid].boundaryVertices_ = std::vector<bool>();
+                    //                 clusterMutexes_[cid].unlock();
+                    //             }
+                    //         }
+                    //         break;
+                    //     }
 
-                        case RelationType::BERelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                if (clusterMutexes_[cid].try_lock()) {
-                                    allClusters_[cid].boundaryEdges_ = std::vector<bool>();
-                                    clusterMutexes_[cid].unlock();
-                                }
-                            }
-                            break;
-                        }
+                    //     case RelationType::BERelation:
+                    //     {
+                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                    //             if (clusterMutexes_[cid].try_lock()) {
+                    //                 allClusters_[cid].boundaryEdges_ = std::vector<bool>();
+                    //                 clusterMutexes_[cid].unlock();
+                    //             }
+                    //         }
+                    //         break;
+                    //     }
                         
-                        case RelationType::EFRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                if (clusterMutexes_[cid].try_lock()) {
-                                    allClusters_[cid].edgeTriangles_.clear();
-                                    clusterMutexes_[cid].unlock();
-                                }
-                            }
-                            break;
-                        }
+                    //     case RelationType::EFRelation:
+                    //     {
+                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                    //             if (clusterMutexes_[cid].try_lock()) {
+                    //                 allClusters_[cid].edgeTriangles_.clear();
+                    //                 clusterMutexes_[cid].unlock();
+                    //             }
+                    //         }
+                    //         break;
+                    //     }
                         
-                        case RelationType::ETRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                if (clusterMutexes_[cid].try_lock()) {
-                                    allClusters_[cid].edgeStars_.clear();
-                                    clusterMutexes_[cid].unlock();
-                                }
-                            }
-                            break;
-                        }
+                    //     case RelationType::ETRelation:
+                    //     {
+                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                    //             if (clusterMutexes_[cid].try_lock()) {
+                    //                 allClusters_[cid].edgeStars_.clear();
+                    //                 clusterMutexes_[cid].unlock();
+                    //             }
+                    //         }
+                    //         break;
+                    //     }
                         
-                        case RelationType::FTRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                if (clusterMutexes_[cid].try_lock()) {
-                                    allClusters_[cid].triangleStars_.clear();
-                                    clusterMutexes_[cid].unlock();
-                                }
-                            }
-                            break;
-                        }
+                    //     case RelationType::FTRelation:
+                    //     {
+                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                    //             if (clusterMutexes_[cid].try_lock()) {
+                    //                 allClusters_[cid].triangleStars_.clear();
+                    //                 clusterMutexes_[cid].unlock();
+                    //             }
+                    //         }
+                    //         break;
+                    //     }
 
-                        case RelationType::VVRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                if (clusterMutexes_[cid].try_lock()) {
-                                    allClusters_[cid].vertexNeighbors_.clear();
-                                    clusterMutexes_[cid].unlock();
-                                }
-                            }
-                            break;
-                        }
+                    //     case RelationType::VVRelation:
+                    //     {
+                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                    //             if (clusterMutexes_[cid].try_lock()) {
+                    //                 allClusters_[cid].vertexNeighbors_.clear();
+                    //                 clusterMutexes_[cid].unlock();
+                    //             }
+                    //         }
+                    //         break;
+                    //     }
                     
-                        case RelationType::VERelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                if (clusterMutexes_[cid].try_lock()) {
-                                    allClusters_[cid].vertexEdges_.clear();
-                                    clusterMutexes_[cid].unlock();
-                                }
-                            }
-                            break;
-                        }
+                    //     case RelationType::VERelation:
+                    //     {
+                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                    //             if (clusterMutexes_[cid].try_lock()) {
+                    //                 allClusters_[cid].vertexEdges_.clear();
+                    //                 clusterMutexes_[cid].unlock();
+                    //             }
+                    //         }
+                    //         break;
+                    //     }
 
-                        case RelationType::VFRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                if (clusterMutexes_[cid].try_lock()) {
-                                    allClusters_[cid].vertexTriangles_.clear();
-                                    clusterMutexes_[cid].unlock();
-                                }
-                            }
-                            break;
-                        }
+                    //     case RelationType::VFRelation:
+                    //     {
+                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                    //             if (clusterMutexes_[cid].try_lock()) {
+                    //                 allClusters_[cid].vertexTriangles_.clear();
+                    //                 clusterMutexes_[cid].unlock();
+                    //             }
+                    //         }
+                    //         break;
+                    //     }
 
-                        case RelationType::VTRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                if (clusterMutexes_[cid].try_lock()) {
-                                    allClusters_[cid].vertexStars_.clear();
-                                    clusterMutexes_[cid].unlock();
-                                }
-                            }
-                            break;
-                        }
+                    //     case RelationType::VTRelation:
+                    //     {
+                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                    //             if (clusterMutexes_[cid].try_lock()) {
+                    //                 allClusters_[cid].vertexStars_.clear();
+                    //                 clusterMutexes_[cid].unlock();
+                    //             }
+                    //         }
+                    //         break;
+                    //     }
                         
-                        default:
-                            break;
+                    //     default:
+                    //         break;
                         
-                    }
-                    // reset the base cluster of the thread to 0
-                    baseClusters_[static_cast<int>(relation)][i] = 0;
+                    // }
+                    // // reset the base cluster of the thread to 0
+                    // baseClusters_[static_cast<int>(relation)][i] = 0;
                 }
             }
         }
@@ -1955,6 +1948,7 @@ int Gale::preconditionEdgesInternal() {
         }
 
         for(SimplexId nid = 1; nid < clusterNumber_; nid++) {
+            // std::cout << nid << ": " << hEdgeIntervals_[nid] << std::endl;
             hEdgeIntervals_[nid] = hEdgeIntervals_[nid - 1] + hEdgeIntervals_[nid];
         }
         CHECK(cudaMallocAsync(&dEdgeIntervals_, sizeof(int) * clusterNumber_, 0));
@@ -1997,6 +1991,7 @@ int Gale::preconditionTrianglesInternal() {
         }
 
         for(SimplexId nid = 1; nid < clusterNumber_; nid++) {
+            // std::cout << nid << ": " << hTriangleIntervals_[nid] << std::endl;
             hTriangleIntervals_[nid] = hTriangleIntervals_[nid - 1] + hTriangleIntervals_[nid];
         }
         CHECK(cudaMallocAsync(&dTriangleIntervals_, sizeof(int) * clusterNumber_, 0));

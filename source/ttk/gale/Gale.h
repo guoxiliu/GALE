@@ -1210,7 +1210,7 @@ class Gale final : public AbstractTriangulation {
                         for (int j = 0; j < localEdgeNum; ++j) {
                             boundaryEdgeData[j] = (relationCompVecs_.at(curStream).hDataArray[relativeEid++] > 0);
                         }
-                        allClusters_[sid].boundaryEdges_ = boundaryEdgeData;
+                        std::swap(allClusters_[sid].boundaryEdges_, boundaryEdgeData);
                     }
                 }
                 consumerCounters_[curStream].fetch_sub(1);
@@ -1272,7 +1272,7 @@ class Gale final : public AbstractTriangulation {
                         for (int j = 0; j < localVertexNum; ++j) {
                             boundaryVertexData[j] = (relationCompVecs_.at(curStream).hDataArray[relativeVid++] > 0);
                         }
-                        allClusters_[sid].boundaryVertices_ = boundaryVertexData;
+                        std::swap(allClusters_[sid].boundaryVertices_, boundaryVertexData);
                     }
                 }
                 consumerCounters_[curStream].fetch_sub(1);
