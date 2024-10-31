@@ -347,7 +347,7 @@ namespace ttk {
      * Compute the descending 1-separatrices by reading into the discrete
      * gradient.
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int getDescendingSeparatrices1(
       const std::vector<dcg::Cell> &criticalPoints,
       std::vector<Separatrix> &separatrices,
@@ -363,7 +363,7 @@ namespace ttk {
      * outputSeparatrices1_cells_
      * inputScalarField_
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int setSeparatrices1(
       const std::vector<Separatrix> &separatrices,
       const std::vector<std::vector<dcg::Cell>> &separatricesGeometry,
@@ -372,7 +372,7 @@ namespace ttk {
     /**
      * Compute the ascending manifold of the maxima.
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int setAscendingSegmentation(const std::vector<dcg::Cell> &criticalPoints,
                                  std::vector<SimplexId> &maxSeeds,
                                  SimplexId *const morseSmaleManifold,
@@ -382,7 +382,7 @@ namespace ttk {
     /**
      * Compute the descending manifold of the minima.
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int setDescendingSegmentation(const std::vector<dcg::Cell> &criticalPoints,
                                   SimplexId *const morseSmaleManifold,
                                   SimplexId &numberOfMinima,
@@ -392,7 +392,7 @@ namespace ttk {
      * Compute the final combinatorial Morse-Smale complex
      * segmentation.
      */
-    template <typename triangulationType = AbstractTriangulation>
+    template <typename triangulationType>
     int setFinalSegmentation(const SimplexId numberOfMaxima,
                              const SimplexId numberOfMinima,
                              const SimplexId *const ascendingManifold,
@@ -456,7 +456,7 @@ namespace ttk {
   };
 } // namespace ttk
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::AbstractMorseSmaleComplex::getDescendingSeparatrices1(
   const std::vector<Cell> &criticalPoints,
   std::vector<Separatrix> &separatrices,
@@ -517,7 +517,7 @@ int ttk::AbstractMorseSmaleComplex::getDescendingSeparatrices1(
   return 0;
 }
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::AbstractMorseSmaleComplex::setSeparatrices1(
   const std::vector<Separatrix> &separatrices,
   const std::vector<std::vector<dcg::Cell>> &separatricesGeometry,
@@ -709,7 +709,7 @@ int ttk::AbstractMorseSmaleComplex::setSeparatrices1(
   return 0;
 }
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::AbstractMorseSmaleComplex::setAscendingSegmentation(
   const std::vector<Cell> &criticalPoints,
   std::vector<SimplexId> &maxSeeds,
@@ -803,7 +803,7 @@ int ttk::AbstractMorseSmaleComplex::setAscendingSegmentation(
   return 0;
 }
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::AbstractMorseSmaleComplex::setDescendingSegmentation(
   const std::vector<Cell> &criticalPoints,
   SimplexId *const morseSmaleManifold,
@@ -873,7 +873,7 @@ int ttk::AbstractMorseSmaleComplex::setDescendingSegmentation(
   return 0;
 }
 
-template <typename triangulationType = AbstractTriangulation>
+template <typename triangulationType>
 int ttk::AbstractMorseSmaleComplex::setFinalSegmentation(
   const SimplexId numberOfMaxima,
   const SimplexId ttkNotUsed(numberOfMinima),

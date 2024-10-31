@@ -1550,125 +1550,8 @@ void Gale::leaderProducer() {
     volatile SimplexId leaderCluster = 0;
     volatile RelationType leaderFunc = RelationType::BlankRelation;
 
-    if (threadNumber_ == 1) {
-        while (true) {
-            std::unique_lock<std::mutex> qlock(qMutex_);
-            int qSize = jobQueue.size();
-            qlock.unlock();
-            if (qSize > 0) {
-                int tid = jobQueue.front();
-                leaderCluster = currClusters_[tid], leaderFunc = currRelations_[tid];
-                int res = computeRelation(leaderFunc, leaderCluster, false, tid, true);
-                if (res == 0) {
-                    std::unique_lock<std::mutex> qlock(qMutex_);
-                    jobQueue.pop();
-                    qlock.unlock();
-                }
-            }
-            else {
-                leaderCluster = currClusters_[0], leaderFunc = currRelations_[0];
-                if (leaderCluster == -1) return;
-                else if (leaderCluster == 0) continue;
-                
-                // SimplexId diff = leaderCluster - baseClusters_[static_cast<int>(leaderFunc)][i];
-                // // check if the precomputation needs to be performed
-                // if (diff < 0 || diff > blocksPerThread_ * blockSize_ * 0.6) {
-                //     // std::cout << "precomputing for thread " << i << " cluster = " << leaderCluster << " diff = " << diff << std::endl;
-                //     computeRelation(leaderFunc, leaderCluster, i, false);
-                // }
-                
-                for (RelationType &relation : preconditionedRelations_) {
-                    if (relation == currRelations_[0]) continue;
-                    SimplexId startCluster = baseClusters_[static_cast<int>(relation)][0];
-                    // leaderCluster = (leaderCluster - startCluster) * removalRatio + startCluster;
-                    if (startCluster == 0) continue;
-                    // different relations correspond to different vectors
-                    switch (relation)
-                    {
-                        case RelationType::BVRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].boundaryVertices_ = std::vector<bool>();
-                            }
-                            break;
-                        }
-
-                        case RelationType::BERelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].boundaryEdges_ = std::vector<bool>();
-                            }
-                            break;
-                        }
-                        
-                        case RelationType::EFRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].edgeTriangles_.clear();
-                            }
-                            break;
-                        }
-                        
-                        case RelationType::ETRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].edgeStars_.clear();
-                            }
-                            break;
-                        }
-                        
-                        case RelationType::FTRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].triangleStars_.clear();
-                            }
-                            break;
-                        }
-
-                        case RelationType::VVRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].vertexNeighbors_.clear();
-                            }
-                            break;
-                        }
-                    
-                        case RelationType::VERelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].vertexEdges_.clear();
-                            }
-                            break;
-                        }
-
-                        case RelationType::VFRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].vertexTriangles_.clear();
-                            }
-                            break;
-                        }
-
-                        case RelationType::VTRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].vertexStars_.clear();
-                            }
-                            break;
-                        }
-                        
-                        default:
-                            break;
-                        
-                    }
-                    // reset the base cluster of the thread to 0
-                    baseClusters_[static_cast<int>(relation)][0] = 0;
-                }
-            }
-        }
-    }
     // multiple threads are used
-    else {
+    if (threadNumber_ > 1) {
         // std::vector<std::vector<std::tuple<int, int, RelationType>>> qstats;
         while (true) {
             /* Job queue version */
@@ -1848,6 +1731,123 @@ void Gale::leaderProducer() {
                     }
                     // reset the base cluster of the thread to 0
                     baseClusters_[static_cast<int>(relation)][i] = 0;
+                }
+            }
+        }
+    }
+    else {
+        while (true) {
+            std::unique_lock<std::mutex> qlock(qMutex_);
+            int qSize = jobQueue.size();
+            qlock.unlock();
+            if (qSize > 0) {
+                int tid = jobQueue.front();
+                leaderCluster = currClusters_[tid], leaderFunc = currRelations_[tid];
+                int res = computeRelation(leaderFunc, leaderCluster, false, tid, true);
+                if (res == 0) {
+                    std::unique_lock<std::mutex> qlock(qMutex_);
+                    jobQueue.pop();
+                    qlock.unlock();
+                }
+            }
+            else {
+                leaderCluster = currClusters_[0], leaderFunc = currRelations_[0];
+                if (leaderCluster == -1) return;
+                else if (leaderCluster == 0) continue;
+                
+                // SimplexId diff = leaderCluster - baseClusters_[static_cast<int>(leaderFunc)][i];
+                // // check if the precomputation needs to be performed
+                // if (diff < 0 || diff > blocksPerThread_ * blockSize_ * 0.6) {
+                //     // std::cout << "precomputing for thread " << i << " cluster = " << leaderCluster << " diff = " << diff << std::endl;
+                //     computeRelation(leaderFunc, leaderCluster, i, false);
+                // }
+                
+                for (RelationType &relation : preconditionedRelations_) {
+                    if (relation == currRelations_[0]) continue;
+                    SimplexId startCluster = baseClusters_[static_cast<int>(relation)][0];
+                    // leaderCluster = (leaderCluster - startCluster) * removalRatio + startCluster;
+                    if (startCluster == 0) continue;
+                    // different relations correspond to different vectors
+                    switch (relation)
+                    {
+                        case RelationType::BVRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].boundaryVertices_ = std::vector<bool>();
+                            }
+                            break;
+                        }
+
+                        case RelationType::BERelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].boundaryEdges_ = std::vector<bool>();
+                            }
+                            break;
+                        }
+                        
+                        case RelationType::EFRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].edgeTriangles_.clear();
+                            }
+                            break;
+                        }
+                        
+                        case RelationType::ETRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].edgeStars_.clear();
+                            }
+                            break;
+                        }
+                        
+                        case RelationType::FTRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].triangleStars_.clear();
+                            }
+                            break;
+                        }
+
+                        case RelationType::VVRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].vertexNeighbors_.clear();
+                            }
+                            break;
+                        }
+                    
+                        case RelationType::VERelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].vertexEdges_.clear();
+                            }
+                            break;
+                        }
+
+                        case RelationType::VFRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].vertexTriangles_.clear();
+                            }
+                            break;
+                        }
+
+                        case RelationType::VTRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                allClusters_[cid].vertexStars_.clear();
+                            }
+                            break;
+                        }
+                        
+                        default:
+                            break;
+                        
+                    }
+                    // reset the base cluster of the thread to 0
+                    baseClusters_[static_cast<int>(relation)][0] = 0;
                 }
             }
         }
