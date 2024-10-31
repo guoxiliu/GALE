@@ -32,7 +32,7 @@ set_compile_options(ttkDiscreteGradient)
 
 # Morse smale complex executable
 add_executable(ttkMorseSmaleComplex ttkMorseSmaleComplex.cpp)
-target_link_libraries(ttkMorseSmaleComplex PRIVATE gale morseSmaleComplex)
+target_link_libraries(ttkMorseSmaleComplex PRIVATE explicitTriangulation gale morseSmaleComplex)
 target_link_libraries(ttkMorseSmaleComplex PRIVATE VTK::IOXML)
 set_compile_options(ttkMorseSmaleComplex)
 

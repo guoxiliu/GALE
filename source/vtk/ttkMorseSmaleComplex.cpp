@@ -1,3 +1,4 @@
+#include <ExplicitTriangulation.h>
 #include <Gale.h>
 #include <MemoryUsage.h>
 #include <MorseSmaleComplex.h>
@@ -578,6 +579,9 @@ int main(int argc, char *argv[])
         gale.initialize(inputDataSet, blockNumber);
     else 
         gale.initialize(inputDataSet);
+
+    // ttk::ExplicitTriangulation gale;
+    // gale.createExplicitTriangulation(vtkPointSet::SafeDownCast(inputDataSet));
 
     msPlugin.setDebugLevel(3);
     msPlugin.setThreadNumber(threadNumber);
