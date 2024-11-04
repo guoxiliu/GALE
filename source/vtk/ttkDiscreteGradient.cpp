@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
     ttk::dcg::DiscreteGradient dgPlugin{};
     dgPlugin.setDebugLevel(3);
     dgPlugin.setThreadNumber(threadNumber);
-    dgPlugin.preconditionTriangulation(&gale);
+    dgPlugin.preconditionTriangulationSimplified(&gale);
     
     vtkDataArray *offsetField = GetOrderArray(inputDataSet, scalarFieldIndex, 1);
     dgPlugin.setInputScalarField(GetVoidPointer(inputScalarField));

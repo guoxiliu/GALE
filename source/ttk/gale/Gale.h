@@ -164,7 +164,7 @@ class Gale final : public AbstractTriangulation {
                 return 0;
             } else if(cellDimension_ == 3) {
                 boundaryTriangles_ = std::vector<bool>(triangleNumber_, false);
-                computeRelation(RelationType::BFRelation, 1, 0, false);
+                computeRelation(RelationType::BFRelation, true, 1, 0, false);
                 // use the producer threads to compute boundary triangles
                 // #ifdef TTK_ENABLE_OPENMP
                 // #pragma omp parallel for num_threads(threadNumber_)
@@ -1345,7 +1345,7 @@ class Gale final : public AbstractTriangulation {
         int *dEdgeList_{}, *dTriangleList_{};
 
         /* Relation matrices on the host and device */
-        bool *hBoundaryTriangles_, *dBoundaryTriangles_;
+        bool *dBoundaryTriangles_;
 
         struct RelationComputation {
             int *hSizeArray, *hDataArray;

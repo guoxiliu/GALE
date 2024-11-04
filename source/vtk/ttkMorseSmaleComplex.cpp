@@ -24,12 +24,12 @@ int IterationThreshold{-1};
 bool ComputeCriticalPoints{false};
 bool ComputeAscendingSeparatrices1{true};
 bool ComputeDescendingSeparatrices1{true};
-bool ComputeSaddleConnectors{true};
+bool ComputeSaddleConnectors{false};
 bool ComputeAscendingSeparatrices2{false};
 bool ComputeDescendingSeparatrices2{false};
-bool ComputeAscendingSegmentation{false};
-bool ComputeDescendingSegmentation{false};
-bool ComputeFinalSegmentation{false};
+bool ComputeAscendingSegmentation{true};
+bool ComputeDescendingSegmentation{true};
+bool ComputeFinalSegmentation{true};
 int ReturnSaddleConnectors{false};
 double SaddleConnectorsPersistenceThreshold{0.0};
 

@@ -385,6 +385,26 @@ according to them.
       }
 
       /**
+       * Preprocess only the required connectivity requests for computing discrete gradient.
+       */
+      inline void preconditionTriangulationSimplified(AbstractTriangulation *const data) {
+        if(data != nullptr) {
+          dimensionality_ = data->getCellVertexNumber(0) - 1;
+          numberOfVertices_ = data->getNumberOfVertices();
+
+          data->preconditionVertexEdges();
+          data->preconditionVertexStars();
+          if(dimensionality_ == 2) {
+            data->preconditionCellEdges();
+          } else if(dimensionality_ == 3) {
+            data->preconditionVertexTriangles();
+          }
+          this->initMemory(*data);
+        }
+      }
+
+
+      /**
        * Preprocess all the required connectivity requests on the triangulation.
        */
       inline void preconditionTriangulation(AbstractTriangulation *const data) {
