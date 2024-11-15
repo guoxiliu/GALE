@@ -142,7 +142,11 @@ class Gale final : public AbstractTriangulation {
                 int curId = preconditionedRelations_.size();
                 relationMaps_[RelationType::BERelation] = curId;
                 preconditionedRelations_.push_back(RelationType::BERelation);
+                #ifdef MEASURE_TIME
+                jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
+                #else 
                 jobQueues_.push_back(std::queue<int>{});
+                #endif
                 producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
                 // #ifdef MEASURE_TIME
                 // qTimes_.push_back(std::vector<double>{});
@@ -164,7 +168,7 @@ class Gale final : public AbstractTriangulation {
                 return 0;
             } else if(cellDimension_ == 3) {
                 boundaryTriangles_ = std::vector<bool>(triangleNumber_, false);
-                computeRelation(RelationType::BFRelation, 1, 0, false);
+                computeRelation(RelationType::BFRelation, true, 1, 0, false);
                 // use the producer threads to compute boundary triangles
                 // #ifdef TTK_ENABLE_OPENMP
                 // #pragma omp parallel for num_threads(threadNumber_)
@@ -194,7 +198,11 @@ class Gale final : public AbstractTriangulation {
             int curId = preconditionedRelations_.size();
             relationMaps_[RelationType::BVRelation] = curId;
             preconditionedRelations_.push_back(RelationType::BVRelation);
+            #ifdef MEASURE_TIME
+            jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
+            #else 
             jobQueues_.push_back(std::queue<int>{});
+            #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
             // #ifdef MEASURE_TIME
             // qTimes_.push_back(std::vector<double>{});
@@ -214,7 +222,11 @@ class Gale final : public AbstractTriangulation {
             int curId = preconditionedRelations_.size();
             relationMaps_[RelationType::ETRelation] = curId;
             preconditionedRelations_.push_back(RelationType::ETRelation);
+            #ifdef MEASURE_TIME
+            jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
+            #else 
             jobQueues_.push_back(std::queue<int>{});
+            #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
             // #ifdef MEASURE_TIME
             // qTimes_.push_back(std::vector<double>{});
@@ -233,7 +245,11 @@ class Gale final : public AbstractTriangulation {
             int curId = preconditionedRelations_.size();
             relationMaps_[RelationType::EFRelation] = curId;
             preconditionedRelations_.push_back(RelationType::EFRelation);
+            #ifdef MEASURE_TIME
+            jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
+            #else 
             jobQueues_.push_back(std::queue<int>{});
+            #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
             // #ifdef MEASURE_TIME
             // qTimes_.push_back(std::vector<double>{});
@@ -253,7 +269,11 @@ class Gale final : public AbstractTriangulation {
             int curId = preconditionedRelations_.size();
             relationMaps_[RelationType::FTRelation] = curId;
             preconditionedRelations_.push_back(RelationType::FTRelation);
+            #ifdef MEASURE_TIME
+            jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
+            #else 
             jobQueues_.push_back(std::queue<int>{});
+            #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
             // #ifdef MEASURE_TIME
             // qTimes_.push_back(std::vector<double>{});
@@ -272,7 +292,11 @@ class Gale final : public AbstractTriangulation {
             int curId = preconditionedRelations_.size();
             relationMaps_[RelationType::VERelation] = curId;
             preconditionedRelations_.push_back(RelationType::VERelation);
+            #ifdef MEASURE_TIME
+            jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
+            #else 
             jobQueues_.push_back(std::queue<int>{});
+            #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
             // #ifdef MEASURE_TIME
             // qTimes_.push_back(std::vector<double>{});
@@ -291,7 +315,11 @@ class Gale final : public AbstractTriangulation {
             int curId = preconditionedRelations_.size();
             relationMaps_[RelationType::VVRelation] = curId;
             preconditionedRelations_.push_back(RelationType::VVRelation);
+            #ifdef MEASURE_TIME
+            jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
+            #else 
             jobQueues_.push_back(std::queue<int>{});
+            #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
             // #ifdef MEASURE_TIME
             // qTimes_.push_back(std::vector<double>{});
@@ -310,7 +338,11 @@ class Gale final : public AbstractTriangulation {
             int curId = preconditionedRelations_.size();
             relationMaps_[RelationType::VTRelation] = curId;
             preconditionedRelations_.push_back(RelationType::VTRelation);
+            #ifdef MEASURE_TIME
+            jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
+            #else 
             jobQueues_.push_back(std::queue<int>{});
+            #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
             // #ifdef MEASURE_TIME
             // qTimes_.push_back(std::vector<double>{});
@@ -329,7 +361,11 @@ class Gale final : public AbstractTriangulation {
             int curId = preconditionedRelations_.size();
             relationMaps_[RelationType::VFRelation] = curId;
             preconditionedRelations_.push_back(RelationType::VFRelation);
+            #ifdef MEASURE_TIME
+            jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
+            #else 
             jobQueues_.push_back(std::queue<int>{});
+            #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
             // #ifdef MEASURE_TIME
             // qTimes_.push_back(std::vector<double>{});
@@ -432,6 +468,46 @@ class Gale final : public AbstractTriangulation {
             }
         }
 
+        inline int getCellNeighborInternal(const SimplexId &cellId,
+                              const int &localNeighborId,
+                              SimplexId &neighborId) const override {
+            int tid = omp_get_thread_num();
+            SimplexId segId = hIndexArray_[hConnectivity_[hOffsets_[cellId]]];
+            currClusters_[tid] = segId, currRelations_[tid] = RelationType::TTRelation;
+            if (allClusters_[segId].cellNeighbors_.empty()) {
+                #ifdef MEASURE_TIME
+                timers_[tid].reStart();
+                #endif
+                getClusterCellNeighbors(segId);
+                #ifdef MEASURE_TIME
+                waitingCounts_[tid]++;
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                #endif
+            }
+            SimplexId localCellId = cellId - hCellIntervals_[segId - 1];
+            neighborId = allClusters_[segId].cellNeighbors_.get(localCellId, localNeighborId);
+            return 0;
+        }
+
+        inline SimplexId getCellNeighborNumberInternal(
+            const SimplexId &cellId) const override {
+            int tid = omp_get_thread_num();
+            SimplexId segId = hIndexArray_[hConnectivity_[hOffsets_[cellId]]];
+            currClusters_[tid] = segId, currRelations_[tid] = RelationType::TTRelation;
+            if (allClusters_[segId].cellNeighbors_.empty()) {
+                #ifdef MEASURE_TIME
+                timers_[tid].reStart();
+                #endif
+                getClusterCellNeighbors(segId);
+                #ifdef MEASURE_TIME
+                waitingCounts_[tid]++;
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                #endif
+            }
+            SimplexId localCellId = cellId - hCellIntervals_[segId - 1];
+            return allClusters_[segId].edgeStars_.size(localCellId);
+        }
+
         inline const std::vector<std::vector<SimplexId>> *
             getCellEdgesInternal() override {
             
@@ -527,22 +603,24 @@ class Gale final : public AbstractTriangulation {
             
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[edgeList_[edgeId][0]];
+            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].edgeStars_.empty()) {
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
                 currClusters_[tid] = segId, currRelations_[tid] = RelationType::ETRelation;
-                // waitings_[tid] = 1;
                 int qid = relationMaps_.at(RelationType::ETRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
-                // waitings_[tid] = 0;
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
             starId = allClusters_[segId].edgeStars_.get(localEdgeId, localStarId);
@@ -558,19 +636,23 @@ class Gale final : public AbstractTriangulation {
 
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].edgeStars_.empty()) {
-                readLock.unlock();
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
-                // waitings_[tid] = 1;
                 int qid = relationMaps_.at(RelationType::ETRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
+                #ifdef MEASURE_TIME
+                Timer tmp;
+                #endif
                 SimplexId endClusterId = std::min(segId + precompClusterNumber_, clusterNumber_) - 1;
                 int curStream = relationMaps_.at(RelationType::ETRelation), pos = gpuThreadPositions_[tid];
                 for (SimplexId sid = segId; sid <= endClusterId; ++sid) {
@@ -592,8 +674,9 @@ class Gale final : public AbstractTriangulation {
                 }
                 consumerCounters_[curStream].fetch_sub(1);
                 #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
@@ -612,22 +695,24 @@ class Gale final : public AbstractTriangulation {
         
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[edgeList_[edgeId][0]];
+            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].edgeTriangles_.empty()) {
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
                 currClusters_[tid] = hIndexArray_[edgeList_[edgeId][0]], currRelations_[tid] = RelationType::EFRelation;
-                // waitings_[tid] = 1;
                 int qid = relationMaps_.at(RelationType::EFRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
-                // waitings_[tid] = 0;
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
             triangleId = allClusters_[segId].edgeTriangles_.get(localEdgeId, localTriangleId);
@@ -642,19 +727,23 @@ class Gale final : public AbstractTriangulation {
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::EFRelation;
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].edgeTriangles_.empty()) {
-                readLock.unlock();
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
-                // waitings_[tid] = 1;
                 int qid = relationMaps_.at(RelationType::EFRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
+                #ifdef MEASURE_TIME
+                Timer tmp;
+                #endif
                 SimplexId endClusterId = std::min(segId + precompClusterNumber_, clusterNumber_) - 1;
                 int curStream = relationMaps_.at(RelationType::EFRelation), pos = gpuThreadPositions_[tid];
                 for (SimplexId sid = segId; sid <= endClusterId; ++sid) {
@@ -676,8 +765,9 @@ class Gale final : public AbstractTriangulation {
                 }
                 consumerCounters_[curStream].fetch_sub(1);
                 #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
@@ -754,22 +844,24 @@ class Gale final : public AbstractTriangulation {
 
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[triangleList_[triangleId][0]];
+            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].triangleStars_.empty()) {
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
                 currClusters_[tid] = segId, currRelations_[tid] = RelationType::FTRelation;
-                // waitings_[tid] = 1;
                 int qid = relationMaps_.at(RelationType::FTRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
-                // waitings_[tid] = 0;
             }
             SimplexId localTriangleId = triangleId - hTriangleIntervals_[segId - 1];
             starId = allClusters_[segId].triangleStars_.get(localTriangleId, localStarId);
@@ -784,19 +876,23 @@ class Gale final : public AbstractTriangulation {
             currClusters_[tid] = hIndexArray_[triangleList_[triangleId][0]], currRelations_[tid] = RelationType::FTRelation;
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].triangleStars_.empty()) {
-                readLock.unlock();
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
-                // waitings_[tid] = 1;
                 int qid = relationMaps_.at(RelationType::FTRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 // waitings_[tid] = 0;
                 
                 // copy the data from GPU to CPU
+                #ifdef MEASURE_TIME
+                Timer tmp;
+                #endif
                 SimplexId endClusterId = std::min(segId + precompClusterNumber_, clusterNumber_) - 1;
                 int curStream = relationMaps_.at(RelationType::FTRelation), pos = gpuThreadPositions_[tid];
                 for (SimplexId sid = segId; sid <= endClusterId; ++sid) {
@@ -818,8 +914,9 @@ class Gale final : public AbstractTriangulation {
                 }
                 consumerCounters_[curStream].fetch_sub(1);
                 #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
             }
             SimplexId localTriangleId = triangleId - hTriangleIntervals_[segId - 1];
@@ -853,17 +950,18 @@ class Gale final : public AbstractTriangulation {
                 timers_[tid].reStart();
                 #endif
                 currClusters_[tid] = segId, currRelations_[tid] = RelationType::VVRelation;
-                // waitings_[tid] = 1;
                 int qid = relationMaps_.at(RelationType::VVRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
-                // waitings_[tid] = 0;
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
             neighborId = allClusters_[segId].vertexNeighbors_.get(localVertexId, localNeighborId);
@@ -876,21 +974,24 @@ class Gale final : public AbstractTriangulation {
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[vertexId];
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::VVRelation;
-            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].vertexNeighbors_.empty()) {
-                readLock.unlock();
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
-                // waitings_[tid] = 1;
                 int qid = relationMaps_.at(RelationType::VVRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
+                #ifdef MEASURE_TIME
+                Timer tmp;
+                #endif
                 SimplexId endClusterId = std::min(segId + precompClusterNumber_, clusterNumber_) - 1;
                 int curStream = relationMaps_.at(RelationType::VVRelation), pos = gpuThreadPositions_[tid];
                 for (SimplexId sid = segId; sid <= endClusterId; ++sid) {
@@ -912,8 +1013,9 @@ class Gale final : public AbstractTriangulation {
                 }
                 consumerCounters_[curStream].fetch_sub(1);
                 #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -937,17 +1039,18 @@ class Gale final : public AbstractTriangulation {
                 timers_[tid].reStart();
                 #endif
                 currClusters_[tid] = segId, currRelations_[tid] = RelationType::VERelation;
-                // waitings_[tid] = 1;
                 int qid = relationMaps_.at(RelationType::VERelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
-                // waitings_[tid] = 0;
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
             edgeId = allClusters_[segId].vertexEdges_.get(localVertexId, localEdgeId);
@@ -960,21 +1063,24 @@ class Gale final : public AbstractTriangulation {
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[vertexId];
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::VERelation;
-            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].vertexEdges_.empty()) {
-                readLock.unlock();
-                // waitings_[tid] = 1;
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
                 int qid = relationMaps_.at(RelationType::VERelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
+                #ifdef MEASURE_TIME
+                Timer tmp;
+                #endif
                 SimplexId endClusterId = std::min(segId + precompClusterNumber_, clusterNumber_) - 1;
                 int curStream = relationMaps_.at(RelationType::VERelation), pos = gpuThreadPositions_[tid];
                 for (SimplexId sid = segId; sid <= endClusterId; ++sid) {
@@ -996,8 +1102,9 @@ class Gale final : public AbstractTriangulation {
                 }
                 consumerCounters_[curStream].fetch_sub(1);
                 #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -1021,18 +1128,19 @@ class Gale final : public AbstractTriangulation {
                 timers_[tid].reStart();
                 #endif
                 currClusters_[tid] = segId, currRelations_[tid] = RelationType::VTRelation;
-                // waitings_[tid] = 1;
                 int qid = relationMaps_.at(RelationType::VTRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
-                // waitings_[tid] = 0;
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
             starId = allClusters_[segId].vertexStars_.get(localVertexId, localStarId);
@@ -1045,21 +1153,24 @@ class Gale final : public AbstractTriangulation {
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[vertexId];
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::VTRelation;
-            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].vertexStars_.empty()) {
-                readLock.unlock();
-                // waitings_[tid] = 1;
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
                 int qid = relationMaps_.at(RelationType::VTRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
+                #ifdef MEASURE_TIME
+                Timer tmp;
+                #endif
                 SimplexId endClusterId = std::min(segId + precompClusterNumber_, clusterNumber_) - 1;
                 int curStream = relationMaps_.at(RelationType::VTRelation), pos = gpuThreadPositions_[tid];
                 for (SimplexId sid = segId; sid <= endClusterId; ++sid) {
@@ -1081,8 +1192,9 @@ class Gale final : public AbstractTriangulation {
                 }
                 consumerCounters_[curStream].fetch_sub(1);
                 #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -1106,17 +1218,18 @@ class Gale final : public AbstractTriangulation {
                 timers_[tid].reStart();
                 #endif
                 currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VFRelation;
-                // waitings_[tid] = 1;
                 int qid = relationMaps_.at(RelationType::VFRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
-                // waitings_[tid] = 0;
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
             triangleId = allClusters_[segId].vertexTriangles_.get(localVertexId, localTriangleId);
@@ -1129,21 +1242,24 @@ class Gale final : public AbstractTriangulation {
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[vertexId];
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::VFRelation;
-            boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].vertexTriangles_.empty()) {
-                readLock.unlock();
-                // waitings_[tid] = 1;
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
                 int qid = relationMaps_.at(RelationType::VFRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 // waitings_[tid] = 0;
                 
                 // copy the data from GPU to CPU
+                #ifdef MEASURE_TIME
+                Timer tmp;
+                #endif
                 SimplexId endClusterId = std::min(segId + precompClusterNumber_, clusterNumber_) - 1;
                 int curStream = relationMaps_.at(RelationType::VFRelation), pos = gpuThreadPositions_[tid];
                 for (SimplexId sid = segId; sid <= endClusterId; ++sid) {
@@ -1165,8 +1281,9 @@ class Gale final : public AbstractTriangulation {
                 }
                 consumerCounters_[curStream].fetch_sub(1);
                 #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -1196,19 +1313,23 @@ class Gale final : public AbstractTriangulation {
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::BERelation;
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].boundaryEdges_.empty()) {
-                readLock.unlock();
-                // waitings_[tid] = 1;
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
                 int qid = relationMaps_.at(RelationType::BERelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
+                #ifdef MEASURE_TIME
+                Timer tmp;
+                #endif
                 SimplexId endClusterId = std::min(segId + precompClusterNumber_, clusterNumber_) - 1;
                 int curStream = relationMaps_.at(RelationType::BERelation), pos = gpuThreadPositions_[tid];
                 for (SimplexId sid = segId; sid <= endClusterId; ++sid) {
@@ -1219,13 +1340,14 @@ class Gale final : public AbstractTriangulation {
                         for (int j = 0; j < localEdgeNum; ++j) {
                             boundaryEdgeData[j] = (relationCompVecs_.at(curStream).hDataArray[relativeEid++] > 0);
                         }
-                        allClusters_[sid].boundaryEdges_ = boundaryEdgeData;
+                        std::swap(allClusters_[sid].boundaryEdges_, boundaryEdgeData);
                     }
                 }
                 consumerCounters_[curStream].fetch_sub(1);
                 #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
@@ -1259,19 +1381,23 @@ class Gale final : public AbstractTriangulation {
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::BVRelation;
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
             if (allClusters_[segId].boundaryVertices_.empty()) {
-                readLock.unlock();
-                // waitings_[tid] = 1;
                 #ifdef MEASURE_TIME
                 timers_[tid].reStart();
                 #endif
                 int qid = relationMaps_.at(RelationType::BVRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
-                jobQueues_[qid].push(tid);
+                jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                #endif
                 sem_wait(&relationSems_[tid]);
                 // waitings_[tid] = 0;
 
                 // copy the data from GPU to CPU
+                #ifdef MEASURE_TIME
+                Timer tmp;
+                #endif
                 SimplexId endClusterId = std::min(segId + precompClusterNumber_, clusterNumber_) - 1;
                 int curStream = relationMaps_.at(RelationType::BVRelation), pos = gpuThreadPositions_[tid];
                 for (SimplexId sid = segId; sid <= endClusterId; ++sid) {
@@ -1282,13 +1408,14 @@ class Gale final : public AbstractTriangulation {
                         for (int j = 0; j < localVertexNum; ++j) {
                             boundaryVertexData[j] = (relationCompVecs_.at(curStream).hDataArray[relativeVid++] > 0);
                         }
-                        allClusters_[sid].boundaryVertices_ = boundaryVertexData;
+                        std::swap(allClusters_[sid].boundaryVertices_, boundaryVertexData);
                     }
                 }
                 consumerCounters_[curStream].fetch_sub(1);
                 #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
                 waitingCounts_[tid]++;
-                waitingTimes_[tid] += timers_[tid].getElapsedTime();
+                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -1318,6 +1445,12 @@ class Gale final : public AbstractTriangulation {
 
         /* Change the vertex id in the cell array */
         int reorderCells(const std::vector<SimplexId> &vertexMap);
+
+        int getClusterVertexStarsVector(const SimplexId &clusterId, 
+                std::vector<std::vector<SimplexId>> &vertexStarVec) const;
+
+        /* Compute cell neighbors in a cluster */
+        int getClusterCellNeighbors(const SimplexId &clusterId) const;
 
         /* Function used by the leader producer thread */
         void leaderProducer(const int id);
@@ -1355,7 +1488,7 @@ class Gale final : public AbstractTriangulation {
         int *dEdgeList_{}, *dTriangleList_{};
 
         /* Relation matrices on the host and device */
-        bool *hBoundaryTriangles_, *dBoundaryTriangles_;
+        bool *dBoundaryTriangles_;
 
         struct RelationComputation {
             int *hSizeArray, *hDataArray;
@@ -1376,12 +1509,13 @@ class Gale final : public AbstractTriangulation {
         mutable std::vector<RelationType> currRelations_;
         mutable std::vector<sem_t> relationSems_;
         mutable std::array<std::mutex, 25> qMutexes_;
-        mutable std::vector<std::queue<int>> jobQueues_;
         #ifdef MEASURE_TIME
         mutable std::vector<Timer> timers_;
-        // mutable std::vector<std::vector<double>> consumerTimes_;
-        mutable std::vector<double> waitingTimes_;
+        mutable std::vector<std::array<double, 6>> waitingTimes_;
         mutable std::vector<int> waitingCounts_;
+        mutable std::vector<std::queue<std::pair<int, Timer>>> jobQueues_;
+        #else
+        mutable std::vector<std::queue<int>> jobQueues_;
         // mutable std::vector<std::unordered_map<RelationType, int>> waitingCounts_;
         // mutable std::vector<std::unordered_map<RelationType, double>> waitingTimes_;
         // std::vector<std::vector<int>> qSizes_;
