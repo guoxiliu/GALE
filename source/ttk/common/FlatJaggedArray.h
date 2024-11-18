@@ -24,6 +24,11 @@ namespace ttk {
     // ############## //
     FlatJaggedArray() {}
 
+    template <typename T>
+    FlatJaggedArray(const std::vector<T> &src) {
+      this->fillFrom(src);
+    }
+
     /**
      * @brief Set internal data from pre-existing vectors
      */
