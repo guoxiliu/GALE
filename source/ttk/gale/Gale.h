@@ -1158,7 +1158,6 @@ class Gale final : public AbstractTriangulation {
         int precompClusterNumber_;
         int vertexNumber_, edgeNumber_, triangleNumber_, cellNumber_;
         std::vector<RelationType> preconditionedRelations_{};
-        std::vector<cudaStream_t> threadStreams_;
         mutable std::vector<MeshSegment> allClusters_;
 
         /* Data allocated on the host memory */

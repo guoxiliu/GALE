@@ -776,18 +776,18 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     int localEdgeNum = hEdgeIntervals_[hEndClusters[curStream][i]] - hEdgeIntervals_[hClusterIds[i] - 1];
                     localEdgeSum += localEdgeNum;
                 }
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, false, sizeof(bool) * localEdgeSum, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, false, sizeof(bool) * localEdgeSum, 0));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
                 #ifdef MEASURE_TIME
                 for (int i = 0; i < threadNum; ++i) {
                     waitingTimes_[jobs[i].first][3] += t.getElapsedTime();
                 }
-                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(startEvents[curStream], 0);
                 #endif
-                computeMultiBoundaryEdges<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                computeMultiBoundaryEdges<<<dimBlock, blockSize_, 0, 0>>>(
                     dEdgeList_, dTriangleList_,
                     (bool *)relationCompVecs_[curStream].dDataArray, dBoundaryTriangles_,
                     clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
@@ -797,9 +797,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     cellDimension_, threadsPerCluster_);
 
                 relationCompVecs_[curStream].hDataArray = (int *)malloc(sizeof(bool) * localEdgeSum);
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(bool) * localEdgeSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(bool) * localEdgeSum, cudaMemcpyDeviceToHost, 0));
                 #ifdef MEASURE_TIME
-                cudaEventRecord(endEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(endEvents[curStream], 0);
                 #endif
                 break;
             }
@@ -819,18 +819,18 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     localVertexSum += localVertexNum;
                 }
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, false, sizeof(bool) * localVertexSum, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, false, sizeof(bool) * localVertexSum, 0));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
                 #ifdef MEASURE_TIME
                 for (int i = 0; i < threadNum; ++i) {
                     waitingTimes_[jobs[i].first][3] += t.getElapsedTime();
                 }
-                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(startEvents[curStream], 0);
                 #endif
-                computeMultiBoundaryVertices<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                computeMultiBoundaryVertices<<<dimBlock, blockSize_, 0, 0>>>(
                     dTriangleList_, dBoundaryTriangles_, (bool *)relationCompVecs_[curStream].dDataArray,
                     clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets, 
                     dConnectivity_, dOffsets_, dIndexArray_,
@@ -839,9 +839,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     cellDimension_, threadsPerCluster_);
 
                 relationCompVecs_[curStream].hDataArray = (int *)malloc(sizeof(bool) * localVertexSum);
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(bool) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(bool) * localVertexSum, cudaMemcpyDeviceToHost, 0));
                 #ifdef MEASURE_TIME
-                cudaEventRecord(endEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(endEvents[curStream], 0);
                 #endif
                 break;
             }
@@ -860,19 +860,19 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     int localEdgeNums = hEdgeIntervals_[hEndClusters[curStream][i]] - hEdgeIntervals_[hClusterIds[i] - 1];
                     localEdgeSum += localEdgeNums;
                 }
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localEdgeSum, threadStreams_[curStream]));
-                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localEdgeSum * efColumnNum, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localEdgeSum, 0));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localEdgeSum * efColumnNum, 0));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
                 #ifdef MEASURE_TIME
                 for (int i = 0; i < threadNum; ++i) {
                     waitingTimes_[jobs[i].first][3] += t.getElapsedTime();
                 }
-                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(startEvents[curStream], 0);
                 #endif
-                computeMultiEdgeTriangles<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                computeMultiEdgeTriangles<<<dimBlock, blockSize_, 0, 0>>>(
                     dEdgeList_, dTriangleList_,
                     relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
                     clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
@@ -884,10 +884,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 relationCompVecs_[curStream].hSizeArray = new int[localEdgeSum];
                 relationCompVecs_[curStream].hDataArray = new int[localEdgeSum * efColumnNum];
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localEdgeSum * efColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localEdgeSum * efColumnNum, cudaMemcpyDeviceToHost, 0));
                 #ifdef MEASURE_TIME
-                cudaEventRecord(endEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(endEvents[curStream], 0);
                 #endif
                 break;
             }
@@ -907,8 +907,8 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     localEdgeSum += localEdgeNums;
                 }
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
                 CHECK(cudaMemset(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localEdgeSum));
                 CHECK(cudaMemset(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localEdgeSum * etColumnNum));
 
@@ -917,9 +917,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 for (int i = 0; i < threadNum; ++i) {
                     waitingTimes_[jobs[i].first][3] += t.getElapsedTime();
                 }
-                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(startEvents[curStream], 0);
                 #endif
-                computeMultiEdgeStars<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                computeMultiEdgeStars<<<dimBlock, blockSize_, 0, 0>>>(
                     dEdgeList_, relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
                     clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets, 
                     dConnectivity_, dOffsets_,
@@ -930,10 +930,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 relationCompVecs_[curStream].hSizeArray = new int[localEdgeSum];
                 relationCompVecs_[curStream].hDataArray = new int[localEdgeSum * etColumnNum];
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localEdgeSum * etColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localEdgeSum * etColumnNum, cudaMemcpyDeviceToHost, 0));
                 #ifdef MEASURE_TIME
-                cudaEventRecord(endEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(endEvents[curStream], 0);
                 #endif
                 break;
             }
@@ -953,8 +953,8 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     localTriangleSum += localTriangleNums;
                 }
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
                 CHECK(cudaMemset(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localTriangleSum));
                 CHECK(cudaMemset(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localTriangleSum * ftColumnNum));
 
@@ -963,9 +963,9 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 for (int i = 0; i < threadNum; ++i) {
                     waitingTimes_[jobs[i].first][3] += t.getElapsedTime();
                 }
-                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(startEvents[curStream], 0);
                 #endif
-                computeMultiTriangleStars<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                computeMultiTriangleStars<<<dimBlock, blockSize_, 0, 0>>>(
                     dTriangleList_, relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
                     clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
                     dConnectivity_, dOffsets_,
@@ -976,10 +976,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 relationCompVecs_[curStream].hSizeArray = new int[localTriangleSum];
                 relationCompVecs_[curStream].hDataArray = new int[localTriangleSum * ftColumnNum];
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localTriangleSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localTriangleSum * ftColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localTriangleSum, cudaMemcpyDeviceToHost, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localTriangleSum * ftColumnNum, cudaMemcpyDeviceToHost, 0));
                 #ifdef MEASURE_TIME
-                cudaEventRecord(endEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(endEvents[curStream], 0);
                 #endif
                 break;
             }
@@ -999,19 +999,19 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     localVertexSum += localVertexNum;
                 }
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localVertexSum, threadStreams_[curStream]));
-                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localVertexSum * veColumnNum, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localVertexSum, 0));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localVertexSum * veColumnNum, 0));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
                 #ifdef MEASURE_TIME
                 for (int i = 0; i < threadNum; ++i) {
                     waitingTimes_[jobs[i].first][3] += t.getElapsedTime();
                 }
-                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(startEvents[curStream], 0);
                 #endif
-                computeMultiVertexEdges<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                computeMultiVertexEdges<<<dimBlock, blockSize_, 0, 0>>>(
                     dEdgeList_, relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
                     clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
                     dConnectivity_, dOffsets_, dIndexArray_,
@@ -1023,10 +1023,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 relationCompVecs_[curStream].hSizeArray = new int[localVertexSum];
                 relationCompVecs_[curStream].hDataArray = new int[localVertexSum * veColumnNum];
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localVertexSum * veColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localVertexSum * veColumnNum, cudaMemcpyDeviceToHost, 0));
                 #ifdef MEASURE_TIME
-                cudaEventRecord(endEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(endEvents[curStream], 0);
                 #endif
                 break;
             }
@@ -1046,19 +1046,19 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     localVertexSum += localVertexNum;
                 }
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localVertexSum, threadStreams_[curStream]));
-                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localVertexSum * vfColumnNum, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localVertexSum, 0));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localVertexSum * vfColumnNum, 0));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
                 #ifdef MEASURE_TIME
                 for (int i = 0; i < threadNum; ++i) {
                     waitingTimes_[jobs[i].first][3] += t.getElapsedTime();
                 }
-                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(startEvents[curStream], 0);
                 #endif
-                computeMultiVertexTriangles<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                computeMultiVertexTriangles<<<dimBlock, blockSize_, 0, 0>>>(
                     dTriangleList_, relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
                     clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
                     dConnectivity_, dOffsets_, dIndexArray_,
@@ -1070,10 +1070,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 relationCompVecs_[curStream].hSizeArray = new int [localVertexSum];
                 relationCompVecs_[curStream].hDataArray = new int [localVertexSum * vfColumnNum];
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localVertexSum * vfColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localVertexSum * vfColumnNum, cudaMemcpyDeviceToHost, 0));
                 #ifdef MEASURE_TIME
-                cudaEventRecord(endEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(endEvents[curStream], 0);
                 #endif
                 break;
             }
@@ -1091,19 +1091,19 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     localVertexSum += localVertexNum;
                 }
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localVertexSum, threadStreams_[curStream]));
-                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localVertexSum * vtColumnNum, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localVertexSum, 0));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localVertexSum * vtColumnNum, 0));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
                 #ifdef MEASURE_TIME
                 for (int i = 0; i < threadNum; ++i) {
                     waitingTimes_[jobs[i].first][3] += t.getElapsedTime();
                 }
-                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(startEvents[curStream], 0);
                 #endif
-                computeMultiVertexStars<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                computeMultiVertexStars<<<dimBlock, blockSize_, 0, 0>>>(
                     relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
                     clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
                     dConnectivity_, dOffsets_,
@@ -1114,10 +1114,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 relationCompVecs_[curStream].hSizeArray = new int[localVertexSum];
                 relationCompVecs_[curStream].hDataArray = new int[localVertexSum * vtColumnNum];
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localVertexSum * vtColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localVertexSum * vtColumnNum, cudaMemcpyDeviceToHost, 0));
                 #ifdef MEASURE_TIME
-                cudaEventRecord(endEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(endEvents[curStream], 0);
                 #endif
                 break;
             }
@@ -1135,19 +1135,19 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                     localVertexSum += localVertexNum;
                 }
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, threadStreams_[curStream]));
-                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localVertexSum, threadStreams_[curStream]));
-                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localVertexSum * vvColumnNum, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].dSimplexOffsets, hSimplexOffsets[curStream].data(), sizeof(int) * threadNum, cudaMemcpyHostToDevice, 0));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dSizeArray, 0, sizeof(int) * localVertexSum, 0));
+                CHECK(cudaMemsetAsync(relationCompVecs_[curStream].dDataArray, -1, sizeof(int) * localVertexSum * vvColumnNum, 0));
 
                 dim3 dimBlock(threadNum, blocksPerThread_);
                 #ifdef MEASURE_TIME
                 for (int i = 0; i < threadNum; ++i) {
                     waitingTimes_[jobs[i].first][3] += t.getElapsedTime();
                 }
-                cudaEventRecord(startEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(startEvents[curStream], 0);
                 #endif
-                computeMultiVertexNeighbors<<<dimBlock, blockSize_, 0, threadStreams_[curStream]>>>(
+                computeMultiVertexNeighbors<<<dimBlock, blockSize_, 0, 0>>>(
                     relationCompVecs_[curStream].dDataArray, relationCompVecs_[curStream].dSizeArray,
                     clusterNumber_, relationCompVecs_[curStream].dClusterIds, relationCompVecs_[curStream].dSimplexOffsets,
                     dConnectivity_, dOffsets_,
@@ -1158,10 +1158,10 @@ int Gale::computeCombinedRelation(std::map<RelationType,
                 relationCompVecs_[curStream].hSizeArray = new int[localVertexSum];
                 relationCompVecs_[curStream].hDataArray = new int[localVertexSum * vvColumnNum];
 
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
-                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localVertexSum * vvColumnNum, cudaMemcpyDeviceToHost, threadStreams_[curStream]));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hSizeArray, relationCompVecs_[curStream].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost, 0));
+                CHECK(cudaMemcpyAsync(relationCompVecs_[curStream].hDataArray, relationCompVecs_[curStream].dDataArray, sizeof(int) * localVertexSum * vvColumnNum, cudaMemcpyDeviceToHost, 0));
                 #ifdef MEASURE_TIME
-                cudaEventRecord(endEvents[curStream], threadStreams_[curStream]);
+                cudaEventRecord(endEvents[curStream], 0);
                 #endif
                 break;
             }
@@ -1172,13 +1172,14 @@ int Gale::computeCombinedRelation(std::map<RelationType,
     }
 
     // Get the relation arrays from the GPU
+    Timer tmp;
     for (int curStream = 0; curStream < numRelations; ++curStream) {
         // (relation, [(tid, clusterId), ...])
         RelationType &relation = relationOrders[curStream];
         int relationId = static_cast<int>(relation);
         std::vector<std::pair<int,int>> &jobs = requestMap[relation];
         int threadNum = jobs.size();
-        cudaError_t status = cudaStreamSynchronize(threadStreams_[curStream]);
+        cudaError_t status = cudaStreamSynchronize(0);
         if (status != cudaSuccess) {
             fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(status),
                 __FILE__, __LINE__); if (abort) exit(status);
@@ -1191,7 +1192,6 @@ int Gale::computeCombinedRelation(std::map<RelationType,
         for (int i = 0; i < threadNum; ++i) {
             waitingTimes_[jobs[i].first][4] += milliseconds / 1000;
         }
-        Timer tmp;
         #endif
 
         switch (relation) {
@@ -1565,16 +1565,14 @@ void Gale::leaderProducer() {
         if (!localQ.empty()) {
             // initialization that executes only once
             for (static bool first = true; first; first = false) {
-                threadStreams_.resize(preconditionedRelations_.size());
                 relationCompVecs_.resize(preconditionedRelations_.size());
                 // preallocate a large chunk of memory for GPU computation 
                 int allocatedSize = threadNumber_ * precompClusterNumber_ * 500;
                 for (int i = 0; i < relationCompVecs_.size(); ++i) {
-                    CHECK(cudaStreamCreate(&threadStreams_[i]));
-                    CHECK(cudaMallocAsync((void **)&relationCompVecs_[i].dClusterIds, sizeof(int) * threadNumber_, threadStreams_[i]));
-                    CHECK(cudaMallocAsync((void **)&relationCompVecs_[i].dSimplexOffsets, sizeof(int) * threadNumber_, threadStreams_[i]));
-                    CHECK(cudaMallocAsync((void **)&relationCompVecs_[i].dSizeArray, sizeof(int) * allocatedSize, threadStreams_[i]));
-                    CHECK(cudaMallocAsync((void **)&relationCompVecs_[i].dDataArray, sizeof(int) * allocatedSize * 80, threadStreams_[i]));
+                    CHECK(cudaMallocAsync((void **)&relationCompVecs_[i].dClusterIds, sizeof(int) * threadNumber_, 0));
+                    CHECK(cudaMallocAsync((void **)&relationCompVecs_[i].dSimplexOffsets, sizeof(int) * threadNumber_, 0));
+                    CHECK(cudaMallocAsync((void **)&relationCompVecs_[i].dSizeArray, sizeof(int) * allocatedSize, 0));
+                    CHECK(cudaMallocAsync((void **)&relationCompVecs_[i].dDataArray, sizeof(int) * allocatedSize * 80, 0));
                 }
             }
 
@@ -1599,7 +1597,6 @@ void Gale::leaderProducer() {
                 leaderCluster = currClusters_[i];
                 if (leaderCluster < 0) {
                     for (int i = 0; i < relationCompVecs_.size(); ++i) {
-                        CHECK(cudaStreamDestroy(threadStreams_[i]));
                         CHECK(cudaFree(relationCompVecs_[i].dClusterIds));
                         CHECK(cudaFree(relationCompVecs_[i].dSimplexOffsets));
                         CHECK(cudaFree(relationCompVecs_[i].dSizeArray));
