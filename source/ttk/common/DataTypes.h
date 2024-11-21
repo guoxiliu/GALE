@@ -152,12 +152,4 @@ namespace ttk {
 
 }
 
-const int efColumnNum = 20;
-const int etColumnNum = 20;
-const int ftColumnNum = 5;
-const int vvColumnNum = 30;
-const int vtColumnNum = 60;
-const int veColumnNum = 30;
-const int vfColumnNum = 80;
-
 #endif

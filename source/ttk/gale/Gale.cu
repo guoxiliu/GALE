@@ -29,7 +29,7 @@ Gale::Gale(int tnum, int tnumPerCluster) {
     }
     #ifdef MEASURE_TIME
     timers_ = std::vector<Timer>(threadNumber_);
-    waitingTimes_ = std::vector<double>(threadNumber_, 0);
+    waitingTimes_ = std::vector<std::array<double, 6>>(threadNumber_, std::array<double, 6>{});
     waitingCounts_ = std::vector<int>(threadNumber_, 0);
     // waitingTimes_.resize(threadNumber_);
     // waitingCounts_.resize(threadNumber_);
@@ -67,7 +67,12 @@ Gale::~Gale() {
         // for (int j = 0; j < consumerTimes_[i].size(); ++j) {
         //     std::cout << "consumer " << i << ": " << consumerTimes_[i][j] << std::endl;
         // }
-        std::cout << "consumer " << i << ": " << waitingTimes_[i] << ", " << waitingCounts_[i] << std::endl;
+        // std::cout << "consumer " << i << ": " << waitingTimes_[i] << ", " << waitingCounts_[i] << std::endl;
+        std::cout << "consumer " << i << ": ";
+        for (int j = 0; j < 6; ++j) {
+            std::cout << waitingTimes_[i][j] << ", ";
+        }
+        std::cout << waitingCounts_[i] << std::endl;
     }
 
     // for (int i = 0; i < producers_.size(); ++i) {
@@ -267,7 +272,6 @@ int Gale::computeRelation(const RelationType relation,
                 cellDimension_, threadsPerCluster_);
 
             bool *hBoundaryEdgeList = new bool[localEdgeNum];
-
             CHECK(cudaMemcpy(hBoundaryEdgeList, dBoundaryEdgeList, sizeof(bool) * localEdgeNum, cudaMemcpyDeviceToHost));
 
             // std::unique_lock<std::mutex> lck(BEMutex_);
@@ -316,7 +320,6 @@ int Gale::computeRelation(const RelationType relation,
                 cellDimension_, threadsPerCluster_);
 
             bool *hBoundaryVertexList = new bool[localVertexNum];
-
             CHECK(cudaMemcpy(hBoundaryVertexList, dBoundaryVertexList, sizeof(bool) * localVertexNum, cudaMemcpyDeviceToHost));
 
             // std::unique_lock<std::mutex> lck(BVMutex_);
@@ -349,7 +352,6 @@ int Gale::computeRelation(const RelationType relation,
         case RelationType::BFRelation:
         {
             int *dTriangleStarMatrix, *dTriangleStarSizes;
-            int numBlocks = clusterNumber_ / (blockSize_ / threadsPerCluster_) + 1;
             int localTriangleNum = triangleNumber_;
             CHECK(cudaMalloc((void **)&dBoundaryTriangles_, sizeof(bool) * localTriangleNum));
             CHECK(cudaMalloc((void **)&dTriangleStarSizes, sizeof(int) * localTriangleNum));
@@ -735,18 +737,19 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
 
     int res = 0;
 
-    // #ifdef MEASURE_TIME
-    // float kernelTime = 0, returnTime = 0;
-    // cudaEvent_t startEvent;
-    // cudaEvent_t endEvent;
-    // cudaEventCreate(&startEvent);
-    // cudaEventCreate(&endEvent);
-    // #endif
+    #ifdef MEASURE_TIME
+    cudaEvent_t startEvent;
+    cudaEvent_t endEvent;
+    cudaEventCreate(&startEvent);
+    cudaEventCreate(&endEvent);
+    #endif
 
     // launch GPU kernels for the topological relation
+    Timer t;
     RelationType &relation = preconditionedRelations_[producerId];
     int threadNum = threadIds.size();
     std::vector<SimplexId> hEndClusters(threadNum);
+    int hClusterIds[threadNum];
     int hSimplexOffsets[threadNum];
 
     // launches kernels on different streams
@@ -754,7 +757,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
         case RelationType::BERelation:
         {
             int localEdgeSum = 0;
-            int hClusterIds[threadNum];
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
                 gpuThreadPositions_[threadIds[i]] = i;
@@ -770,6 +772,13 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, 0, sizeof(int) * localEdgeSum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
+            #ifdef MEASURE_TIME
+            // data perparation time
+            for (int i = 0; i < threadNum; ++i) {
+                waitingTimes_[threadIds[i]][3] += t.getElapsedTime();
+            }
+            cudaEventRecord(startEvent);
+            #endif
             computeMultiBoundaryEdges<<<dimBlock, blockSize_>>>(
                 dEdgeList_, dTriangleList_,
                 dBoundaryTriangles_, relationCompVecs_[producerId].dDataArray, 
@@ -779,21 +788,23 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            while (consumerCounters_[producerId].load() > 0) {
-                // busy wait, can use a sleep to reduce the CPU usage
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            consumerCounters_[producerId] = threadNum;
+            // #ifdef MEASURE_TIME
+            // cudaEventRecord(endEvent);
+            // #endif
+
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
+            #ifdef MEASURE_TIME
+            cudaEventRecord(endEvent);
+            #endif
+
             break;
         }
 
         case RelationType::BVRelation: 
         {
             int localVertexSum = 0;
-            int hClusterIds[threadNum];
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
                 gpuThreadPositions_[threadIds[i]] = i;
@@ -810,6 +821,12 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, 0, sizeof(int) * localVertexSum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
+            #ifdef MEASURE_TIME
+            for (int i = 0; i < threadNum; ++i) {
+                waitingTimes_[threadIds[i]][3] += t.getElapsedTime();
+            }
+            cudaEventRecord(startEvent);
+            #endif
             computeMultiBoundaryVertices<<<dimBlock, blockSize_>>>(
                 dTriangleList_, dBoundaryTriangles_, relationCompVecs_[producerId].dDataArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets, 
@@ -818,21 +835,23 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            while (consumerCounters_[producerId].load() > 0) {
-                // busy wait, can use a sleep to reduce the CPU usage
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            consumerCounters_[producerId] = threadNum;
+            // #ifdef MEASURE_TIME
+            // cudaEventRecord(endEvent);
+            // #endif
+
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
+            #ifdef MEASURE_TIME
+            cudaEventRecord(endEvent);
+            #endif
+
             break;
         }
         
         case RelationType::EFRelation:
         {
             int localEdgeSum = 0;
-            int hClusterIds[threadNum];
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
                 gpuThreadPositions_[threadIds[i]] = i;
@@ -849,6 +868,12 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, -1, sizeof(int) * localEdgeSum * efColumnNum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
+            #ifdef MEASURE_TIME
+            for (int i = 0; i < threadNum; ++i) {
+                waitingTimes_[threadIds[i]][3] += t.getElapsedTime();
+            }
+            cudaEventRecord(startEvent);
+            #endif
             computeMultiEdgeTriangles<<<dimBlock, blockSize_>>>(
                 dEdgeList_, dTriangleList_,
                 relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
@@ -858,22 +883,24 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            while (consumerCounters_[producerId].load() > 0) {
-                // busy wait, can use a sleep to reduce the CPU usage
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            consumerCounters_[producerId] = threadNum;
+            // #ifdef MEASURE_TIME
+            // cudaEventRecord(endEvent);
+            // #endif
+
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localEdgeSum * efColumnNum, cudaMemcpyDeviceToHost));
+            #ifdef MEASURE_TIME
+            cudaEventRecord(endEvent);
+            #endif
+
             break;
         }
 
         case RelationType::ETRelation:
         {
             int localEdgeSum = 0;
-            int hClusterIds[threadNum];
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
                 gpuThreadPositions_[threadIds[i]] = i;
@@ -891,6 +918,12 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, -1, sizeof(int) * localEdgeSum * etColumnNum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
+            #ifdef MEASURE_TIME
+            for (int i = 0; i < threadNum; ++i) {
+                waitingTimes_[threadIds[i]][3] += t.getElapsedTime();
+            }
+            cudaEventRecord(startEvent);
+            #endif
             computeMultiEdgeStars<<<dimBlock, blockSize_>>>(
                 dEdgeList_, relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets, 
@@ -899,22 +932,24 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            while (consumerCounters_[producerId].load() > 0) {
-                // busy wait, can use a sleep to reduce the CPU usage
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            consumerCounters_[producerId] = threadNum;
+            // #ifdef MEASURE_TIME
+            // cudaEventRecord(endEvent);
+            // #endif
+
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localEdgeSum * etColumnNum, cudaMemcpyDeviceToHost));
+            #ifdef MEASURE_TIME
+            cudaEventRecord(endEvent);
+            #endif
+
             break;
         }
 
         case RelationType::FTRelation:
         {
             int localTriangleSum = 0;
-            int hClusterIds[threadNum];
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
                 gpuThreadPositions_[threadIds[i]] = i;
@@ -932,6 +967,12 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, -1, sizeof(int) * localTriangleSum * ftColumnNum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
+            #ifdef MEASURE_TIME
+            for (int i = 0; i < threadNum; ++i) {
+                waitingTimes_[threadIds[i]][3] += t.getElapsedTime();
+            }
+            cudaEventRecord(startEvent);
+            #endif
             computeMultiTriangleStars<<<dimBlock, blockSize_>>>(
                 dTriangleList_, relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
@@ -940,22 +981,24 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
 
-            while (consumerCounters_[producerId].load() > 0) {
-                // busy wait, can use a sleep to reduce the CPU usage
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            consumerCounters_[producerId] = threadNum;
+            // #ifdef MEASURE_TIME
+            // cudaEventRecord(endEvent);
+            // #endif
+
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localTriangleSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localTriangleSum * ftColumnNum, cudaMemcpyDeviceToHost));
+            #ifdef MEASURE_TIME
+            cudaEventRecord(endEvent);
+            #endif
+
             break;
         }
 
         case RelationType::VERelation:
         {
             int localVertexSum = 0;
-            int hClusterIds[threadNum];
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
                 gpuThreadPositions_[threadIds[i]] = i;
@@ -973,9 +1016,12 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, -1, sizeof(int) * localVertexSum * veColumnNum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
-            // #ifdef MEASURE_TIME
-            // cudaEventRecord(startEvent);
-            // #endif
+            #ifdef MEASURE_TIME
+            for (int i = 0; i < threadNum; ++i) {
+                waitingTimes_[threadIds[i]][3] += t.getElapsedTime();
+            }
+            cudaEventRecord(startEvent);
+            #endif
             computeMultiVertexEdges<<<dimBlock, blockSize_>>>(
                 dEdgeList_, relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
@@ -988,22 +1034,20 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             // cudaEventRecord(endEvent);
             // #endif
             
-            while (consumerCounters_[producerId].load() > 0) {
-                // busy wait, can use a sleep to reduce the CPU usage
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            consumerCounters_[producerId] = threadNum;
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localVertexSum * veColumnNum, cudaMemcpyDeviceToHost));
+            #ifdef MEASURE_TIME
+            cudaEventRecord(endEvent);
+            #endif
+
             break;
         }
 
         case RelationType::VFRelation:
         {
             int localVertexSum = 0;
-            int hClusterIds[threadNum];
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
                 gpuThreadPositions_[threadIds[i]] = i;
@@ -1021,9 +1065,12 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, -1, sizeof(int) * localVertexSum * vfColumnNum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
-            // #ifdef MEASURE_TIME
-            // cudaEventRecord(startEvent);
-            // #endif
+            #ifdef MEASURE_TIME
+            for (int i = 0; i < threadNum; ++i) {
+                waitingTimes_[threadIds[i]][3] += t.getElapsedTime();
+            }
+            cudaEventRecord(startEvent);
+            #endif
             computeMultiVertexTriangles<<<dimBlock, blockSize_>>>(
                 dTriangleList_, relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
@@ -1033,25 +1080,23 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 cellDimension_, threadsPerCluster_);
 
             // #ifdef MEASURE_TIME
-            // cudaEventRecord(startEvent);
+            // cudaEventRecord(endEvent);
             // #endif
 
-            while (consumerCounters_[producerId].load() > 0) {
-                // busy wait, can use a sleep to reduce the CPU usage
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            consumerCounters_[producerId] = threadNum;
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
             
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localVertexSum * vfColumnNum, cudaMemcpyDeviceToHost));
+            #ifdef MEASURE_TIME
+            cudaEventRecord(endEvent);
+            #endif
+
             break;
         }
 
         case RelationType::VTRelation:
         {
             int localVertexSum = 0;
-            int hClusterIds[threadNum];
             for (int i = 0; i < threadNum; ++i) {
                 gpuThreadPositions_[threadIds[i]] = i;
                 hSimplexOffsets[i] = localVertexSum;
@@ -1067,9 +1112,12 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, -1, sizeof(int) * localVertexSum * vtColumnNum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
-            // #ifdef MEASURE_TIME
-            // cudaEventRecord(startEvent);
-            // #endif
+            #ifdef MEASURE_TIME
+            for (int i = 0; i < threadNum; ++i) {
+                waitingTimes_[threadIds[i]][3] += t.getElapsedTime();
+            }
+            cudaEventRecord(startEvent);
+            #endif
             computeMultiVertexStars<<<dimBlock, blockSize_>>>(
                 relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
@@ -1077,26 +1125,25 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 dVertexIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
+            
             // #ifdef MEASURE_TIME
             // cudaEventRecord(endEvent);
             // #endif
 
-            while (consumerCounters_[producerId].load() > 0) {
-                // busy wait, can use a sleep to reduce the CPU usage
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            consumerCounters_[producerId] = threadNum;
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localVertexSum * vtColumnNum, cudaMemcpyDeviceToHost));
+            #ifdef MEASURE_TIME
+            cudaEventRecord(endEvent);
+            #endif
+
             break;
         }
 
         case RelationType::VVRelation:
         {
             int localVertexSum = 0;
-            int hClusterIds[threadNum];
             for (int i = 0; i < threadNum; ++i) {
                 gpuThreadPositions_[threadIds[i]] = i;
                 hSimplexOffsets[i] = localVertexSum;
@@ -1112,9 +1159,12 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, -1, sizeof(int) * localVertexSum * vvColumnNum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
-            // #ifdef MEASURE_TIME
-            // cudaEventRecord(startEvent);
-            // #endif
+            #ifdef MEASURE_TIME
+            for (int i = 0; i < threadNum; ++i) {
+                waitingTimes_[threadIds[i]][3] += t.getElapsedTime();
+            }
+            cudaEventRecord(startEvent);
+            #endif
             computeMultiVertexNeighbors<<<dimBlock, blockSize_>>>(
                 relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
@@ -1122,19 +1172,19 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 dVertexIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
                 cellDimension_, threadsPerCluster_);
+            
             // #ifdef MEASURE_TIME
             // cudaEventRecord(endEvent);
             // #endif
 
-            while (consumerCounters_[producerId].load() > 0) {
-                // busy wait, can use a sleep to reduce the CPU usage
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-            consumerCounters_[producerId] = threadNum;
             memcpy(relationCompVecs_[producerId].hSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum);
 
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hSizeArray, relationCompVecs_[producerId].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].hDataArray, relationCompVecs_[producerId].dDataArray, sizeof(int) * localVertexSum * vvColumnNum, cudaMemcpyDeviceToHost));
+            #ifdef MEASURE_TIME
+            cudaEventRecord(endEvent);
+            #endif
+
             break;
         }
 
@@ -1150,30 +1200,606 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             __FILE__, __LINE__); if (abort) exit(status);
     }
 
-    // #ifdef MEASURE_TIME
-    // float milliseconds = 0;
-    // cudaEventElapsedTime(&milliseconds, startEvent, endEvent);
-    // kernelTime += milliseconds;
-    // Timer tmp;
-    // #endif
-
+    #ifdef MEASURE_TIME
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, startEvent, endEvent);
+    // kernel time
     for (int i = 0; i < threadNum; ++i) {
-        SimplexId tid = threadIds[i];
-        SimplexId baseClusterId = currClusters_[tid];
-        int relationId = static_cast<int>(relation);
-        sem_post(&relationSems_[tid]);
-        if (baseClusters_[relationId][tid] == 0)
-            baseClusters_[relationId][tid] = baseClusterId;
+        waitingTimes_[threadIds[i]][4] += milliseconds / 1000;
+    }
+    Timer tmp;
+    #endif
+
+    // transform the data 
+    int relationId = static_cast<int>(relation);
+    switch (relation) {
+        case RelationType::BERelation: 
+        {
+            // #ifdef TTK_ENABLE_OPENMP
+            // #pragma omp parallel for num_threads(threadNum)
+            // #endif
+            for (int i = 0; i < threadNum; ++i) {
+                SimplexId tid = threadIds[i];
+                SimplexId baseClusterId = hClusterIds[i];
+                for (int sid = baseClusterId; sid <= hEndClusters[i]; ++sid) {
+                    if (allClusters_[sid].boundaryEdges_.empty()) {
+                        int localEdgeNum = hEdgeIntervals_[sid] - hEdgeIntervals_[sid - 1];
+                        int relativeEid = hEdgeIntervals_[sid - 1] - hEdgeIntervals_[baseClusterId - 1] + hSimplexOffsets[i];
+                        allClusters_[sid].boundaryEdges_.resize(localEdgeNum);
+                        for (int eid = 0; eid < localEdgeNum; ++eid) {
+                            allClusters_[sid].boundaryEdges_[eid] = relationCompVecs_[producerId].hDataArray[relativeEid++];
+                        }
+                    }
+                }
+                sem_post(&relationSems_[tid]);
+                #ifdef MEASURE_TIME
+                // data transfer time
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
+                #endif
+                if (baseClusters_[relationId][tid] == 0)
+                    baseClusters_[relationId][tid] = baseClusterId;
+            }
+
+            break;
+        }
+        case RelationType::BVRelation:
+        {
+            // #ifdef TTK_ENABLE_OPENMP
+            // #pragma omp parallel for num_threads(threadNum)
+            // #endif
+            for (int i = 0; i < threadNum; ++i) {
+                SimplexId tid = threadIds[i];
+                SimplexId baseClusterId = hClusterIds[i];
+                for (int sid = baseClusterId; sid <= hEndClusters[i]; ++sid) {
+                    if (allClusters_[sid].boundaryVertices_.empty()) {
+                        int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid-1];
+                        int relativeVid = hVertexIntervals_[sid - 1] - hVertexIntervals_[baseClusterId - 1] + hSimplexOffsets[i];
+                        allClusters_[sid].boundaryVertices_.resize(localVertexNum);
+                        for (int vid = 0; vid < localVertexNum; ++vid) {
+                            allClusters_[sid].boundaryVertices_[vid] = relationCompVecs_[producerId].hDataArray[relativeVid++];
+                        }
+                    }
+                }
+                sem_post(&relationSems_[tid]);
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
+                #endif
+                if (baseClusters_[relationId][tid] == 0)
+                    baseClusters_[relationId][tid] = baseClusterId;
+            }
+
+            break;
+        }
+        
+        case RelationType::EFRelation:
+        {
+            // #ifdef TTK_ENABLE_OPENMP
+            // #pragma omp parallel for num_threads(threadNum)
+            // #endif
+            for (int i = 0; i < threadNum; ++i) {
+                SimplexId tid = threadIds[i];
+                SimplexId baseClusterId = hClusterIds[i];
+                for (SimplexId sid = baseClusterId; sid <= hEndClusters[i]; ++sid) {
+                    if (allClusters_[sid].edgeTriangles_.empty()) {
+                        std::vector<SimplexId> edgeTriangleData{};
+                        int reid = hEdgeIntervals_[sid - 1] - hEdgeIntervals_[baseClusterId - 1] + hSimplexOffsets[i];
+                        int localEdgeNum = hEdgeIntervals_[sid] - hEdgeIntervals_[sid - 1];
+                        std::vector<SimplexId> edgeTriangleOffsets(localEdgeNum + 1);
+                        edgeTriangleOffsets[0] = 0;
+                        for (int eid = 0; eid < localEdgeNum; ++eid) {
+                            edgeTriangleData.insert(edgeTriangleData.end(), 
+                            relationCompVecs_[producerId].hDataArray + reid * efColumnNum,
+                            relationCompVecs_[producerId].hDataArray + reid * efColumnNum + relationCompVecs_[producerId].hSizeArray[reid]);
+                            edgeTriangleOffsets[eid+1] = edgeTriangleOffsets[eid] + relationCompVecs_[producerId].hSizeArray[reid];
+                            ++reid;
+                        }
+                        allClusters_[sid].edgeTriangles_.setData(std::move(edgeTriangleData), std::move(edgeTriangleOffsets));
+                    }
+                }
+                sem_post(&relationSems_[tid]);
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
+                #endif
+                if (baseClusters_[relationId][tid] == 0) 
+                    baseClusters_[relationId][tid] = baseClusterId;
+            }
+
+            break;
+        }
+        
+        case RelationType::ETRelation: 
+        {
+            // #ifdef TTK_ENABLE_OPENMP
+            // #pragma omp parallel for num_threads(threadNum)
+            // #endif
+            for (int i = 0; i < threadNum; ++i) {
+                SimplexId tid = threadIds[i];
+                SimplexId baseClusterId = hClusterIds[i];
+                for (SimplexId sid = baseClusterId; sid <= hEndClusters[i]; ++sid) {
+                    if (allClusters_[sid].edgeStars_.empty()) {
+                        std::vector<SimplexId> edgeStarData{};
+                        int reid = hEdgeIntervals_[sid - 1] - hEdgeIntervals_[baseClusterId - 1] + hSimplexOffsets[i];
+                        int localEdgeNum = hEdgeIntervals_[sid] - hEdgeIntervals_[sid - 1];
+                        std::vector<SimplexId> edgeStarOffsets(localEdgeNum + 1);
+                        edgeStarOffsets[0] = 0;
+                        for (int j = 0; j < localEdgeNum; ++j) {
+                            edgeStarData.insert(edgeStarData.end(), 
+                            relationCompVecs_[producerId].hDataArray + reid * etColumnNum,
+                            relationCompVecs_[producerId].hDataArray + reid * etColumnNum + relationCompVecs_[producerId].hSizeArray[reid]);
+                            edgeStarOffsets[j+1] = edgeStarOffsets[j] + relationCompVecs_[producerId].hSizeArray[reid];
+                            ++reid;
+                        }
+                        allClusters_[sid].edgeStars_.setData(std::move(edgeStarData), std::move(edgeStarOffsets));
+                    }
+                }
+                sem_post(&relationSems_[tid]);
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
+                #endif
+                if (baseClusters_[relationId][tid] == 0) 
+                    baseClusters_[relationId][tid] = baseClusterId;
+            }
+
+            break;
+        }
+
+        case RelationType::FTRelation:
+        {
+            // #ifdef TTK_ENABLE_OPENMP
+            // #pragma omp parallel for num_threads(threadNum)
+            // #endif
+            for (int i = 0; i < threadNum; ++i) {
+                SimplexId tid = threadIds[i];
+                SimplexId baseClusterId = hClusterIds[i];
+                for (SimplexId sid = baseClusterId; sid <= hEndClusters[i]; ++sid) {
+                    if (allClusters_[sid].triangleStars_.empty()) {
+                        std::vector<SimplexId> triangleStarData{};
+                        int reid = hTriangleIntervals_[sid - 1] - hTriangleIntervals_[baseClusterId - 1] + hSimplexOffsets[i];
+                        int localTriangleNum = hTriangleIntervals_[sid] - hTriangleIntervals_[sid - 1];
+                        std::vector<SimplexId> triangleStarOffsets(localTriangleNum + 1);
+                        triangleStarOffsets[0] = 0;
+                        for (int j = 0; j < localTriangleNum; ++j) {
+                            triangleStarData.insert(triangleStarData.end(), 
+                            relationCompVecs_[producerId].hDataArray + reid * ftColumnNum,
+                            relationCompVecs_[producerId].hDataArray + reid * ftColumnNum + relationCompVecs_[producerId].hSizeArray[reid]);
+                            triangleStarOffsets[j+1] = triangleStarOffsets[j] + relationCompVecs_[producerId].hSizeArray[reid];
+                            ++reid;
+                        }
+                        allClusters_[sid].triangleStars_.setData(std::move(triangleStarData), std::move(triangleStarOffsets));
+                    }
+                }
+                sem_post(&relationSems_[tid]);
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
+                #endif
+                if (baseClusters_[relationId][tid] == 0)
+                    baseClusters_[relationId][tid] = baseClusterId;
+            }
+
+            break;
+        }
+
+        case RelationType::VERelation:
+        {
+            // #ifdef TTK_ENABLE_OPENMP
+            // #pragma omp parallel for num_threads(threadNum)
+            // #endif
+            for (int i = 0; i < threadNum; ++i) {
+                // std::unique_lock<std::mutex> lck(VVMutex_);
+                SimplexId tid = threadIds[i];
+                SimplexId baseClusterId = hClusterIds[i];
+                for (SimplexId sid = baseClusterId; sid <= hEndClusters[i]; ++sid) {
+                    if (allClusters_[sid].vertexEdges_.empty()) {
+                        std::vector<SimplexId> vertexEdgeData{};
+                        int diff = hVertexIntervals_[sid - 1] - hVertexIntervals_[baseClusterId - 1] + hSimplexOffsets[i];
+                        int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
+                        std::vector<SimplexId> vertexEdgeOffsets(localVertexNum + 1);
+                        vertexEdgeOffsets[0] = 0;
+                        for (int j = 0; j < localVertexNum; ++j) {
+                            int rj = j + diff; // relative j value in the large matrix
+                            vertexEdgeData.insert(vertexEdgeData.end(), 
+                            relationCompVecs_[producerId].hDataArray + rj * veColumnNum,
+                            relationCompVecs_[producerId].hDataArray + rj * veColumnNum + relationCompVecs_[producerId].hSizeArray[rj]);
+                            vertexEdgeOffsets[j+1] = vertexEdgeOffsets[j] + relationCompVecs_[producerId].hSizeArray[rj];
+                        }
+                        allClusters_[sid].vertexEdges_.setData(std::move(vertexEdgeData), std::move(vertexEdgeOffsets));
+                    }
+                }
+                // lck.unlock();
+                sem_post(&relationSems_[tid]);
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
+                #endif
+                if (baseClusters_[relationId][tid] == 0)
+                    baseClusters_[relationId][tid] = baseClusterId;
+            }
+
+
+            break;
+        }
+        
+        case RelationType::VFRelation:
+        {
+            // #ifdef TTK_ENABLE_OPENMP
+            // #pragma omp parallel for num_threads(threadNum)
+            // #endif
+            for (int i = 0; i < threadNum; ++i) {
+                // std::unique_lock<std::mutex> lck(VVMutex_);
+                SimplexId tid = threadIds[i];
+                SimplexId baseClusterId = hClusterIds[i];
+                for (SimplexId sid = baseClusterId; sid <= hEndClusters[i]; ++sid) {
+                    if (allClusters_[sid].vertexTriangles_.empty()) {
+                        std::vector<SimplexId> vertexTriangleData{};
+                        int rvid = hVertexIntervals_[sid - 1] - hVertexIntervals_[baseClusterId - 1] + hSimplexOffsets[i];
+                        int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
+                        std::vector<SimplexId> vertexTriangleOffsets(localVertexNum + 1);
+                        vertexTriangleOffsets[0] = 0;
+                        for (int vid = 0; vid < localVertexNum; ++vid) {
+                            vertexTriangleData.insert(vertexTriangleData.end(), 
+                            relationCompVecs_[producerId].hDataArray + rvid * vfColumnNum,
+                            relationCompVecs_[producerId].hDataArray + rvid * vfColumnNum + relationCompVecs_[producerId].hSizeArray[rvid]);
+                            vertexTriangleOffsets[vid+1] = vertexTriangleOffsets[vid] + relationCompVecs_[producerId].hSizeArray[rvid];
+                            ++rvid;
+                        }
+                        allClusters_[sid].vertexTriangles_.setData(std::move(vertexTriangleData), std::move(vertexTriangleOffsets));
+                    }
+                }
+                // lck.unlock();
+                sem_post(&relationSems_[tid]);
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
+                #endif
+                if (baseClusters_[relationId][tid] == 0)
+                    baseClusters_[relationId][tid] = baseClusterId;
+            }
+
+            break;
+        }
+        
+        case RelationType::VTRelation:
+        {
+            
+
+            // #ifdef TTK_ENABLE_OPENMP
+            // #pragma omp parallel for num_threads(threadNum)
+            // #endif
+            for (int i = 0; i < threadNum; ++i) {
+                // std::unique_lock<std::mutex> lck(VVMutex_);
+                SimplexId tid = threadIds[i];
+                SimplexId baseClusterId = hClusterIds[i];
+                for (SimplexId sid = baseClusterId; sid <= hEndClusters[i]; ++sid) {
+                    std::vector<SimplexId> vertexStarData{};
+                    int diff = hVertexIntervals_[sid - 1] - hVertexIntervals_[baseClusterId - 1] + hSimplexOffsets[i];
+                    int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
+                    std::vector<SimplexId> vertexStarOffsets(localVertexNum + 1);
+                    vertexStarOffsets[0] = 0;
+                    for (int j = 0; j < localVertexNum; ++j) {
+                        int rj = j + diff; // relative j value in the large matrix
+                        vertexStarData.insert(vertexStarData.end(), 
+                        relationCompVecs_[producerId].hDataArray + rj * vtColumnNum,
+                        relationCompVecs_[producerId].hDataArray + rj * vtColumnNum + relationCompVecs_[producerId].hSizeArray[rj]);
+                        vertexStarOffsets[j+1] = vertexStarOffsets[j] + relationCompVecs_[producerId].hSizeArray[rj];
+                    }
+                    if (allClusters_[sid].vertexStars_.empty()) {
+                        allClusters_[sid].vertexStars_.setData(std::move(vertexStarData), std::move(vertexStarOffsets));
+                    }
+                }
+                // lck.unlock();
+                sem_post(&relationSems_[tid]);
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
+                #endif
+                if (baseClusters_[relationId][tid] == 0)
+                    baseClusters_[relationId][tid] = baseClusterId;
+            }
+
+            break;
+        }
+
+        case RelationType::VVRelation:
+        {
+            // #ifdef TTK_ENABLE_OPENMP
+            // #pragma omp parallel for num_threads(threadNum)
+            // #endif
+            for (int i = 0; i < threadNum; ++i) {
+                SimplexId tid = threadIds[i];
+                SimplexId baseClusterId = hClusterIds[i];
+                for (SimplexId sid = baseClusterId; sid <= hEndClusters[i]; ++sid) {
+                    // boost::unique_lock<boost::shared_mutex> writeLock(clusterMutexes_[sid]);
+                    std::vector<SimplexId> vertexNeighborData{};
+                    int diff = hVertexIntervals_[sid - 1] - hVertexIntervals_[baseClusterId - 1] + hSimplexOffsets[i];
+                    int localVertexNum = hVertexIntervals_[sid] - hVertexIntervals_[sid - 1];
+                    std::vector<SimplexId> vertexNeighborOffsets(localVertexNum + 1);
+                    vertexNeighborOffsets[0] = 0;
+                    for (int j = 0; j < localVertexNum; ++j) {
+                        int rj = j + diff; // relative j value in the large matrix
+                        vertexNeighborData.insert(vertexNeighborData.end(), 
+                        relationCompVecs_[producerId].hDataArray + rj * vvColumnNum,
+                        relationCompVecs_[producerId].hDataArray + rj * vvColumnNum + relationCompVecs_[producerId].hSizeArray[rj]);
+                        vertexNeighborOffsets[j+1] = vertexNeighborOffsets[j] + relationCompVecs_[producerId].hSizeArray[rj];
+                    }
+                    if (allClusters_[sid].vertexNeighbors_.empty()) {
+                        allClusters_[sid].vertexNeighbors_.setData(std::move(vertexNeighborData), std::move(vertexNeighborOffsets));
+                    }
+                    // writeLock.unlock();
+                }
+                sem_post(&relationSems_[tid]);
+                #ifdef MEASURE_TIME
+                waitingTimes_[tid][5] += tmp.getElapsedTime();
+                #endif
+                if (baseClusters_[relationId][tid] == 0)
+                    baseClusters_[relationId][tid] = baseClusterId;
+            }
+
+            break;
+        }
     }
 
-    // #ifdef MEASURE_TIME
-    // returnTime += tmp.getElapsedTime();
-    // kernelTimes_[producerId].push_back(kernelTime/1000);    // convert to seconds
-    // returnTimes_[producerId].push_back(returnTime);
-    // #endif
-    
     return res;
 }
+
+
+int Gale::getClusterVertexStarsVector(const SimplexId &clusterId, 
+                std::vector<std::vector<SimplexId>> &vertexStarVec) const {
+
+#ifndef TTK_ENABLE_KAMIKAZE
+  if(clusterId <= 0 || clusterId > nodeNumber_)
+    return -1;
+#endif
+
+  // get the vertex stars into a vector of vector
+  SimplexId verticesPerCell = cellDimension_ + 1;
+  SimplexId localVertexNum
+    = hVertexIntervals_[clusterId] - hVertexIntervals_[clusterId - 1];
+  vertexStarVec = std::vector<std::vector<SimplexId>>(localVertexNum);
+
+  // internal cells
+  for(SimplexId cid = hCellIntervals_[clusterId - 1] + 1;
+      cid <= hCellIntervals_[clusterId]; cid++) {
+    SimplexId localVertexId = hConnectivity_[hOffsets_[cid]]
+                              - hVertexIntervals_[clusterId - 1] - 1;
+    
+    vertexStarVec[localVertexId].push_back(cid);
+    for(SimplexId j = 1; j < verticesPerCell; j++) {
+      SimplexId vertexId = hConnectivity_[hOffsets_[cid] + j];
+      // see if it is in the current node
+      if(vertexId > hVertexIntervals_[clusterId - 1]
+          && vertexId <= hVertexIntervals_[clusterId]) {
+        localVertexId = vertexId - hVertexIntervals_[clusterId - 1] - 1;
+        vertexStarVec[localVertexId].push_back(cid);
+      }
+    }
+  }
+  for(int i = hExternalCellOffsets_[clusterId - 1]; i < hExternalCellOffsets_[clusterId]; ++i) {
+    SimplexId cid = hExternalCells_[i];
+    for(SimplexId j = 0; j < verticesPerCell; j++) {
+      // see if it is in the current node
+      SimplexId vertexId = hConnectivity_[hOffsets_[cid] + j];
+      if(vertexId > hVertexIntervals_[clusterId - 1]
+          && vertexId <= hVertexIntervals_[clusterId]) {
+        SimplexId localVertexId
+          = vertexId - hVertexIntervals_[clusterId - 1] - 1;
+        vertexStarVec[localVertexId].push_back(cid);
+      }
+    }
+  }
+
+  for(size_t i = 0; i < vertexStarVec.size(); i++) {
+    std::sort(vertexStarVec[i].begin(), vertexStarVec[i].end());
+  }
+
+  return 0;
+}
+
+
+int Gale::getClusterCellNeighbors(const SimplexId &clusterId) const {
+
+#ifndef TTK_ENABLE_KAMIKAZE
+  if(clusterId <= 0 || clusterId > nodeNumber_)
+    return -1;
+#endif
+
+  std::vector<std::vector<SimplexId>> localCellNeighbors(
+    hCellIntervals_[clusterId] - hCellIntervals_[clusterId - 1]);
+  MeshSegment &segment = allClusters_.at(clusterId);
+
+  // get the vertex stars into vector of vector
+  SimplexId verticesPerCell = cellDimension_ + 1;
+  std::vector<std::vector<SimplexId>> localVertexStars;
+  getClusterVertexStarsVector(clusterId, localVertexStars);
+
+  std::unordered_map<SimplexId, std::vector<std::vector<SimplexId>>>
+    nodeMaps;
+  for(SimplexId cid = hCellIntervals_[clusterId - 1] + 1;
+      cid <= hCellIntervals_[clusterId]; cid++) {
+    for(SimplexId j = 1; j < verticesPerCell; j++) {
+      if(hConnectivity_[hOffsets_[cid] + j]> hVertexIntervals_[clusterId]) {
+        SimplexId nodeId
+          = hIndexArray_[hConnectivity_[hOffsets_[cid] + j]];
+        if(nodeMaps.find(nodeId) == nodeMaps.end()) {
+          std::vector<std::vector<SimplexId>> tmpVec;
+          getClusterVertexStarsVector(nodeId, tmpVec);
+          nodeMaps[nodeId] = std::move(tmpVec);
+        }
+      }
+    }
+  }
+
+
+  if(cellDimension_ == 2) {
+    for(SimplexId cid = hCellIntervals_[clusterId - 1] + 1;
+        cid <= hCellIntervals_[clusterId]; cid++) {
+      for(SimplexId j = 0; j < 3; j++) {
+
+        SimplexId v0 = hConnectivity_[hOffsets_[cid + j]];
+        SimplexId v1 = hConnectivity_[hOffsets_[cid + (j + 1) % 3]];
+        SimplexId localV0 = v0 - hVertexIntervals_[clusterId - 1] - 1;
+        SimplexId localV1 = v1 - hVertexIntervals_[clusterId - 1] - 1;
+
+        std::vector<SimplexId> stars0, stars1;
+        if(v0 <= hVertexIntervals_[clusterId]) {
+          stars0 = localVertexStars[localV0];
+        } else {
+          localV0 = v0 - hVertexIntervals_[hIndexArray_[v0] - 1] - 1;
+          stars0 = nodeMaps[hIndexArray_[v0]][localV0];
+        }
+        if(v1 <= hVertexIntervals_[clusterId]) {
+          stars1 = localVertexStars[localV1];
+        } else {
+          localV1 = v1 - hVertexIntervals_[hIndexArray_[v1] - 1] - 1;
+          stars1 = nodeMaps[hIndexArray_[v1]][localV1];
+        }
+
+        // perform an intersection of the 2 sorted star lists
+        SimplexId pos0 = 0, pos1 = 0;
+        SimplexId intersection = -1;
+
+        while((pos0 < (SimplexId)stars0.size())
+              && (pos1 < (SimplexId)stars1.size())) {
+          SimplexId biggest = stars0[pos0];
+          if(stars1[pos1] > biggest) {
+            biggest = stars1[pos1];
+          }
+
+          for(SimplexId l = pos0; l < (SimplexId)stars0.size(); l++) {
+            if(stars0[l] < biggest) {
+              pos0++;
+            } else {
+              break;
+            }
+          }
+          for(SimplexId l = pos1; l < (SimplexId)stars1.size(); l++) {
+            if(stars1[l] < biggest) {
+              pos1++;
+            } else {
+              break;
+            }
+          }
+
+          if(pos0 >= (SimplexId)stars0.size()
+              || pos1 >= (SimplexId)stars1.size())
+            break;
+
+          if(stars0[pos0] == stars1[pos1]) {
+            if(stars0[pos0] != cid) {
+              intersection = stars0[pos0];
+              break;
+            }
+            pos0++;
+            pos1++;
+          }
+        }
+
+        if(intersection != -1) {
+          localCellNeighbors[cid - hCellIntervals_[clusterId - 1] - 1]
+            .push_back(intersection);
+        }
+      }
+    }
+  }
+
+  else if(cellDimension_ == 3) {
+    for(SimplexId cid = hCellIntervals_[clusterId - 1] + 1;
+        cid <= hCellIntervals_[clusterId]; cid++) {
+      // go triangle by triangle
+      for(SimplexId j = 0; j < 4; j++) {
+
+        SimplexId v0 = hConnectivity_[hOffsets_[cid + j % 4]];
+        SimplexId v1 = hConnectivity_[hOffsets_[cid + (j + 1) % 4]];
+        SimplexId v2 = hConnectivity_[hOffsets_[cid + (j + 2) % 4]];
+
+        SimplexId localV0 = v0 - hVertexIntervals_[clusterId - 1] - 1;
+        SimplexId localV1 = v1 - hVertexIntervals_[clusterId - 1] - 1;
+        SimplexId localV2 = v2 - hVertexIntervals_[clusterId - 1] - 1;
+
+        std::vector<SimplexId> stars0, stars1, stars2;
+        if(v0 <= hVertexIntervals_[clusterId]) {
+          stars0 = localVertexStars[localV0];
+        } else {
+          localV0 = v0 - hVertexIntervals_[hIndexArray_[v0] - 1] - 1;
+          stars0 = nodeMaps[hIndexArray_[v0]][localV0];
+        }
+        if(v1 <= hVertexIntervals_[clusterId]) {
+          stars1 = localVertexStars[localV1];
+        } else {
+          localV1 = v1 - hVertexIntervals_[hIndexArray_[v1] - 1] - 1;
+          stars1 = nodeMaps[hIndexArray_[v1]][localV1];
+        }
+        if(v2 <= hVertexIntervals_[clusterId]) {
+          stars2 = localVertexStars[localV2];
+        } else {
+          localV2 = v2 - hVertexIntervals_[hIndexArray_[v2] - 1] - 1;
+          stars2 = nodeMaps[hIndexArray_[v2]][localV2];
+        }
+
+        // perform an intersection of the 3 (sorted) star lists
+        SimplexId pos0 = 0, pos1 = 0, pos2 = 0;
+        SimplexId intersection = -1;
+
+        while((pos0 < (SimplexId)stars0.size())
+              && (pos1 < (SimplexId)stars1.size())
+              && (pos2 < (SimplexId)stars2.size())) {
+
+          SimplexId biggest = stars0[pos0];
+          if(stars1[pos1] > biggest) {
+            biggest = stars1[pos1];
+          }
+          if(stars2[pos2] > biggest) {
+            biggest = stars2[pos2];
+          }
+
+          for(SimplexId l = pos0; l < (SimplexId)stars0.size(); l++) {
+            if(stars0[l] < biggest) {
+              pos0++;
+            } else {
+              break;
+            }
+          }
+          for(SimplexId l = pos1; l < (SimplexId)stars1.size(); l++) {
+            if(stars1[l] < biggest) {
+              pos1++;
+            } else {
+              break;
+            }
+          }
+          for(SimplexId l = pos2; l < (SimplexId)stars2.size(); l++) {
+            if(stars2[l] < biggest) {
+              pos2++;
+            } else {
+              break;
+            }
+          }
+
+          if(pos0 >= (SimplexId)stars0.size()
+              || pos1 >= (SimplexId)stars1.size()
+              || pos2 >= (SimplexId)stars2.size())
+            break;
+
+          if((stars0[pos0] == stars1[pos1])
+              && (stars0[pos0] == stars2[pos2])) {
+            if(stars0[pos0] != cid) {
+              intersection = stars0[pos0];
+              break;
+            }
+            pos0++;
+            pos1++;
+            pos2++;
+          }
+        }
+
+        if(intersection != -1) {
+          localCellNeighbors[cid - hCellIntervals_[clusterId - 1] - 1]
+            .push_back(intersection);
+        }
+      }
+    }
+  }
+
+  segment.cellNeighbors_ = FlatJaggedArray(localCellNeighbors);
+
+  return 0;
+}
+
 
 
 /**
@@ -1182,129 +1808,11 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
 void Gale::leaderProducer(const int pid) {
     volatile SimplexId leaderCluster = 0;
     volatile RelationType leaderFunc = RelationType::BlankRelation;
-
-    if (threadNumber_ == 1) {
-        while (true) {
-            std::unique_lock<std::mutex> qlock(qMutexes_[pid]);
-            int qSize = jobQueues_[pid].size();
-            qlock.unlock();
-            if (qSize > 0) {
-                int tid = jobQueues_[pid].front();
-                leaderCluster = currClusters_[tid], leaderFunc = currRelations_[tid];
-                int res = computeRelation(leaderFunc, leaderCluster, false, tid, true);
-                if (res == 0) {
-                    std::unique_lock<std::mutex> qlock(qMutexes_[pid]);
-                    jobQueues_[pid].pop();
-                    qlock.unlock();
-                }
-            }
-            else {
-                leaderCluster = currClusters_[0], leaderFunc = currRelations_[0];
-                if (leaderCluster == -1) return;
-                else if (leaderCluster == 0) continue;
-                
-                // SimplexId diff = leaderCluster - baseClusters_[static_cast<int>(leaderFunc)][i];
-                // // check if the precomputation needs to be performed
-                // if (diff < 0 || diff > blocksPerThread_ * blockSize_ * 0.6) {
-                //     // std::cout << "precomputing for thread " << i << " cluster = " << leaderCluster << " diff = " << diff << std::endl;
-                //     computeRelation(leaderFunc, leaderCluster, i, false);
-                // }
-                
-                for (RelationType &relation : preconditionedRelations_) {
-                    if (relation == currRelations_[0]) continue;
-                    SimplexId startCluster = baseClusters_[static_cast<int>(relation)][0];
-                    // leaderCluster = (leaderCluster - startCluster) * removalRatio + startCluster;
-                    if (startCluster == 0) continue;
-                    // different relations correspond to different vectors
-                    switch (relation)
-                    {
-                        case RelationType::BVRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].boundaryVertices_ = std::vector<bool>();
-                            }
-                            break;
-                        }
-
-                        case RelationType::BERelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].boundaryEdges_ = std::vector<bool>();
-                            }
-                            break;
-                        }
-                        
-                        case RelationType::EFRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].edgeTriangles_.clear();
-                            }
-                            break;
-                        }
-                        
-                        case RelationType::ETRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].edgeStars_.clear();
-                            }
-                            break;
-                        }
-                        
-                        case RelationType::FTRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].triangleStars_.clear();
-                            }
-                            break;
-                        }
-
-                        case RelationType::VVRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].vertexNeighbors_.clear();
-                            }
-                            break;
-                        }
-                    
-                        case RelationType::VERelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].vertexEdges_.clear();
-                            }
-                            break;
-                        }
-
-                        case RelationType::VFRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].vertexTriangles_.clear();
-                            }
-                            break;
-                        }
-
-                        case RelationType::VTRelation:
-                        {
-                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                                allClusters_[cid].vertexStars_.clear();
-                            }
-                            break;
-                        }
-                        
-                        default:
-                            break;
-                        
-                    }
-                    // reset the base cluster of the thread to 0
-                    baseClusters_[static_cast<int>(relation)][0] = 0;
-                }
-            }
-        }
-    }
     // multiple threads are used
-    else {
+    // if (threadNumber_ > 1) {
         // initialization that executes only once
         // preallocate a large chunk of memory for GPU computation 
-        consumerCounters_[pid] = 0;
+        // consumerCounters_[pid] = 0;
         RelationComputation relationComp;
         // pre-allocate the memory for the computation
         int vertexAllocNum = threadNumber_ * precompClusterNumber_ * 150;
@@ -1375,7 +1883,14 @@ void Gale::leaderProducer(const int pid) {
             std::unique_lock<std::mutex> qlock(qMutexes_[pid]);
             std::vector<int> localQ;
             while (!jobQueues_[pid].empty()) {
+                #ifdef MEASURE_TIME
+                int tid = jobQueues_[pid].front().first;
+                localQ.push_back(tid);
+                // time for one request to be processed 
+                waitingTimes_[tid][2] += jobQueues_[pid].front().second.getElapsedTime();
+                #else
                 localQ.push_back(jobQueues_[pid].front());
+                #endif
                 jobQueues_[pid].pop();
             }
             qlock.unlock();
@@ -1406,122 +1921,246 @@ void Gale::leaderProducer(const int pid) {
                     }
                     else if (leaderCluster == 0) continue;
                     if (!jobQueues_[pid].empty()) break;
-                    // RelationType relation = currRelations_[i];
-                    // SimplexId startCluster = baseClusters_[static_cast<int>(relation)][i];
-                    // // leaderCluster = (leaderCluster - startCluster) * removalRatio + startCluster;
-                    // if (startCluster == 0) continue;
-                    // // different relations correspond to different vectors
-                    // switch (relation)
-                    // {
-                    //     case RelationType::BVRelation:
-                    //     {
-                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                    //             if (clusterMutexes_[cid].try_lock()) {
-                    //                 allClusters_[cid].boundaryVertices_ = std::vector<bool>();
-                    //                 clusterMutexes_[cid].unlock();
-                    //             }
-                    //         }
-                    //         break;
-                    //     }
+                    RelationType relation = currRelations_[i];
+                    SimplexId startCluster = baseClusters_[static_cast<int>(relation)][i];
+                    // leaderCluster = (leaderCluster - startCluster) * removalRatio + startCluster;
+                    if (startCluster == 0) continue;
+                    // different relations correspond to different vectors
+                    switch (relation)
+                    {
+                        case RelationType::BVRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                if (clusterMutexes_[cid].try_lock()) {
+                                    allClusters_[cid].boundaryVertices_ = std::vector<bool>();
+                                    clusterMutexes_[cid].unlock();
+                                }
+                            }
+                            break;
+                        }
 
-                    //     case RelationType::BERelation:
-                    //     {
-                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                    //             if (clusterMutexes_[cid].try_lock()) {
-                    //                 allClusters_[cid].boundaryEdges_ = std::vector<bool>();
-                    //                 clusterMutexes_[cid].unlock();
-                    //             }
-                    //         }
-                    //         break;
-                    //     }
+                        case RelationType::BERelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                if (clusterMutexes_[cid].try_lock()) {
+                                    allClusters_[cid].boundaryEdges_ = std::vector<bool>();
+                                    clusterMutexes_[cid].unlock();
+                                }
+                            }
+                            break;
+                        }
                         
-                    //     case RelationType::EFRelation:
-                    //     {
-                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                    //             if (clusterMutexes_[cid].try_lock()) {
-                    //                 allClusters_[cid].edgeTriangles_.clear();
-                    //                 clusterMutexes_[cid].unlock();
-                    //             }
-                    //         }
-                    //         break;
-                    //     }
+                        case RelationType::EFRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                if (clusterMutexes_[cid].try_lock()) {
+                                    allClusters_[cid].edgeTriangles_.clear();
+                                    clusterMutexes_[cid].unlock();
+                                }
+                            }
+                            break;
+                        }
                         
-                    //     case RelationType::ETRelation:
-                    //     {
-                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                    //             if (clusterMutexes_[cid].try_lock()) {
-                    //                 allClusters_[cid].edgeStars_.clear();
-                    //                 clusterMutexes_[cid].unlock();
-                    //             }
-                    //         }
-                    //         break;
-                    //     }
+                        case RelationType::ETRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                if (clusterMutexes_[cid].try_lock()) {
+                                    allClusters_[cid].edgeStars_.clear();
+                                    clusterMutexes_[cid].unlock();
+                                }
+                            }
+                            break;
+                        }
                         
-                    //     case RelationType::FTRelation:
-                    //     {
-                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                    //             if (clusterMutexes_[cid].try_lock()) {
-                    //                 allClusters_[cid].triangleStars_.clear();
-                    //                 clusterMutexes_[cid].unlock();
-                    //             }
-                    //         }
-                    //         break;
-                    //     }
+                        case RelationType::FTRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                if (clusterMutexes_[cid].try_lock()) {
+                                    allClusters_[cid].triangleStars_.clear();
+                                    clusterMutexes_[cid].unlock();
+                                }
+                            }
+                            break;
+                        }
 
-                    //     case RelationType::VVRelation:
-                    //     {
-                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                    //             if (clusterMutexes_[cid].try_lock()) {
-                    //                 allClusters_[cid].vertexNeighbors_.clear();
-                    //                 clusterMutexes_[cid].unlock();
-                    //             }
-                    //         }
-                    //         break;
-                    //     }
+                        case RelationType::VVRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                if (clusterMutexes_[cid].try_lock()) {
+                                    allClusters_[cid].vertexNeighbors_.clear();
+                                    clusterMutexes_[cid].unlock();
+                                }
+                            }
+                            break;
+                        }
                     
-                    //     case RelationType::VERelation:
-                    //     {
-                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                    //             if (clusterMutexes_[cid].try_lock()) {
-                    //                 allClusters_[cid].vertexEdges_.clear();
-                    //                 clusterMutexes_[cid].unlock();
-                    //             }
-                    //         }
-                    //         break;
-                    //     }
+                        case RelationType::VERelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                if (clusterMutexes_[cid].try_lock()) {
+                                    allClusters_[cid].vertexEdges_.clear();
+                                    clusterMutexes_[cid].unlock();
+                                }
+                            }
+                            break;
+                        }
 
-                    //     case RelationType::VFRelation:
-                    //     {
-                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                    //             if (clusterMutexes_[cid].try_lock()) {
-                    //                 allClusters_[cid].vertexTriangles_.clear();
-                    //                 clusterMutexes_[cid].unlock();
-                    //             }
-                    //         }
-                    //         break;
-                    //     }
+                        case RelationType::VFRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                if (clusterMutexes_[cid].try_lock()) {
+                                    allClusters_[cid].vertexTriangles_.clear();
+                                    clusterMutexes_[cid].unlock();
+                                }
+                            }
+                            break;
+                        }
 
-                    //     case RelationType::VTRelation:
-                    //     {
-                    //         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
-                    //             if (clusterMutexes_[cid].try_lock()) {
-                    //                 allClusters_[cid].vertexStars_.clear();
-                    //                 clusterMutexes_[cid].unlock();
-                    //             }
-                    //         }
-                    //         break;
-                    //     }
+                        case RelationType::VTRelation:
+                        {
+                            for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+                                if (clusterMutexes_[cid].try_lock()) {
+                                    allClusters_[cid].vertexStars_.clear();
+                                    clusterMutexes_[cid].unlock();
+                                }
+                            }
+                            break;
+                        }
                         
-                    //     default:
-                    //         break;
+                        default:
+                            break;
                         
-                    // }
-                    // // reset the base cluster of the thread to 0
-                    // baseClusters_[static_cast<int>(relation)][i] = 0;
+                    }
+                    // reset the base cluster of the thread to 0
+                    baseClusters_[static_cast<int>(relation)][i] = 0;
                 }
             }
         }
-    }
+    // }
+
+    // else {
+    //     while (true) {
+    //         std::unique_lock<std::mutex> qlock(qMutexes_[pid]);
+    //         int qSize = jobQueues_[pid].size();
+    //         qlock.unlock();
+    //         if (qSize > 0) {
+    //             #ifdef MEASURE_TIME
+    //             int tid = jobQueues_[pid].front().first;
+    //             waitingTimes_[tid][1] += jobQueues_[pid].front().second.getElapsedTime();
+    //             #else
+    //             int tid = jobQueues_[pid].front();
+    //             #endif
+    //             leaderCluster = currClusters_[tid], leaderFunc = currRelations_[tid];
+    //             int res = computeRelation(leaderFunc, leaderCluster, false, tid, true);
+    //             if (res == 0) {
+    //                 std::unique_lock<std::mutex> qlock(qMutexes_[pid]);
+    //                 jobQueues_[pid].pop();
+    //                 qlock.unlock();
+    //             }
+    //         }
+    //         else {
+    //             leaderCluster = currClusters_[0], leaderFunc = currRelations_[0];
+    //             if (leaderCluster == -1) return;
+    //             else if (leaderCluster == 0) continue;
+                
+    //             // SimplexId diff = leaderCluster - baseClusters_[static_cast<int>(leaderFunc)][i];
+    //             // // check if the precomputation needs to be performed
+    //             // if (diff < 0 || diff > blocksPerThread_ * blockSize_ * 0.6) {
+    //             //     // std::cout << "precomputing for thread " << i << " cluster = " << leaderCluster << " diff = " << diff << std::endl;
+    //             //     computeRelation(leaderFunc, leaderCluster, i, false);
+    //             // }
+                
+    //             for (RelationType &relation : preconditionedRelations_) {
+    //                 if (relation == currRelations_[0]) continue;
+    //                 SimplexId startCluster = baseClusters_[static_cast<int>(relation)][0];
+    //                 // leaderCluster = (leaderCluster - startCluster) * removalRatio + startCluster;
+    //                 if (startCluster == 0) continue;
+    //                 // different relations correspond to different vectors
+    //                 switch (relation)
+    //                 {
+    //                     case RelationType::BVRelation:
+    //                     {
+    //                         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+    //                             allClusters_[cid].boundaryVertices_ = std::vector<bool>();
+    //                         }
+    //                         break;
+    //                     }
+
+    //                     case RelationType::BERelation:
+    //                     {
+    //                         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+    //                             allClusters_[cid].boundaryEdges_ = std::vector<bool>();
+    //                         }
+    //                         break;
+    //                     }
+                        
+    //                     case RelationType::EFRelation:
+    //                     {
+    //                         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+    //                             allClusters_[cid].edgeTriangles_.clear();
+    //                         }
+    //                         break;
+    //                     }
+                        
+    //                     case RelationType::ETRelation:
+    //                     {
+    //                         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+    //                             allClusters_[cid].edgeStars_.clear();
+    //                         }
+    //                         break;
+    //                     }
+                        
+    //                     case RelationType::FTRelation:
+    //                     {
+    //                         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+    //                             allClusters_[cid].triangleStars_.clear();
+    //                         }
+    //                         break;
+    //                     }
+
+    //                     case RelationType::VVRelation:
+    //                     {
+    //                         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+    //                             allClusters_[cid].vertexNeighbors_.clear();
+    //                         }
+    //                         break;
+    //                     }
+                    
+    //                     case RelationType::VERelation:
+    //                     {
+    //                         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+    //                             allClusters_[cid].vertexEdges_.clear();
+    //                         }
+    //                         break;
+    //                     }
+
+    //                     case RelationType::VFRelation:
+    //                     {
+    //                         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+    //                             allClusters_[cid].vertexTriangles_.clear();
+    //                         }
+    //                         break;
+    //                     }
+
+    //                     case RelationType::VTRelation:
+    //                     {
+    //                         for (int cid = startCluster; cid < leaderCluster - 1; ++cid) {
+    //                             allClusters_[cid].vertexStars_.clear();
+    //                         }
+    //                         break;
+    //                     }
+                        
+    //                     default:
+    //                         break;
+                        
+    //                 }
+    //                 // reset the base cluster of the thread to 0
+    //                 baseClusters_[static_cast<int>(relation)][0] = 0;
+    //             }
+    //         }
+    //     }
+    // }
+    
 }
 
 /**
