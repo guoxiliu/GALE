@@ -614,6 +614,7 @@ int main(int argc, char *argv[])
 
     msPlugin.setIterationThreshold(IterationThreshold);
 
+    gale.enableTracking();
     msPlugin.setComputeAscendingSeparatrices1(ComputeAscendingSeparatrices1);
     msPlugin.setComputeDescendingSeparatrices1(ComputeDescendingSeparatrices1);
     msPlugin.setComputeSaddleConnectors(ComputeSaddleConnectors);

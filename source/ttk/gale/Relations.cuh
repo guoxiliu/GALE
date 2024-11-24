@@ -1180,7 +1180,7 @@ __global__ void computeVertexTriangles(int *triangleList, int *vertexTriangleMat
  * Compute boundary edge list.
 */
 __global__ void computeMultiBoundaryEdges(int *edgeList, int *triangleList,
-            bool *boundaryEdges, bool *boundaryTriangles, 
+            bool *boundaryTriangles, int *boundaryEdges, 
             const int clusterNumber, const int *baseClusters, const int *edgeOffsets,
             const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *edgeIntervals, const int *triangleIntervals,
@@ -1227,7 +1227,7 @@ __global__ void computeMultiBoundaryEdges(int *edgeList, int *triangleList,
                             if (boundaryTriangles[triangleId]) {
                                 int selectedEdge[2] = {selectedTriangle[1], selectedTriangle[2]};
                                 int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge) - baseEdgeId + edgeOffset;
-                                boundaryEdges[relativeEid] = true;
+                                boundaryEdges[relativeEid] = 1;
                             }
                         }
                     }
@@ -1253,7 +1253,7 @@ __global__ void computeMultiBoundaryEdges(int *edgeList, int *triangleList,
                     for (int vj = vi+1; vj < 3; ++vj) {
                         selectedEdge[1] = triangleList[cellId + vj];
                         int relativeEid = binarySearch<2>(edgeList, startEdgeId, endEdgeId, selectedEdge) - baseEdgeId + edgeOffset;
-                        boundaryEdges[relativeEid] = true;
+                        boundaryEdges[relativeEid] = 1;
                     }
                 }
             }
@@ -1264,7 +1264,7 @@ __global__ void computeMultiBoundaryEdges(int *edgeList, int *triangleList,
 /**
  * Compute the boundary vertex list.
 */
-__global__ void computeMultiBoundaryVertices(int *triangleList, bool *boundaryTriangles, bool *boundaryVertices,
+__global__ void computeMultiBoundaryVertices(int *triangleList, bool *boundaryTriangles, int *boundaryVertices,
             const int clusterNumber, const int *baseClusters, const int *vertexOffsets,
             const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
@@ -1303,11 +1303,11 @@ __global__ void computeMultiBoundaryVertices(int *triangleList, bool *boundaryTr
                         if (boundaryTriangles[triangleId]) {
                             if (newTriangle[1] >= startVertexId && newTriangle[1] < endVertexId) {
                                 int relativeVid = newTriangle[1] - baseVertexId + vertexOffset;
-                                boundaryVertices[relativeVid] = true;
+                                boundaryVertices[relativeVid] = 1;
                             }
                             if (newTriangle[2] >= startVertexId && newTriangle[2] < endVertexId) {
                                 int relativeVid= newTriangle[2] - baseVertexId + vertexOffset;
-                                boundaryVertices[relativeVid] = true;
+                                boundaryVertices[relativeVid] = 1;
                             }
                         }
                     }
@@ -1327,11 +1327,11 @@ __global__ void computeMultiBoundaryVertices(int *triangleList, bool *boundaryTr
         // check if the triangle is on the boundary
         if (boundaryTriangles[triangleId]) {
             int relativeVid = triangleList[triangleId * 3] - baseVertexId + vertexOffset;
-            boundaryVertices[relativeVid] = true;
+            boundaryVertices[relativeVid] = 1;
             for (int i = 1; i < dimension; ++i) {
                 if (triangleList[triangleId * 3 + i] >= endVertexId) break;
                 relativeVid = triangleList[triangleId * 3 + i] - baseVertexId + vertexOffset;
-                boundaryVertices[relativeVid] = true;
+                boundaryVertices[relativeVid] = 1;
             }
         }
     }

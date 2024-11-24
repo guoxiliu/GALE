@@ -91,6 +91,7 @@ int main(int argc, char *argv[])
     vtkDataArray *offsetField = GetOrderArray(inputDataSet, scalarFieldIndex, 1);
 
     ttk::Timer t;
+    gale.enableTracking();
 
     int res = cpPlugin.executeLegacy(static_cast<ttk::SimplexId *>(GetVoidPointer(offsetField)), &gale);
     if (res != 0) {

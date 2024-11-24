@@ -122,6 +122,7 @@ class Gale final : public AbstractTriangulation {
         Gale(int tnum = 1, int tnumPerCluster = 1);
         ~Gale();
         void initialize(vtkDataSet *dataSet, int numBlocks = 100, int blockSize = 32, bool reorder = false);
+        void enableTracking() { startTracking_ = true; }
         
         /**
          * Preconditioning relation functions.
@@ -354,8 +355,10 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 getClusterCellNeighbors(segId);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localCellId = cellId - hCellIntervals_[segId - 1];
@@ -374,8 +377,10 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 getClusterCellNeighbors(segId);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localCellId = cellId - hCellIntervals_[segId - 1];
@@ -491,12 +496,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
@@ -524,12 +533,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
@@ -562,12 +575,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
@@ -594,12 +611,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
@@ -690,12 +711,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localTriangleId = triangleId - hTriangleIntervals_[segId - 1];
@@ -722,12 +747,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localTriangleId = triangleId - hTriangleIntervals_[segId - 1];
@@ -769,12 +798,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -800,12 +833,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -837,12 +874,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -868,12 +909,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -905,13 +950,17 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -937,12 +986,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -974,12 +1027,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -1005,12 +1062,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -1051,12 +1112,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
@@ -1101,12 +1166,16 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -1152,6 +1221,7 @@ class Gale final : public AbstractTriangulation {
         /* Compute the relations for different starting clusters */
         int computeCombinedRelation(std::map<RelationType, std::vector<std::pair<int,int>>> &requestMap, std::vector<RelationType> &relationOrders);
 
+        bool startTracking_;
         bool doublePrecision_;
         int cellDimension_;
         int clusterNumber_;

@@ -110,6 +110,7 @@ int main(int argc, char *argv[])
     vtkDataArray *offsetField = GetOrderArray(inputDataSet, scalarFieldIndex, 1);
     dgPlugin.setInputScalarField(GetVoidPointer(inputScalarField));
     dgPlugin.setInputOffsets(static_cast<SimplexId *>(GetVoidPointer(offsetField)));
+    gale.enableTracking();
 
     int res = dgPlugin.buildGradient(gale);
     if (res != 0) {
