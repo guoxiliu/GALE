@@ -4,5 +4,5 @@ target_include_directories(abstractMorseSmaleComplex
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         # $<INSTALL_INTERFACE:include/ttk/base>
 )
-target_link_libraries(abstractMorseSmaleComplex PUBLIC abstractTriangulation discreteGradient)
+target_link_libraries(abstractMorseSmaleComplex PUBLIC abstractTriangulation discreteGradient gale)
 set_compile_options(abstractMorseSmaleComplex)

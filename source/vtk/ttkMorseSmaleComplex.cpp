@@ -29,7 +29,7 @@ bool ComputeAscendingSeparatrices2{false};
 bool ComputeDescendingSeparatrices2{false};
 bool ComputeAscendingSegmentation{false};
 bool ComputeDescendingSegmentation{false};
-bool ComputeFinalSegmentation{true};
+bool ComputeFinalSegmentation{false};
 int ReturnSaddleConnectors{false};
 double SaddleConnectorsPersistenceThreshold{0.0};
 
@@ -68,7 +68,7 @@ void setArray(vtkArrayType &vtkArray, vectorType &vector) {
     SetVoidArray(vtkArray, vector.data(), vector.size(), 1);
 }
 
-template <typename scalarType, typename triangulationType = AbstractTriangulation>
+template <typename scalarType, typename triangulationType>
 int dispatch(vtkDataArray *const inputScalars,
             vtkPolyData *const outputCriticalPoints,
             vtkPolyData *const outputSeparatrices1,

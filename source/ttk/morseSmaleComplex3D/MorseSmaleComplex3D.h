@@ -649,6 +649,11 @@ int ttk::MorseSmaleComplex3D::execute(const triangulationType &triangulation) {
   std::vector<std::vector<Separatrix>> separatrices1{};
   std::vector<std::vector<std::vector<dcg::Cell>>> separatricesGeometry1;
 
+  if (std::is_same<triangulationType, ttk::Gale>::value) {
+    ttk::Gale &gale = (Gale &)triangulation;
+    gale.enableTracking();
+  }
+
   // 1-separatrices
   if(ComputeDescendingSeparatrices1) {
     Timer tmp;

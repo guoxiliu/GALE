@@ -122,6 +122,7 @@ class Gale final : public AbstractTriangulation {
         Gale(int tnum = 1, int tnumPerCluster = 1);
         ~Gale();
         void initialize(vtkDataSet *dataSet, int numBlocks = 100, int blockSize = 32, bool reorder = false);
+        void enableTracking() { startTracking_ = true; }
         
         /**
          * Preconditioning relation functions.
@@ -480,8 +481,10 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 getClusterCellNeighbors(segId);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localCellId = cellId - hCellIntervals_[segId - 1];
@@ -500,8 +503,10 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 getClusterCellNeighbors(segId);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localCellId = cellId - hCellIntervals_[segId - 1];
@@ -614,12 +619,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
@@ -644,12 +653,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
@@ -679,12 +692,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
@@ -708,12 +725,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
@@ -801,12 +822,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localTriangleId = triangleId - hTriangleIntervals_[segId - 1];
@@ -830,12 +855,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localTriangleId = triangleId - hTriangleIntervals_[segId - 1];
@@ -874,12 +903,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -902,12 +935,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -936,12 +973,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -964,12 +1005,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -998,13 +1043,17 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 // std::cout << "thread " << tid << " waiting on cluster " << currClusters_[tid] << std::endl;
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -1027,12 +1076,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -1061,12 +1114,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -1089,12 +1146,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -1132,12 +1193,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
@@ -1179,12 +1244,16 @@ class Gale final : public AbstractTriangulation {
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
                 qlock.unlock();
                 #ifdef MEASURE_TIME
-                waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingTimes_[tid][1] += timers_[tid].getElapsedTime();
+                }
                 #endif
                 sem_wait(&relationSems_[tid]);
                 #ifdef MEASURE_TIME
-                waitingCounts_[tid]++;
-                waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                if (startTracking_) {
+                    waitingCounts_[tid]++;
+                    waitingTimes_[tid][0] += timers_[tid].getElapsedTime();
+                }
                 #endif
             }
             SimplexId localVertexId = vertexId - hVertexIntervals_[segId - 1];
@@ -1231,6 +1300,7 @@ class Gale final : public AbstractTriangulation {
         int computeCombinedRelation(const std::vector<int> &threadIds,
                                     const int producerId);
 
+        bool startTracking_;
         bool doublePrecision_;
         int cellDimension_;
         int clusterNumber_;
@@ -1271,7 +1341,6 @@ class Gale final : public AbstractTriangulation {
         std::vector<std::thread> producers_{};
         int threadsPerCluster_;
         std::array<std::vector<int>, 25> baseClusters_;
-        std::vector<int> gpuThreadPositions_{};
         mutable std::vector<boost::shared_mutex> clusterMutexes_;
         mutable std::vector<SimplexId> currClusters_;
         mutable std::vector<RelationType> currRelations_;

@@ -23,11 +23,11 @@ Gale::Gale(int tnum, int tnumPerCluster) {
     currClusters_ = std::vector<SimplexId>(threadNumber_, 0);
     currRelations_ = std::vector<RelationType>(threadNumber_, RelationType::BlankRelation);
     relationSems_ = std::vector<sem_t>(threadNumber_);
-    gpuThreadPositions_ = std::vector<int>(threadNumber_);
     for (int i = 0; i < 25; ++i) {
         baseClusters_[i] = std::vector<int>(threadNumber_, 0);
     }
     #ifdef MEASURE_TIME
+    startTracking_ = false;
     timers_ = std::vector<Timer>(threadNumber_);
     waitingTimes_ = std::vector<std::array<double, 6>>(threadNumber_, std::array<double, 6>{});
     waitingCounts_ = std::vector<int>(threadNumber_, 0);
@@ -759,7 +759,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             int localEdgeSum = 0;
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
-                gpuThreadPositions_[threadIds[i]] = i;
                 hSimplexOffsets[i] = localEdgeSum;
                 hClusterIds[i] = currClusters_[threadIds[i]];
                 hEndClusters[i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
@@ -807,7 +806,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             int localVertexSum = 0;
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
-                gpuThreadPositions_[threadIds[i]] = i;
                 hSimplexOffsets[i] = localVertexSum;
                 hClusterIds[i] = currClusters_[threadIds[i]];
                 hEndClusters[i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
@@ -854,7 +852,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             int localEdgeSum = 0;
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
-                gpuThreadPositions_[threadIds[i]] = i;
                 hSimplexOffsets[i] = localEdgeSum;
                 hClusterIds[i] = currClusters_[threadIds[i]];
                 hEndClusters[i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
@@ -903,7 +900,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             int localEdgeSum = 0;
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
-                gpuThreadPositions_[threadIds[i]] = i;
                 hSimplexOffsets[i] = localEdgeSum;
                 hClusterIds[i] = currClusters_[threadIds[i]];
                 hEndClusters[i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
@@ -952,7 +948,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             int localTriangleSum = 0;
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
-                gpuThreadPositions_[threadIds[i]] = i;
                 hSimplexOffsets[i] = localTriangleSum;
                 hClusterIds[i] = currClusters_[threadIds[i]];
                 hEndClusters[i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
@@ -1001,7 +996,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             int localVertexSum = 0;
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
-                gpuThreadPositions_[threadIds[i]] = i;
                 hSimplexOffsets[i] = localVertexSum;
                 hClusterIds[i] = currClusters_[threadIds[i]];
                 hEndClusters[i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
@@ -1050,7 +1044,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             int localVertexSum = 0;
             // int maxEndCluster = 0;
             for (int i = 0; i < threadNum; ++i) {
-                gpuThreadPositions_[threadIds[i]] = i;
                 hSimplexOffsets[i] = localVertexSum;
                 hClusterIds[i] = currClusters_[threadIds[i]];
                 hEndClusters[i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
@@ -1098,7 +1091,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
         {
             int localVertexSum = 0;
             for (int i = 0; i < threadNum; ++i) {
-                gpuThreadPositions_[threadIds[i]] = i;
                 hSimplexOffsets[i] = localVertexSum;
                 hClusterIds[i] = currClusters_[threadIds[i]];
                 hEndClusters[i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
@@ -1145,7 +1137,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
         {
             int localVertexSum = 0;
             for (int i = 0; i < threadNum; ++i) {
-                gpuThreadPositions_[threadIds[i]] = i;
                 hSimplexOffsets[i] = localVertexSum;
                 hClusterIds[i] = currClusters_[threadIds[i]];
                 hEndClusters[i] = std::min(hClusterIds[i] + precompClusterNumber_, clusterNumber_) - 1;
@@ -1204,8 +1195,10 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
     float milliseconds = 0;
     cudaEventElapsedTime(&milliseconds, startEvent, endEvent);
     // kernel time
-    for (int i = 0; i < threadNum; ++i) {
-        waitingTimes_[threadIds[i]][4] += milliseconds / 1000;
+    if (startTracking_) {
+        for (int i = 0; i < threadNum; ++i) {
+            waitingTimes_[threadIds[i]][4] += milliseconds / 1000;
+        }
     }
     Timer tmp;
     #endif
@@ -1537,269 +1530,6 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
 
     return res;
 }
-
-
-int Gale::getClusterVertexStarsVector(const SimplexId &clusterId, 
-                std::vector<std::vector<SimplexId>> &vertexStarVec) const {
-
-#ifndef TTK_ENABLE_KAMIKAZE
-  if(clusterId <= 0 || clusterId > nodeNumber_)
-    return -1;
-#endif
-
-  // get the vertex stars into a vector of vector
-  SimplexId verticesPerCell = cellDimension_ + 1;
-  SimplexId localVertexNum
-    = hVertexIntervals_[clusterId] - hVertexIntervals_[clusterId - 1];
-  vertexStarVec = std::vector<std::vector<SimplexId>>(localVertexNum);
-
-  // internal cells
-  for(SimplexId cid = hCellIntervals_[clusterId - 1] + 1;
-      cid <= hCellIntervals_[clusterId]; cid++) {
-    SimplexId localVertexId = hConnectivity_[hOffsets_[cid]]
-                              - hVertexIntervals_[clusterId - 1] - 1;
-    
-    vertexStarVec[localVertexId].push_back(cid);
-    for(SimplexId j = 1; j < verticesPerCell; j++) {
-      SimplexId vertexId = hConnectivity_[hOffsets_[cid] + j];
-      // see if it is in the current node
-      if(vertexId > hVertexIntervals_[clusterId - 1]
-          && vertexId <= hVertexIntervals_[clusterId]) {
-        localVertexId = vertexId - hVertexIntervals_[clusterId - 1] - 1;
-        vertexStarVec[localVertexId].push_back(cid);
-      }
-    }
-  }
-  for(int i = hExternalCellOffsets_[clusterId - 1]; i < hExternalCellOffsets_[clusterId]; ++i) {
-    SimplexId cid = hExternalCells_[i];
-    for(SimplexId j = 0; j < verticesPerCell; j++) {
-      // see if it is in the current node
-      SimplexId vertexId = hConnectivity_[hOffsets_[cid] + j];
-      if(vertexId > hVertexIntervals_[clusterId - 1]
-          && vertexId <= hVertexIntervals_[clusterId]) {
-        SimplexId localVertexId
-          = vertexId - hVertexIntervals_[clusterId - 1] - 1;
-        vertexStarVec[localVertexId].push_back(cid);
-      }
-    }
-  }
-
-  for(size_t i = 0; i < vertexStarVec.size(); i++) {
-    std::sort(vertexStarVec[i].begin(), vertexStarVec[i].end());
-  }
-
-  return 0;
-}
-
-
-int Gale::getClusterCellNeighbors(const SimplexId &clusterId) const {
-
-#ifndef TTK_ENABLE_KAMIKAZE
-  if(clusterId <= 0 || clusterId > nodeNumber_)
-    return -1;
-#endif
-
-  std::vector<std::vector<SimplexId>> localCellNeighbors(
-    hCellIntervals_[clusterId] - hCellIntervals_[clusterId - 1]);
-  MeshSegment &segment = allClusters_.at(clusterId);
-
-  // get the vertex stars into vector of vector
-  SimplexId verticesPerCell = cellDimension_ + 1;
-  std::vector<std::vector<SimplexId>> localVertexStars;
-  getClusterVertexStarsVector(clusterId, localVertexStars);
-
-  std::unordered_map<SimplexId, std::vector<std::vector<SimplexId>>>
-    nodeMaps;
-  for(SimplexId cid = hCellIntervals_[clusterId - 1] + 1;
-      cid <= hCellIntervals_[clusterId]; cid++) {
-    for(SimplexId j = 1; j < verticesPerCell; j++) {
-      if(hConnectivity_[hOffsets_[cid] + j]> hVertexIntervals_[clusterId]) {
-        SimplexId nodeId
-          = hIndexArray_[hConnectivity_[hOffsets_[cid] + j]];
-        if(nodeMaps.find(nodeId) == nodeMaps.end()) {
-          std::vector<std::vector<SimplexId>> tmpVec;
-          getClusterVertexStarsVector(nodeId, tmpVec);
-          nodeMaps[nodeId] = std::move(tmpVec);
-        }
-      }
-    }
-  }
-
-
-  if(cellDimension_ == 2) {
-    for(SimplexId cid = hCellIntervals_[clusterId - 1] + 1;
-        cid <= hCellIntervals_[clusterId]; cid++) {
-      for(SimplexId j = 0; j < 3; j++) {
-
-        SimplexId v0 = hConnectivity_[hOffsets_[cid + j]];
-        SimplexId v1 = hConnectivity_[hOffsets_[cid + (j + 1) % 3]];
-        SimplexId localV0 = v0 - hVertexIntervals_[clusterId - 1] - 1;
-        SimplexId localV1 = v1 - hVertexIntervals_[clusterId - 1] - 1;
-
-        std::vector<SimplexId> stars0, stars1;
-        if(v0 <= hVertexIntervals_[clusterId]) {
-          stars0 = localVertexStars[localV0];
-        } else {
-          localV0 = v0 - hVertexIntervals_[hIndexArray_[v0] - 1] - 1;
-          stars0 = nodeMaps[hIndexArray_[v0]][localV0];
-        }
-        if(v1 <= hVertexIntervals_[clusterId]) {
-          stars1 = localVertexStars[localV1];
-        } else {
-          localV1 = v1 - hVertexIntervals_[hIndexArray_[v1] - 1] - 1;
-          stars1 = nodeMaps[hIndexArray_[v1]][localV1];
-        }
-
-        // perform an intersection of the 2 sorted star lists
-        SimplexId pos0 = 0, pos1 = 0;
-        SimplexId intersection = -1;
-
-        while((pos0 < (SimplexId)stars0.size())
-              && (pos1 < (SimplexId)stars1.size())) {
-          SimplexId biggest = stars0[pos0];
-          if(stars1[pos1] > biggest) {
-            biggest = stars1[pos1];
-          }
-
-          for(SimplexId l = pos0; l < (SimplexId)stars0.size(); l++) {
-            if(stars0[l] < biggest) {
-              pos0++;
-            } else {
-              break;
-            }
-          }
-          for(SimplexId l = pos1; l < (SimplexId)stars1.size(); l++) {
-            if(stars1[l] < biggest) {
-              pos1++;
-            } else {
-              break;
-            }
-          }
-
-          if(pos0 >= (SimplexId)stars0.size()
-              || pos1 >= (SimplexId)stars1.size())
-            break;
-
-          if(stars0[pos0] == stars1[pos1]) {
-            if(stars0[pos0] != cid) {
-              intersection = stars0[pos0];
-              break;
-            }
-            pos0++;
-            pos1++;
-          }
-        }
-
-        if(intersection != -1) {
-          localCellNeighbors[cid - hCellIntervals_[clusterId - 1] - 1]
-            .push_back(intersection);
-        }
-      }
-    }
-  }
-
-  else if(cellDimension_ == 3) {
-    for(SimplexId cid = hCellIntervals_[clusterId - 1] + 1;
-        cid <= hCellIntervals_[clusterId]; cid++) {
-      // go triangle by triangle
-      for(SimplexId j = 0; j < 4; j++) {
-
-        SimplexId v0 = hConnectivity_[hOffsets_[cid + j % 4]];
-        SimplexId v1 = hConnectivity_[hOffsets_[cid + (j + 1) % 4]];
-        SimplexId v2 = hConnectivity_[hOffsets_[cid + (j + 2) % 4]];
-
-        SimplexId localV0 = v0 - hVertexIntervals_[clusterId - 1] - 1;
-        SimplexId localV1 = v1 - hVertexIntervals_[clusterId - 1] - 1;
-        SimplexId localV2 = v2 - hVertexIntervals_[clusterId - 1] - 1;
-
-        std::vector<SimplexId> stars0, stars1, stars2;
-        if(v0 <= hVertexIntervals_[clusterId]) {
-          stars0 = localVertexStars[localV0];
-        } else {
-          localV0 = v0 - hVertexIntervals_[hIndexArray_[v0] - 1] - 1;
-          stars0 = nodeMaps[hIndexArray_[v0]][localV0];
-        }
-        if(v1 <= hVertexIntervals_[clusterId]) {
-          stars1 = localVertexStars[localV1];
-        } else {
-          localV1 = v1 - hVertexIntervals_[hIndexArray_[v1] - 1] - 1;
-          stars1 = nodeMaps[hIndexArray_[v1]][localV1];
-        }
-        if(v2 <= hVertexIntervals_[clusterId]) {
-          stars2 = localVertexStars[localV2];
-        } else {
-          localV2 = v2 - hVertexIntervals_[hIndexArray_[v2] - 1] - 1;
-          stars2 = nodeMaps[hIndexArray_[v2]][localV2];
-        }
-
-        // perform an intersection of the 3 (sorted) star lists
-        SimplexId pos0 = 0, pos1 = 0, pos2 = 0;
-        SimplexId intersection = -1;
-
-        while((pos0 < (SimplexId)stars0.size())
-              && (pos1 < (SimplexId)stars1.size())
-              && (pos2 < (SimplexId)stars2.size())) {
-
-          SimplexId biggest = stars0[pos0];
-          if(stars1[pos1] > biggest) {
-            biggest = stars1[pos1];
-          }
-          if(stars2[pos2] > biggest) {
-            biggest = stars2[pos2];
-          }
-
-          for(SimplexId l = pos0; l < (SimplexId)stars0.size(); l++) {
-            if(stars0[l] < biggest) {
-              pos0++;
-            } else {
-              break;
-            }
-          }
-          for(SimplexId l = pos1; l < (SimplexId)stars1.size(); l++) {
-            if(stars1[l] < biggest) {
-              pos1++;
-            } else {
-              break;
-            }
-          }
-          for(SimplexId l = pos2; l < (SimplexId)stars2.size(); l++) {
-            if(stars2[l] < biggest) {
-              pos2++;
-            } else {
-              break;
-            }
-          }
-
-          if(pos0 >= (SimplexId)stars0.size()
-              || pos1 >= (SimplexId)stars1.size()
-              || pos2 >= (SimplexId)stars2.size())
-            break;
-
-          if((stars0[pos0] == stars1[pos1])
-              && (stars0[pos0] == stars2[pos2])) {
-            if(stars0[pos0] != cid) {
-              intersection = stars0[pos0];
-              break;
-            }
-            pos0++;
-            pos1++;
-            pos2++;
-          }
-        }
-
-        if(intersection != -1) {
-          localCellNeighbors[cid - hCellIntervals_[clusterId - 1] - 1]
-            .push_back(intersection);
-        }
-      }
-    }
-  }
-
-  segment.cellNeighbors_ = FlatJaggedArray(localCellNeighbors);
-
-  return 0;
-}
-
 
 
 /**
@@ -2587,7 +2317,6 @@ int Gale::preconditionEdgesInternal() {
         }
 
         for(SimplexId nid = 1; nid < clusterNumber_; nid++) {
-            // std::cout << nid << ": " << hEdgeIntervals_[nid] << std::endl;
             hEdgeIntervals_[nid] = hEdgeIntervals_[nid - 1] + hEdgeIntervals_[nid];
         }
         CHECK(cudaMallocAsync(&dEdgeIntervals_, sizeof(int) * clusterNumber_, 0));
@@ -2727,3 +2456,265 @@ int Gale::preconditionEdgesInternal() {
     return 0;
 }
 **/
+
+int Gale::getClusterVertexStarsVector(const SimplexId &clusterId, 
+                std::vector<std::vector<SimplexId>> &vertexStarVec) const {
+
+#ifndef TTK_ENABLE_KAMIKAZE
+  if(clusterId <= 0 || clusterId > nodeNumber_)
+    return -1;
+#endif
+
+  // get the vertex stars into a vector of vector
+  SimplexId verticesPerCell = cellDimension_ + 1;
+  SimplexId localVertexNum
+    = hVertexIntervals_[clusterId] - hVertexIntervals_[clusterId - 1];
+  vertexStarVec = std::vector<std::vector<SimplexId>>(localVertexNum);
+
+  // internal cells
+  for(SimplexId cid = hCellIntervals_[clusterId - 1] + 1;
+      cid <= hCellIntervals_[clusterId]; cid++) {
+    SimplexId localVertexId = hConnectivity_[hOffsets_[cid]]
+                              - hVertexIntervals_[clusterId - 1] - 1;
+    
+    vertexStarVec[localVertexId].push_back(cid);
+    for(SimplexId j = 1; j < verticesPerCell; j++) {
+      SimplexId vertexId = hConnectivity_[hOffsets_[cid] + j];
+      // see if it is in the current node
+      if(vertexId > hVertexIntervals_[clusterId - 1]
+          && vertexId <= hVertexIntervals_[clusterId]) {
+        localVertexId = vertexId - hVertexIntervals_[clusterId - 1] - 1;
+        vertexStarVec[localVertexId].push_back(cid);
+      }
+    }
+  }
+  for(int i = hExternalCellOffsets_[clusterId - 1]; i < hExternalCellOffsets_[clusterId]; ++i) {
+    SimplexId cid = hExternalCells_[i];
+    for(SimplexId j = 0; j < verticesPerCell; j++) {
+      // see if it is in the current node
+      SimplexId vertexId = hConnectivity_[hOffsets_[cid] + j];
+      if(vertexId > hVertexIntervals_[clusterId - 1]
+          && vertexId <= hVertexIntervals_[clusterId]) {
+        SimplexId localVertexId
+          = vertexId - hVertexIntervals_[clusterId - 1] - 1;
+        vertexStarVec[localVertexId].push_back(cid);
+      }
+    }
+  }
+
+  for(size_t i = 0; i < vertexStarVec.size(); i++) {
+    std::sort(vertexStarVec[i].begin(), vertexStarVec[i].end());
+  }
+
+  return 0;
+}
+
+
+int Gale::getClusterCellNeighbors(const SimplexId &clusterId) const {
+
+#ifndef TTK_ENABLE_KAMIKAZE
+  if(clusterId <= 0 || clusterId > nodeNumber_)
+    return -1;
+#endif
+
+  std::vector<std::vector<SimplexId>> localCellNeighbors(
+    hCellIntervals_[clusterId] - hCellIntervals_[clusterId - 1]);
+  MeshSegment &segment = allClusters_.at(clusterId);
+
+  // get the vertex stars into vector of vector
+  SimplexId verticesPerCell = cellDimension_ + 1;
+  std::vector<std::vector<SimplexId>> localVertexStars;
+  getClusterVertexStarsVector(clusterId, localVertexStars);
+
+  std::unordered_map<SimplexId, std::vector<std::vector<SimplexId>>>
+    nodeMaps;
+  for(SimplexId cid = hCellIntervals_[clusterId - 1] + 1;
+      cid <= hCellIntervals_[clusterId]; cid++) {
+    for(SimplexId j = 1; j < verticesPerCell; j++) {
+      if(hConnectivity_[hOffsets_[cid] + j]> hVertexIntervals_[clusterId]) {
+        SimplexId nodeId
+          = hIndexArray_[hConnectivity_[hOffsets_[cid] + j]];
+        if(nodeMaps.find(nodeId) == nodeMaps.end()) {
+          std::vector<std::vector<SimplexId>> tmpVec;
+          getClusterVertexStarsVector(nodeId, tmpVec);
+          nodeMaps[nodeId] = std::move(tmpVec);
+        }
+      }
+    }
+  }
+
+
+  if(cellDimension_ == 2) {
+    for(SimplexId cid = hCellIntervals_[clusterId - 1] + 1;
+        cid <= hCellIntervals_[clusterId]; cid++) {
+      for(SimplexId j = 0; j < 3; j++) {
+
+        SimplexId v0 = hConnectivity_[hOffsets_[cid + j]];
+        SimplexId v1 = hConnectivity_[hOffsets_[cid + (j + 1) % 3]];
+        SimplexId localV0 = v0 - hVertexIntervals_[clusterId - 1] - 1;
+        SimplexId localV1 = v1 - hVertexIntervals_[clusterId - 1] - 1;
+
+        std::vector<SimplexId> stars0, stars1;
+        if(v0 <= hVertexIntervals_[clusterId]) {
+          stars0 = localVertexStars[localV0];
+        } else {
+          localV0 = v0 - hVertexIntervals_[hIndexArray_[v0] - 1] - 1;
+          stars0 = nodeMaps[hIndexArray_[v0]][localV0];
+        }
+        if(v1 <= hVertexIntervals_[clusterId]) {
+          stars1 = localVertexStars[localV1];
+        } else {
+          localV1 = v1 - hVertexIntervals_[hIndexArray_[v1] - 1] - 1;
+          stars1 = nodeMaps[hIndexArray_[v1]][localV1];
+        }
+
+        // perform an intersection of the 2 sorted star lists
+        SimplexId pos0 = 0, pos1 = 0;
+        SimplexId intersection = -1;
+
+        while((pos0 < (SimplexId)stars0.size())
+              && (pos1 < (SimplexId)stars1.size())) {
+          SimplexId biggest = stars0[pos0];
+          if(stars1[pos1] > biggest) {
+            biggest = stars1[pos1];
+          }
+
+          for(SimplexId l = pos0; l < (SimplexId)stars0.size(); l++) {
+            if(stars0[l] < biggest) {
+              pos0++;
+            } else {
+              break;
+            }
+          }
+          for(SimplexId l = pos1; l < (SimplexId)stars1.size(); l++) {
+            if(stars1[l] < biggest) {
+              pos1++;
+            } else {
+              break;
+            }
+          }
+
+          if(pos0 >= (SimplexId)stars0.size()
+              || pos1 >= (SimplexId)stars1.size())
+            break;
+
+          if(stars0[pos0] == stars1[pos1]) {
+            if(stars0[pos0] != cid) {
+              intersection = stars0[pos0];
+              break;
+            }
+            pos0++;
+            pos1++;
+          }
+        }
+
+        if(intersection != -1) {
+          localCellNeighbors[cid - hCellIntervals_[clusterId - 1] - 1]
+            .push_back(intersection);
+        }
+      }
+    }
+  }
+
+  else if(cellDimension_ == 3) {
+    for(SimplexId cid = hCellIntervals_[clusterId - 1] + 1;
+        cid <= hCellIntervals_[clusterId]; cid++) {
+      // go triangle by triangle
+      for(SimplexId j = 0; j < 4; j++) {
+
+        SimplexId v0 = hConnectivity_[hOffsets_[cid + j % 4]];
+        SimplexId v1 = hConnectivity_[hOffsets_[cid + (j + 1) % 4]];
+        SimplexId v2 = hConnectivity_[hOffsets_[cid + (j + 2) % 4]];
+
+        SimplexId localV0 = v0 - hVertexIntervals_[clusterId - 1] - 1;
+        SimplexId localV1 = v1 - hVertexIntervals_[clusterId - 1] - 1;
+        SimplexId localV2 = v2 - hVertexIntervals_[clusterId - 1] - 1;
+
+        std::vector<SimplexId> stars0, stars1, stars2;
+        if(v0 <= hVertexIntervals_[clusterId]) {
+          stars0 = localVertexStars[localV0];
+        } else {
+          localV0 = v0 - hVertexIntervals_[hIndexArray_[v0] - 1] - 1;
+          stars0 = nodeMaps[hIndexArray_[v0]][localV0];
+        }
+        if(v1 <= hVertexIntervals_[clusterId]) {
+          stars1 = localVertexStars[localV1];
+        } else {
+          localV1 = v1 - hVertexIntervals_[hIndexArray_[v1] - 1] - 1;
+          stars1 = nodeMaps[hIndexArray_[v1]][localV1];
+        }
+        if(v2 <= hVertexIntervals_[clusterId]) {
+          stars2 = localVertexStars[localV2];
+        } else {
+          localV2 = v2 - hVertexIntervals_[hIndexArray_[v2] - 1] - 1;
+          stars2 = nodeMaps[hIndexArray_[v2]][localV2];
+        }
+
+        // perform an intersection of the 3 (sorted) star lists
+        SimplexId pos0 = 0, pos1 = 0, pos2 = 0;
+        SimplexId intersection = -1;
+
+        while((pos0 < (SimplexId)stars0.size())
+              && (pos1 < (SimplexId)stars1.size())
+              && (pos2 < (SimplexId)stars2.size())) {
+
+          SimplexId biggest = stars0[pos0];
+          if(stars1[pos1] > biggest) {
+            biggest = stars1[pos1];
+          }
+          if(stars2[pos2] > biggest) {
+            biggest = stars2[pos2];
+          }
+
+          for(SimplexId l = pos0; l < (SimplexId)stars0.size(); l++) {
+            if(stars0[l] < biggest) {
+              pos0++;
+            } else {
+              break;
+            }
+          }
+          for(SimplexId l = pos1; l < (SimplexId)stars1.size(); l++) {
+            if(stars1[l] < biggest) {
+              pos1++;
+            } else {
+              break;
+            }
+          }
+          for(SimplexId l = pos2; l < (SimplexId)stars2.size(); l++) {
+            if(stars2[l] < biggest) {
+              pos2++;
+            } else {
+              break;
+            }
+          }
+
+          if(pos0 >= (SimplexId)stars0.size()
+              || pos1 >= (SimplexId)stars1.size()
+              || pos2 >= (SimplexId)stars2.size())
+            break;
+
+          if((stars0[pos0] == stars1[pos1])
+              && (stars0[pos0] == stars2[pos2])) {
+            if(stars0[pos0] != cid) {
+              intersection = stars0[pos0];
+              break;
+            }
+            pos0++;
+            pos1++;
+            pos2++;
+          }
+        }
+
+        if(intersection != -1) {
+          localCellNeighbors[cid - hCellIntervals_[clusterId - 1] - 1]
+            .push_back(intersection);
+        }
+      }
+    }
+  }
+
+  segment.cellNeighbors_ = FlatJaggedArray(localCellNeighbors);
+
+  return 0;
+}
+

@@ -17,6 +17,7 @@
 // base code includes
 #include <DiscreteGradient.h>
 #include <AbstractTriangulation.h>
+#include <Gale.h>
 
 #include <queue>
 
