@@ -20,10 +20,10 @@ int main(int argc, char *argv[])
     }
 
     int c;
-    int blockNumber = 0;
-    int blockSize = 0;
+    int blockNumber = 8;
+    int blockSize = 512;
     int threadNumber = 4;
-    int numThreadsPerCluster = 1;
+    int numThreadsPerCluster = 32;
     std::string fileName = "";
     std::string inputArrayName = "";
 

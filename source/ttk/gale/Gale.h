@@ -18,7 +18,7 @@
 #include <semaphore.h>
 
 /* Uncomment to track detailed timing of consumer and producer threads*/
-#define MEASURE_TIME 1
+// #define MEASURE_TIME 1
 
 // Find the global edge/triangle index from the edge/triangle list
 // (x, e): x specifies the segment index, e specifies the edge pair
@@ -616,7 +616,11 @@ class Gale final : public AbstractTriangulation {
                 currClusters_[tid] = segId, currRelations_[tid] = RelationType::ETRelation;
                 int qid = relationMaps_.at(RelationType::ETRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -650,7 +654,11 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 int qid = relationMaps_.at(RelationType::ETRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -689,7 +697,11 @@ class Gale final : public AbstractTriangulation {
                 currClusters_[tid] = hIndexArray_[edgeList_[edgeId][0]], currRelations_[tid] = RelationType::EFRelation;
                 int qid = relationMaps_.at(RelationType::EFRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -722,7 +734,11 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 int qid = relationMaps_.at(RelationType::EFRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -819,7 +835,11 @@ class Gale final : public AbstractTriangulation {
                 currClusters_[tid] = segId, currRelations_[tid] = RelationType::FTRelation;
                 int qid = relationMaps_.at(RelationType::FTRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -852,7 +872,11 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 int qid = relationMaps_.at(RelationType::FTRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -900,7 +924,11 @@ class Gale final : public AbstractTriangulation {
                 currClusters_[tid] = segId, currRelations_[tid] = RelationType::VVRelation;
                 int qid = relationMaps_.at(RelationType::VVRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -932,7 +960,11 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 int qid = relationMaps_.at(RelationType::VVRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -970,7 +1002,11 @@ class Gale final : public AbstractTriangulation {
                 currClusters_[tid] = segId, currRelations_[tid] = RelationType::VERelation;
                 int qid = relationMaps_.at(RelationType::VERelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -1002,7 +1038,11 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 int qid = relationMaps_.at(RelationType::VERelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -1040,7 +1080,11 @@ class Gale final : public AbstractTriangulation {
                 currClusters_[tid] = segId, currRelations_[tid] = RelationType::VTRelation;
                 int qid = relationMaps_.at(RelationType::VTRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -1073,7 +1117,11 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 int qid = relationMaps_.at(RelationType::VTRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -1111,7 +1159,11 @@ class Gale final : public AbstractTriangulation {
                 currClusters_[tid] = hIndexArray_[vertexId], currRelations_[tid] = RelationType::VFRelation;
                 int qid = relationMaps_.at(RelationType::VFRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -1143,7 +1195,11 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 int qid = relationMaps_.at(RelationType::VFRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -1190,7 +1246,11 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 int qid = relationMaps_.at(RelationType::BERelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
@@ -1241,7 +1301,11 @@ class Gale final : public AbstractTriangulation {
                 #endif
                 int qid = relationMaps_.at(RelationType::BVRelation);
                 std::unique_lock<std::mutex> qlock(qMutexes_[qid]);
+                #ifdef MEASURE_TIME
                 jobQueues_[qid].push(std::make_pair(tid, Timer{}));
+                #else
+                jobQueues_[qid].push(tid);
+                #endif
                 qlock.unlock();
                 #ifdef MEASURE_TIME
                 if (startTracking_) {
