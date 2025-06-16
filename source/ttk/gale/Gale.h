@@ -119,6 +119,8 @@ class Gale final : public AbstractTriangulation {
     public: 
         friend class TestTopoRelations;
         int *hIndexArray_{};
+        int *dVVDataArray_;
+        int *dVVIndexArray_;
         Gale(int tnum = 1, int tnumPerCluster = 1);
         ~Gale();
         void initialize(vtkDataSet *dataSet, int numBlocks = 100, int blockSize = 32, bool reorder = false);
@@ -307,29 +309,7 @@ class Gale final : public AbstractTriangulation {
             // #endif
             return 0;
         }
-
-        inline int preconditionVertexNeighborsInternal() override {
-            if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
-                std::cerr << "Empty dataset, precondition skipped";
-                return 1;
-            }
-            int curId = preconditionedRelations_.size();
-            relationMaps_[RelationType::VVRelation] = curId;
-            preconditionedRelations_.push_back(RelationType::VVRelation);
-            #ifdef MEASURE_TIME
-            jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
-            #else 
-            jobQueues_.push_back(std::queue<int>{});
-            #endif
-            producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
-            // #ifdef MEASURE_TIME
-            // qTimes_.push_back(std::vector<double>{});
-            // qSizes_.push_back(std::vector<int>{});
-            // kernelTimes_.push_back(std::vector<float>{});
-            // returnTimes_.push_back(std::vector<float>{});
-            // #endif
-            return 0;
-        }
+        int preconditionVertexNeighborsInternal() override;
 
         inline int preconditionVertexStarsInternal() override {
             if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {

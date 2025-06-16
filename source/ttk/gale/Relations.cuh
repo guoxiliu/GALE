@@ -812,6 +812,7 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
     
     // multiple threads compute one cluster
     int tid = (blockIdx.x * blockDim.x + threadIdx.x) / numThreadsPerCluster + baseCluster;
+    // printf("Thread %d, Block %d: tid=%d, clusterNumber=%d\n", threadIdx.x, blockIdx.x, tid, clusterNumber);
     // int tid = blockIdx.x * blockDim.x + threadIdx.x + baseCluster;
     if (tid >= clusterNumber) return;
 
@@ -822,6 +823,8 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
     const int endVertexId = vertexIntervals[tid];
     const int baseVertexId = vertexIntervals[baseCluster - 1];
 
+    // printf("threadIdx.x: %d, tid: %d, startVertexId: %d, endVertexId: %d\n", threadIdx.x, tid, startVertexId, endVertexId);
+
     // determine the range of vertices
     int clusterStartCellId = cellIntervals[tid - 1];
     int clusterEndCellId = cellIntervals[tid];
@@ -829,9 +832,6 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
     int startCellId = clusterStartCellId + (threadIdx.x % numThreadsPerCluster) * cellsPerThread;
     int endCellId = (threadIdx.x % numThreadsPerCluster == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
     
-
-    // printf("threadIdx.x: %d, tid: %d, startVertexId: %d, endVertexId: %d\n", threadIdx.x, tid, startVertexId, endVertexId);
-
     // loop through the internal cell list
     for (int cid = startCellId; cid < endCellId; ++cid) {
         int cellId = offsets[cid];
@@ -952,7 +952,6 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
             }
         }
     }
-
 }
 
 /**

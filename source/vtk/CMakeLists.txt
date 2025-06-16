@@ -41,3 +41,10 @@ add_executable(cudaBlockRelation cudaBlockRelation.cu)
 set_property(TARGET cudaBlockRelation PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 target_link_libraries(cudaBlockRelation PRIVATE gale)
 target_link_libraries(cudaBlockRelation PRIVATE VTK::IOXML)
+
+# test GPU critical points kernel with GALE method
+add_executable(criticalPointsKernel criticalPointsKernel.cu)
+# set_property(TARGET criticalPointsKernel PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+target_link_libraries(criticalPointsKernel PRIVATE gale testTopoRelations)
+target_link_libraries(criticalPointsKernel PRIVATE VTK::IOXML)
+# set_compile_options(criticalPointsKernel)

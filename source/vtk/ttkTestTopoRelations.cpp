@@ -20,10 +20,10 @@ int main(int argc, char *argv[])
 
     int c;
     std::string fileName = "";
-    int blockNumber = 0;
-    int blockSize = 0;
+    int blockNumber = 8;
+    int blockSize = 512;
     int threadNumber = 1;
-    int numThreadsPerCluster = 1;
+    int numThreadsPerCluster = 32;
 
     while ((c = getopt(argc, argv, "a:b:i:p:s:t:")) != -1) {
         switch (c) {
@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
     ttk::TestTopoRelations testPlugin;
     testPlugin.preconditionTriangulation(&gale);
     testPlugin.setThreadNumber(threadNumber);
-    testPlugin.execute(&gale);
+    // testPlugin.execute(&gale);
 
     return 0;
 }

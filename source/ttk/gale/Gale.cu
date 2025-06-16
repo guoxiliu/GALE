@@ -2299,6 +2299,81 @@ int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
     return 0;
 }
 
+/**
+ * Compute all vertex neighbors using the GPU here.
+ */
+int Gale::preconditionVertexNeighborsInternal() {
+    if (this->hConnectivity_ == nullptr || this->vertexNumber_ == 0) {
+        std::cerr << "Empty dataset, precondition skipped";
+        return 1;
+    }
+    std::cout << "[Gale] Preconditioning vertex neighbors..." << std::endl;
+    int numBlocks = clusterNumber_ / (blockSize_ / threadsPerCluster_) + 1, endCluster = clusterNumber_ - 1;
+    CHECK(cudaMalloc(&dVVIndexArray_, sizeof(int) * vertexNumber_));
+    CHECK(cudaMalloc(&dVVDataArray_, sizeof(int) * vertexNumber_ * vvColumnNum));
+    CHECK(cudaMemset(dVVIndexArray_, 0, sizeof(int) * vertexNumber_));
+    CHECK(cudaMemset(dVVDataArray_, -1, sizeof(int) * vertexNumber_ * vvColumnNum));
+
+    std::cout << "[Gale] Number of blocks: " << numBlocks << std::endl;
+    std::cout << "[Gale] cluster number: " << clusterNumber_ << std::endl;
+    std::cout << "[Gale] vertex number: " << vertexNumber_ << std::endl;
+
+    // int hSimplexOffsets[] = {0};
+    // int hClusterIds[] = {1};
+    // int *dClusterIds, *dSimplexOffsets;
+    // CHECK(cudaMallocAsync(&dClusterIds, sizeof(int), 0));
+    // CHECK(cudaMallocAsync(&dSimplexOffsets, sizeof(int), 0));
+    // CHECK(cudaMemcpyAsync(dClusterIds, hClusterIds, sizeof(int), cudaMemcpyHostToDevice));
+    // CHECK(cudaMemcpyAsync(dSimplexOffsets, hSimplexOffsets, sizeof(int), cudaMemcpyHostToDevice));
+
+    // dim3 dimBlock(1, numBlocks);
+    // computeMultiVertexNeighbors<<<dimBlock, blockSize_>>>(
+    //     dVVDataArray_, dVVIndexArray_,
+    //     clusterNumber_, dClusterIds, dSimplexOffsets,
+    //     dConnectivity_, dOffsets_,
+    //     dVertexIntervals_, dCellIntervals_,
+    //     dExternalCells_, dExternalCellOffsets_, 
+    //     cellDimension_, threadsPerCluster_);
+
+    computeVertexNeighbors<<<numBlocks, blockSize_>>>(
+        dVVDataArray_, dVVIndexArray_,
+        1, endCluster,
+        dConnectivity_, dOffsets_,
+        dVertexIntervals_, dCellIntervals_,
+        dExternalCells_, dExternalCellOffsets_, 
+        cellDimension_, threadsPerCluster_);
+
+    // Check for kernel launch errors immediately
+    cudaError_t launchErr = cudaGetLastError();
+    if (launchErr != cudaSuccess) {
+        std::cerr << "Kernel launch error: " << cudaGetErrorString(launchErr) << std::endl;
+        return 1;
+    }
+    
+    int *hVVIndexArray = new int[vertexNumber_];
+    CHECK(cudaMemcpy(hVVIndexArray, dVVIndexArray_, sizeof(int) * vertexNumber_, cudaMemcpyDeviceToHost));
+
+    // Testing if the VV relation is computed correctly
+    std::cout << "Testing the first 20 entries in VV relation:" << std::endl;
+    for (int i = 0; i < 20; ++i) {
+        std::cout << i << ": " << hVVIndexArray[i] << std::endl;
+    }
+
+    delete[] hVVIndexArray;
+
+    // relationCompVecs_[0].hSizeArray = new int[vertexNumber_];
+    // relationCompVecs_[0].hDataArray = new int[vertexNumber_ * vvColumnNum];
+
+    // CHECK(cudaMallocAsync((void **)&relationCompVecs_[0].dSizeArray, sizeof(int) * vertexNumber_, 0));
+    // CHECK(cudaMallocAsync((void **)&relationCompVecs_[0].dDataArray, sizeof(int) * vertexNumber_ * vvColumnNum, 0));
+
+    // computeRelation(RelationType::VVRelation, 1, true, 0, false);
+   
+    // for (int vid = 1; vid < 20; ++vid) {
+    //     std::cout << vid << ": " << relationCompVecs_[0].hSizeArray[vid] << std::endl;
+    // }
+    return 0;
+}
 
 /**
  * Compute the edge list from the input cell array.
