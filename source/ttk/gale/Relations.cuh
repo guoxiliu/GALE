@@ -808,7 +808,8 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
             const int *connectivity, const int *offsets, 
             const int *vertexIntervals, const int *cellIntervals, 
             const int *externalCells, const int *externalCellOffsets,
-            const int dimension, const int numThreadsPerCluster) {
+            const int dimension, const int numThreadsPerCluster,
+            const int sfcp_ColumnNum) {
     
     // multiple threads compute one cluster
     int tid = (blockIdx.x * blockDim.x + threadIdx.x) / numThreadsPerCluster + baseCluster;
@@ -843,7 +844,7 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
                     int relativeVid = viId - baseVertexId;
                     // linear search to check the duplication
                     bool insertion = true;
-                    int *arr = vertexNeighborMatrix + vvColumnNum * relativeVid;
+                    int *arr = vertexNeighborMatrix + sfcp_ColumnNum * relativeVid;
                     int localSize = vertexNeighborSizes[relativeVid];
                     for (int k = 0; k < localSize; ++k) {
                         if (arr[k] == vjId) {
@@ -867,7 +868,7 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
                 if (vjId >= startVertexId && vjId < endVertexId) {
                     int relativeVid = vjId - baseVertexId;
                     bool insertion = true;
-                    int *arr = vertexNeighborMatrix + vvColumnNum * relativeVid;
+                    int *arr = vertexNeighborMatrix + sfcp_ColumnNum * relativeVid;
                     int localSize = vertexNeighborSizes[relativeVid];
                     for (int k = 0; k < localSize; ++k) {
                         if (arr[k] == viId) {
@@ -910,7 +911,7 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
                 if (viId >= startVertexId && viId < endVertexId) {
                     int relativeVid = viId - baseVertexId;
                     bool insertion = true;
-                    int *arr = vertexNeighborMatrix + vvColumnNum * relativeVid;
+                    int *arr = vertexNeighborMatrix + sfcp_ColumnNum * relativeVid;
                     int localSize = vertexNeighborSizes[relativeVid];
                     for (int k = 0; k < localSize; ++k) {
                         if (arr[k] == vjId) {
@@ -931,7 +932,7 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
                 if (vjId >= startVertexId && vjId < endVertexId) {
                     int relativeVid = vjId - baseVertexId;
                     bool insertion = true;
-                    int *arr = vertexNeighborMatrix + vvColumnNum * relativeVid;
+                    int *arr = vertexNeighborMatrix + sfcp_ColumnNum * relativeVid;
                     int localSize = vertexNeighborSizes[relativeVid];
                     for (int k = 0; k < localSize; ++k) {
                         if (arr[k] == viId) {

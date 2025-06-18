@@ -121,7 +121,7 @@ class Gale final : public AbstractTriangulation {
         int *hIndexArray_{};
         int *dVVDataArray_;
         int *dVVIndexArray_;
-        Gale(int tnum = 1, int tnumPerCluster = 1);
+        Gale(int tnum = 1, int tnumPerCluster = 1, int SFCP_ColumnNum_=30);
         ~Gale();
         void initialize(vtkDataSet *dataSet, int numBlocks = 100, int blockSize = 32, bool reorder = false);
         void enableTracking() { startTracking_ = true; }
@@ -1383,7 +1383,7 @@ class Gale final : public AbstractTriangulation {
         /* Multithreading support */
         std::mutex producerMutex_;
         std::vector<std::thread> producers_{};
-        int threadsPerCluster_;
+        int threadsPerCluster_, SFCP_ColumnNum;
         std::array<std::vector<int>, 25> baseClusters_;
         mutable std::vector<boost::shared_mutex> clusterMutexes_;
         mutable std::vector<SimplexId> currClusters_;

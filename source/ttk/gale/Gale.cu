@@ -16,7 +16,7 @@ using namespace ttk;
  * `tnum` specifies the number of consumer threads
  * `tnumPerCluster` specifies the GPU threads per segment 
 */
-Gale::Gale(int tnum, int tnumPerCluster) {
+Gale::Gale(int tnum, int tnumPerCluster, int SFCP_ColumnNum_) {
     this->setDebugMsgPrefix("Gale");
     threadNumber_ = tnum;
     threadsPerCluster_ = tnumPerCluster;
@@ -26,6 +26,7 @@ Gale::Gale(int tnum, int tnumPerCluster) {
     for (int i = 0; i < 25; ++i) {
         baseClusters_[i] = std::vector<int>(threadNumber_, 0);
     }
+    SFCP_ColumnNum = SFCP_ColumnNum_;
     #ifdef MEASURE_TIME
     startTracking_ = false;
     timers_ = std::vector<Timer>(threadNumber_);
@@ -674,7 +675,7 @@ int Gale::computeRelation(const RelationType relation,
             int vertexIdOffset = hVertexIntervals_[clusterId - 1];
             int localVertexNum = hVertexIntervals_[endCluster] - vertexIdOffset;
             CHECK(cudaMemset(relationCompVecs_[0].dSizeArray, 0, sizeof(int) * localVertexNum));
-            CHECK(cudaMemset(relationCompVecs_[0].dDataArray, -1, sizeof(int) * localVertexNum * vvColumnNum));
+            CHECK(cudaMemset(relationCompVecs_[0].dDataArray, -1, sizeof(int) * localVertexNum * SFCP_ColumnNum));
             
             computeVertexNeighbors<<<numBlocks, blockSize_>>>(
                 relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
@@ -682,7 +683,8 @@ int Gale::computeRelation(const RelationType relation,
                 dConnectivity_, dOffsets_,
                 dVertexIntervals_, dCellIntervals_,
                 dExternalCells_, dExternalCellOffsets_, 
-                cellDimension_, threadsPerCluster_);
+                cellDimension_, threadsPerCluster_,
+                SFCP_ColumnNum);
 
             CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
             CHECK(cudaMemcpy(relationCompVecs_[0].hDataArray, relationCompVecs_[0].dDataArray, sizeof(int) * localVertexNum * vvColumnNum, cudaMemcpyDeviceToHost));
@@ -1147,7 +1149,7 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].dClusterIds, hClusterIds, sizeof(int) * threadNum, cudaMemcpyHostToDevice));
             CHECK(cudaMemcpyAsync(relationCompVecs_[producerId].dSimplexOffsets, hSimplexOffsets, sizeof(int) * threadNum, cudaMemcpyHostToDevice));
             CHECK(cudaMemset(relationCompVecs_[producerId].dSizeArray, 0, sizeof(int) * localVertexSum));
-            CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, -1, sizeof(int) * localVertexSum * vvColumnNum));
+            CHECK(cudaMemset(relationCompVecs_[producerId].dDataArray, -1, sizeof(int) * localVertexSum * SFCP_ColumnNum));
 
             dim3 dimBlock(threadNum, blocksPerThread_);
             #ifdef MEASURE_TIME
@@ -1507,8 +1509,8 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                     for (int j = 0; j < localVertexNum; ++j) {
                         int rj = j + diff; // relative j value in the large matrix
                         vertexNeighborData.insert(vertexNeighborData.end(), 
-                        relationCompVecs_[producerId].hDataArray + rj * vvColumnNum,
-                        relationCompVecs_[producerId].hDataArray + rj * vvColumnNum + relationCompVecs_[producerId].hSizeArray[rj]);
+                        relationCompVecs_[producerId].hDataArray + rj * SFCP_ColumnNum,
+                        relationCompVecs_[producerId].hDataArray + rj * SFCP_ColumnNum + relationCompVecs_[producerId].hSizeArray[rj]);
                         vertexNeighborOffsets[j+1] = vertexNeighborOffsets[j] + relationCompVecs_[producerId].hSizeArray[rj];
                     }
                     if (allClusters_[sid].vertexNeighbors_.empty()) {
@@ -1593,9 +1595,9 @@ void Gale::leaderProducer(const int pid) {
                 break;
             case RelationType::VVRelation:
                 CHECK(cudaMallocAsync((void **)&relationComp.dSizeArray, sizeof(int) * vertexAllocNum, 0));
-                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * vertexAllocNum * vvColumnNum, 0));
+                CHECK(cudaMallocAsync((void **)&relationComp.dDataArray, sizeof(int) * vertexAllocNum * SFCP_ColumnNum, 0));
                 relationComp.hSizeArray = new int[vertexAllocNum];
-                relationComp.hDataArray = new int[vertexAllocNum * vvColumnNum];
+                relationComp.hDataArray = new int[vertexAllocNum * SFCP_ColumnNum];
                 break;
             default:
                 break;
@@ -2310,9 +2312,9 @@ int Gale::preconditionVertexNeighborsInternal() {
     std::cout << "[Gale] Preconditioning vertex neighbors..." << std::endl;
     int numBlocks = clusterNumber_ / (blockSize_ / threadsPerCluster_) + 1, endCluster = clusterNumber_ - 1;
     CHECK(cudaMalloc(&dVVIndexArray_, sizeof(int) * vertexNumber_));
-    CHECK(cudaMalloc(&dVVDataArray_, sizeof(int) * vertexNumber_ * vvColumnNum));
+    CHECK(cudaMalloc(&dVVDataArray_, sizeof(int) * vertexNumber_ * SFCP_ColumnNum));
     CHECK(cudaMemset(dVVIndexArray_, 0, sizeof(int) * vertexNumber_));
-    CHECK(cudaMemset(dVVDataArray_, -1, sizeof(int) * vertexNumber_ * vvColumnNum));
+    CHECK(cudaMemset(dVVDataArray_, -1, sizeof(int) * vertexNumber_ * SFCP_ColumnNum));
 
     std::cout << "[Gale] Number of blocks: " << numBlocks << std::endl;
     std::cout << "[Gale] cluster number: " << clusterNumber_ << std::endl;
@@ -2332,16 +2334,18 @@ int Gale::preconditionVertexNeighborsInternal() {
     //     clusterNumber_, dClusterIds, dSimplexOffsets,
     //     dConnectivity_, dOffsets_,
     //     dVertexIntervals_, dCellIntervals_,
-    //     dExternalCells_, dExternalCellOffsets_, 
+    //     dExternalCells_, dExternalCellOffsets_,
     //     cellDimension_, threadsPerCluster_);
 
+    //std::cout << "[GALE] Start compute vertex neighbors with " << numBlocks << " blocks and " << blockSize_ << " threads per block using SFCP_ColumnNum == " << SFCP_ColumnNum << std::endl;
     computeVertexNeighbors<<<numBlocks, blockSize_>>>(
         dVVDataArray_, dVVIndexArray_,
         1, endCluster,
         dConnectivity_, dOffsets_,
         dVertexIntervals_, dCellIntervals_,
-        dExternalCells_, dExternalCellOffsets_, 
-        cellDimension_, threadsPerCluster_);
+        dExternalCells_, dExternalCellOffsets_,
+        cellDimension_, threadsPerCluster_,
+        SFCP_ColumnNum);
 
     // Check for kernel launch errors immediately
     cudaError_t launchErr = cudaGetLastError();
@@ -2349,17 +2353,27 @@ int Gale::preconditionVertexNeighborsInternal() {
         std::cerr << "Kernel launch error: " << cudaGetErrorString(launchErr) << std::endl;
         return 1;
     }
-    
+    //std::cout << "[GALE] End compute vertex neighbors" << std::endl;
+
+    /*
     int *hVVIndexArray = new int[vertexNumber_];
+    int *hVVArray = new int[vertexNumber_ * SFCP_ColumnNum];
     CHECK(cudaMemcpy(hVVIndexArray, dVVIndexArray_, sizeof(int) * vertexNumber_, cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(hVVArray, dVVDataArray_, sizeof(int) * (vertexNumber_ * SFCP_ColumnNum), cudaMemcpyDeviceToHost));
 
     // Testing if the VV relation is computed correctly
-    std::cout << "Testing the first 20 entries in VV relation:" << std::endl;
-    for (int i = 0; i < 20; ++i) {
-        std::cout << i << ": " << hVVIndexArray[i] << std::endl;
+    const int MAX_PRINT = 100;
+    std::cout << "Testing the first 4 vertices in VV relation (up to " << MAX_PRINT << " values):" << std::endl;
+    int printed = 0;
+    for (int i = 0; i < 4 && printed < MAX_PRINT; i++) {
+        std::cout << "Vertex " << i << " should have " << hVVIndexArray[i] << " items" << std::endl;
+        for (int j = 0; j < SFCP_ColumnNum && printed < MAX_PRINT; j++) {
+            std::cout << "\t" << i << ": " << hVVArray[(i*SFCP_ColumnNum)+j] << std::endl;
+            printed++;
+        }
     }
-
-    delete[] hVVIndexArray;
+    delete[] hVVIndexArray, hVVArray;
+    */
 
     // relationCompVecs_[0].hSizeArray = new int[vertexNumber_];
     // relationCompVecs_[0].hDataArray = new int[vertexNumber_ * vvColumnNum];
@@ -2368,7 +2382,7 @@ int Gale::preconditionVertexNeighborsInternal() {
     // CHECK(cudaMallocAsync((void **)&relationCompVecs_[0].dDataArray, sizeof(int) * vertexNumber_ * vvColumnNum, 0));
 
     // computeRelation(RelationType::VVRelation, 1, true, 0, false);
-   
+
     // for (int vid = 1; vid < 20; ++vid) {
     //     std::cout << vid << ": " << relationCompVecs_[0].hSizeArray[vid] << std::endl;
     // }

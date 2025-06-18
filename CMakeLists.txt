@@ -20,7 +20,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE "${default_build_type}" CACHE
         STRING "Choose the type of build." FORCE)
     # Set the possible values of build type for cmake-gui
-    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS 
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
         "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
@@ -38,18 +38,17 @@ option(TTK_ENABLE_OPENMP "Enable OpenMP support" TRUE)
 if(TTK_ENABLE_OPENMP)
     find_package(OpenMP)
     if (OpenMP_CXX_FOUND)
-    option(TTK_ENABLE_OMP_PRIORITY "Gives tasks priority, high perf improvement" OFF)
-    if(OpenMP_CXX_VERSION_MAJOR GREATER_EQUAL 4 AND 
-        OpenMP_CXX_VERSION_MINOR GREATER_EQUAL 5)
-        set(TTK_ENABLE_OMP_PRIORITY 
-            OFF 
-            CACHE 
-            BOOL 
-            "Enable priorities on opnemp tasks" 
-            FORCE
-        )
-    endif()
-
+        option(TTK_ENABLE_OMP_PRIORITY "Gives tasks priority, high perf improvement" OFF)
+        if(OpenMP_CXX_VERSION_MAJOR GREATER_EQUAL 4 AND
+            OpenMP_CXX_VERSION_MINOR GREATER_EQUAL 5)
+            set(TTK_ENABLE_OMP_PRIORITY
+                OFF
+                CACHE
+                BOOL
+                "Enable priorities on opnemp tasks"
+                FORCE
+            )
+        endif()
     else()
         message("OpenMP NOT FOUND!")
         if(TTK_ENABLE_OMP_PRIORITY)
@@ -63,9 +62,13 @@ if(TTK_ENABLE_OPENMP)
             )
         endif()
         return()
+    endif()
 endif()
 
-    endif()
+if(POLICY CMP0144)
+    cmake_policy(SET CMP0144 NEW)
+endif()
+
 find_package(Boost COMPONENTS system thread)
     if(NOT Boost_FOUND)
         find_package(Boost REQUIRED)
@@ -79,9 +82,17 @@ message("VTK_DIR: ${VTK_DIR}")
 # message("VTK_LIBRARIES: ${VTK_LIBRARIES}")
 
 # set(CMAKE_CUDA_ARCHITECTURES 60 61 75)
-set(CMAKE_CUDA_ARCHITECTURES 60 70 75)
+set(CMAKE_CUDA_ARCHITECTURES 60 70 72)
 set(CMAKE_CXX_STANDARD 14)
 # set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --ptxas-options=-v")
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message("Adjusting CUDA FLAGS for debug build...")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -g -lineinfo -O0")
+    #target_compile_options(all PRIVATE -g -lineinfo -O0)
+    #target_compile_options(ALL_TARGET CUDA::CUDA_OPTIONS PRIVATE -G -O0)
+    set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -G -O0 -g -lineinfo")
+    #set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -G -O0 -g -lineinfo")
+endif()
 
 # add_subdirectory("test")
 
@@ -101,5 +112,5 @@ function(set_compile_options library)
     endif()
 endfunction()
 
-
 add_subdirectory("source")
+

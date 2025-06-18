@@ -1,17 +1,20 @@
-#include <Relations.cuh>
+#include <Gale.h>
+//#include <Relations.cuh>
+#include <TestTopoRelations.h>
+#include <vtkSmartPointer.h>
+#include <vtkXMLUnstructuredGridReader.h>
+#include <vtkUnstructuredGrid.h>
+#include <vtkXMLGenericDataObjectReader.h>
+#include <iostream>
+#include <stdlib.h>
+#include <unistd.h>
+
 #include <array>
 #include <cstddef>
-#include <iostream>
 #include <set>
-#include <stdlib.h>
 #include <vector>
 #include <vtkPointData.h>
-#include <vtkSmartPointer.h>
-#include <vtkXMLGenericDataObjectReader.h>
-#include <vector>
-#include <Gale.h>
-#include <MemoryUsage.h>
-#include <TestTopoRelations.h>
+//#include <MemoryUsage.h>
 
 
 #include "ttkUtils.h"
@@ -36,6 +39,8 @@
 #define MINIMUM_CLASS 2
 #define REGULAR_CLASS 3
 #define SADDLE_CLASS  4
+int SFCP_ColumnNum = 30;
+//#define FORCE_BLOCK_IDX 13
 
 using namespace ttk;
 
@@ -44,7 +49,7 @@ __global__ void critPointsA(const int * __restrict__ VV,                // FLAT 
                             const int * __restrict__ VV_index, // Offset array into VV
                             int * __restrict__ valences,                // FLAT array same size/indexing as VV, used to reference relationship between point pairs based on their Scalar Values
                             const int points,                    // Number of points (== #blocks)
-                            const int vvColumnNum,              // Padding factor for my algorithm (#adjacent to point)
+                            const int SFCP_ColumnNum,              // Padding factor for my algorithm (#adjacent to point)
                             const double * __restrict__ scalar_values, // Actual scalar values, vector of size #points
                             unsigned int * __restrict__ classes       // Output as vector of size #points
                             ) {
@@ -56,9 +61,15 @@ __global__ void critPointsA(const int * __restrict__ VV,                // FLAT 
                        *neighborhood = &block_shared[2]; // Tracks current components within the thread block
 
     // Parallelized VV on second-dimension (number of adjacenies to each vertex)
+    #ifdef FORCE_BLOCK_IDX
+    const int tid = (blockDim.x * FORCE_BLOCK_IDX) + threadIdx.x,
+                    // VV[tid] shows the SECOND point, the block ID is the first point
+                    my_1d = FORCE_BLOCK_IDX,
+    #else
     const int tid = (blockDim.x * blockIdx.x) + threadIdx.x,
                     // VV[tid] shows the SECOND point, the block ID is the first point
                     my_1d = blockIdx.x,
+    #endif
                     my_2d = VV[tid];
     // No work for this point's valence (final thread block may be too big)
     if (VV_index[my_1d] <= 0 || my_2d < 0) return;
@@ -78,10 +89,13 @@ __global__ void critPointsA(const int * __restrict__ VV,                // FLAT 
                                     << 1);
     // Global mesh visibility of what component you belong to
     valences[tid] = my_class;
+    #ifdef FORCE_BLOCK_IDX
+    printf("Block %d Thread %d has 2d point %d with valence %d based on %lf (block) vs %lf (thread)\n", my_1d, tid, my_2d, valences[tid], scalar_values[my_1d], scalar_values[my_2d]);
+    #endif
 
     // Iteration bounds for Union-Find
-    const int min_my_1d = (my_1d * vvColumnNum),
-                    max_my_1d = min_my_1d + VV_index[my_1d];
+    const int min_my_1d = (my_1d * SFCP_ColumnNum),
+              max_my_1d = min_my_1d + VV_index[my_1d];
 
     // Initialize neighborhood with YOURSELF, barrier for block visibility
     neighborhood[threadIdx.x] = my_2d;
@@ -100,6 +114,11 @@ __global__ void critPointsA(const int * __restrict__ VV,                // FLAT 
         if (threadIdx.x == 0) {
             *upper_edits = 0;
             *lower_edits = 0;
+            #ifdef FORCE_BLOCK_IDX
+            for(int i = 0; i < VV_index[my_1d]; i++) {
+                printf("Iteration %d Neighborhood %d: %llu\n", to_converge, i, neighborhood[i]);
+            }
+            #endif
         }
         __syncthreads();
 
@@ -110,8 +129,8 @@ __global__ void critPointsA(const int * __restrict__ VV,                // FLAT 
             const int candidate_component_2d = VV[i];
             if (i != tid && valences[i] == my_class) {
                 // Find yourself in their adjacency to become a shared component and release burden
-                const int start_2d = candidate_component_2d*vvColumnNum,
-                                stop_2d  = start_2d + VV_index[candidate_component_2d];
+                const int start_2d = candidate_component_2d*SFCP_ColumnNum,
+                          stop_2d  = start_2d + VV_index[candidate_component_2d];
                 for(int j = start_2d; j < stop_2d; j++) {
                     /* Do you see your 2d in their 2d? If so, update your
                        neighborhood with the minimum of your two points
@@ -148,9 +167,14 @@ __global__ void critPointsA(const int * __restrict__ VV,                // FLAT 
         const int my_classes = my_1d*3;
         const unsigned int upper = classes[my_classes],
                            lower = classes[my_classes+1];
+        #ifdef FORCE_BLOCK_IDX
+        if (blockIdx.x < 4) {
+            printf("Upper: %d\tLower: %d\n", upper, lower);
+        }
+        #endif
         if (upper == 1 && lower == 1) classes[my_classes+2] = REGULAR_CLASS;
-        else if (upper == 0 && lower >= 1) classes[my_classes+2] = MAXIMUM_CLASS;
-        else if (upper >= 1 && lower == 0) classes[my_classes+2] = MINIMUM_CLASS;
+        else if (upper == 0 && lower >= 1) classes[my_classes+2] = MINIMUM_CLASS;
+        else if (upper >= 1 && lower == 0) classes[my_classes+2] = MAXIMUM_CLASS;
         else classes[my_classes+2] = SADDLE_CLASS;
     }
 }
@@ -174,7 +198,7 @@ int main(int argc, char *argv[])
     std::string fileName = "";
     std::string inputArrayName = "";
 
-    while ((c = getopt(argc, argv, "a:b:i:p:s:t:")) != -1) {
+    while ((c = getopt(argc, argv, "a:b:i:p:s:t:v:")) != -1) {
         switch (c) {
             case 'i':
                 fileName = optarg;
@@ -194,17 +218,26 @@ int main(int argc, char *argv[])
             case 't':
                 threadNumber = atoi(optarg);
                 break;
+            case 'v':
+                SFCP_ColumnNum = atoi(optarg);
+                break;
         }
     }
+    std::cout << "CMDLINE ARGS:" << std::endl;
+    std::cout << "Parsing vtu file (-i): " << fileName << std::endl;
+    std::cout << "Look for array (-a): " << inputArrayName << std::endl;
+    std::cout << "Block Number (-b): " << blockNumber << std::endl;
+    std::cout << "numThreadsPerCluster (-p): " << numThreadsPerCluster << std::endl;
+    std::cout << "Block Size (-s):" << blockSize << std::endl;
+    std::cout << "CPU threads (-t):" << threadNumber << std::endl;
+    std::cout << "SFCP Column Num (-v):" << SFCP_ColumnNum << std::endl;
 
-    std::cout << "Parsing vtu file: " << fileName << std::endl;
-    
     //read all the data from the file
     vtkSmartPointer<vtkXMLGenericDataObjectReader> reader =
         vtkSmartPointer<vtkXMLGenericDataObjectReader>::New();
     reader->SetFileName(fileName.c_str());
     reader->Update();
-    
+
     MemoryUsage m;
 
     int scalarFieldIndex = 0;
@@ -215,26 +248,31 @@ int main(int argc, char *argv[])
     }
     vtkDataSet *inputDataSet = vtkDataSet::SafeDownCast(inputDataObject);
     vtkDataArray *inputArray = GetInputArray(inputArrayName, inputDataSet, scalarFieldIndex);
-    double *vertexAttributes = static_cast<double*>(inputArray->GetVoidPointer(0));
 
-    ttk::Gale gale(threadNumber, numThreadsPerCluster);
+    ttk::Gale gale(threadNumber, numThreadsPerCluster, SFCP_ColumnNum);
+    // Memory initi here
     if (blockNumber > 0 && blockSize > 0)
         gale.initialize(inputDataSet, blockNumber, blockSize, false);
+    else if (blockNumber > 0)
+        gale.initialize(inputDataSet, blockNumber);
+    else
+        gale.initialize(inputDataSet);
 
     // the following code of calling preconditionVertexNeighbor() does not work somehow
-    // gale.preconditionVertexNeighbors();
-        
-    // using testing plugin to precompute the VV relation does not work either
-    ttk::TestTopoRelations testPlugin;
-    testPlugin.preconditionTriangulation(&gale);
-    testPlugin.setThreadNumber(threadNumber);
+
+    // VV kernel only
+    gale.preconditionVertexNeighbors();
 
     /* BEYOND THIS POINT IS FOR CLARITY ON THE MEMORY LAYOUT AND KERNEL INVOCATION */
     int nCells = gale.getNumberOfCells();
     int nPoints = gale.getNumberOfVertices();
     size_t classes_size = sizeof(unsigned int) * nPoints * 3, // #Upper, #Lower, Classification
-        valences_size = sizeof(vtkIdType) * nPoints * vvColumnNum,
+        valences_size = sizeof(vtkIdType) * nPoints * SFCP_ColumnNum,
         scalars_size = sizeof(double) * nPoints;
+
+    // Set scalars here
+    double *vertexAttributes = new double[nPoints];
+    for (vtkIdType i = 0; i < nPoints; i++) vertexAttributes[i] = inputArray->GetTuple1(i);
 
     // Allocations
     unsigned int *host_CPC = new unsigned int[classes_size];
@@ -253,35 +291,37 @@ int main(int argc, char *argv[])
     // Critical Points
     // Set kernel launch parameters here
     // Parallelized VV on second-dimension (number of adjacenies to each vertex)
-    int n_to_compute = nPoints * vvColumnNum;
-    dim3 thread_block_size = vvColumnNum,
-        grid_size = (n_to_compute + thread_block_size.x - 1) / thread_block_size.x;
+    #ifdef FORCE_BLOCK_IDX
+    dim3 grid_size = 1,
+    #else
+    int n_to_compute = nPoints * SFCP_ColumnNum;
+    dim3 grid_size = (n_to_compute + SFCP_ColumnNum - 1) / SFCP_ColumnNum,
+    #endif
+         thread_block_size = SFCP_ColumnNum;
     // Need one entry per block (VV width) + 2 entries for tracking edits to # upper and #lower components
-    const int shared_mem_size = sizeof(int) * (2+vvColumnNum);
+    const int shared_mem_size = sizeof(unsigned long long) * (2+SFCP_ColumnNum);
 
     critPointsA<<<grid_size, thread_block_size, shared_mem_size>>>(
             gale.dVVDataArray_,
             gale.dVVIndexArray_,
             device_valences,
             nPoints,
-            vvColumnNum,
+            SFCP_ColumnNum,
             device_scalar_values,
             device_CPC);
     CUDA_WARN(cudaDeviceSynchronize()); // Make algorithm timing accurate
     // // Results are retrieved from GPU
-    CUDA_WARN(cudaMemcpy(host_CPC, device_CPC, classes_size, cudaMemcpyDeviceToHost));
-
     std::cout << "[ScalarFieldCriticalPoints] Time usage for computation: " << t.getElapsedTime() << " s." << std::endl;
     std::cout << "[ScalarFieldCriticalPoints] Memory usage: " << m.getValue_in_MB(false) << " MB." << std::endl;
-
+    CUDA_WARN(cudaMemcpy(host_CPC, device_CPC, classes_size, cudaMemcpyDeviceToHost));
 
     int numMinimum = 0, numMaximum = 0, numSaddles = 0;
     for (int i = 0; i < nPoints; i++) {
-        if (host_CPC[i*3+2] == MINIMUM_CLASS) {
+        if (host_CPC[(i*3)+2] == MINIMUM_CLASS) {
             numMinimum++;
-        } else if (host_CPC[i*3+2] == MAXIMUM_CLASS) {
+        } else if (host_CPC[(i*3)+2] == MAXIMUM_CLASS) {
             numMaximum++;
-        } else if (host_CPC[i*3+2] == SADDLE_CLASS) {
+        } else if (host_CPC[(i*3)+2] == SADDLE_CLASS) {
             numSaddles++;
         }
     }
