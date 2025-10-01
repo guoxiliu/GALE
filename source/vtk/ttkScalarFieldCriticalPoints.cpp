@@ -51,13 +51,13 @@ int main(int argc, char *argv[])
     }
 
     std::cout << "Parsing vtu file: " << fileName << std::endl;
-    
+
     //read all the data from the file
     vtkSmartPointer<vtkXMLGenericDataObjectReader> reader =
         vtkSmartPointer<vtkXMLGenericDataObjectReader>::New();
     reader->SetFileName(fileName.c_str());
     reader->Update();
-    
+
     MemoryUsage m;
 
     int scalarFieldIndex = 0;
@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
         return 1;
     }
     vtkDataSet *inputDataSet = vtkDataSet::SafeDownCast(inputDataObject);
-    // get the scalar field array to process 
+    // get the scalar field array to process
     GetInputArray(inputArrayName, inputDataSet, scalarFieldIndex);
 
     ttk::Gale gale(threadNumber, numThreadsPerCluster);
@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
         gale.initialize(inputDataSet, blockNumber, blockSize, false);
     else if (blockNumber > 0)
         gale.initialize(inputDataSet, blockNumber);
-    else 
+    else
         gale.initialize(inputDataSet);
 
     if(VertexBoundary)
@@ -84,14 +84,16 @@ int main(int argc, char *argv[])
     std::vector<std::pair<ttk::SimplexId, char>> criticalPoints_;
 
     ttk::ScalarFieldCriticalPoints cpPlugin;
+    // Actual initi of VV and VT etc
     cpPlugin.preconditionTriangulation(&gale);
     cpPlugin.setThreadNumber(threadNumber);
     cpPlugin.setOutput(&criticalPoints_);
-    
+
     vtkDataArray *offsetField = GetOrderArray(inputDataSet, scalarFieldIndex, 1);
 
     ttk::Timer t;
 
+    // Classification happens here
     int res = cpPlugin.executeLegacy(static_cast<ttk::SimplexId *>(GetVoidPointer(offsetField)), &gale);
     if (res != 0) {
         std::cerr << "Execution failed, status code: " << res << std::endl;

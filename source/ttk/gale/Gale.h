@@ -125,6 +125,9 @@ class Gale final : public AbstractTriangulation {
         ~Gale();
         void initialize(vtkDataSet *dataSet, int numBlocks = 100, int blockSize = 32, bool reorder = false);
         void enableTracking() { startTracking_ = true; }
+        // Extensions
+        vtkIdType * partition_remapping = nullptr;
+        void partitionInitialize(vtkDataSet *dataSet, int partitionID, int numBlocks = 100, int blockSize = 32, bool reuse_allocations = false);
         
         /**
          * Preconditioning relation functions.

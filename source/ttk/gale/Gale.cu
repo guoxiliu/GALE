@@ -84,6 +84,9 @@ Gale::~Gale() {
 
     #endif
 
+    // Extension at top
+    if (partition_remapping != nullptr) delete[] partition_remapping;
+
     // host memory deallocation
     if (hVertexIntervals_ != nullptr) free(hVertexIntervals_);
     if (hCellIntervals_ != nullptr) free(hCellIntervals_);
@@ -2117,6 +2120,209 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
     // #endif
 }
 
+void Gale::partitionInitialize(vtkDataSet *dataSet, int partitionID, int blockNum, int blockSize, bool reuse_allocations) {
+    if (dataSet->GetDataObjectType() != VTK_UNSTRUCTURED_GRID) {
+        std::cerr << "The input dataset is not unstructured grid!" << std::endl;
+        return;
+    }
+    vtkPointSet *pointSet = static_cast<vtkPointSet *>(dataSet);
+    vtkPoints *points = pointSet->GetPoints();
+    if(!points) {
+        std::cerr << "DataSet has uninitialized `vtkPoints`." << std::endl;
+    }
+
+    vtkCellArray *cells = static_cast<vtkUnstructuredGrid *>(pointSet)->GetCells();
+    if(!cells) {
+        std::cerr << "DataSet has uninitialized `vtkCellArray`." << std::endl;
+    }
+
+    // INTERNAL ATTRIBUTES
+    if (!reuse_allocations) {
+        // Points
+        auto pointDataType = points->GetDataType();
+        if (pointDataType == VTK_FLOAT) {
+            doublePrecision_ = false;
+        } else if (pointDataType == VTK_DOUBLE) {
+            doublePrecision_ = true;
+        } else {
+            std::cerr << "Unable to initialize 'ttk::Triangulation' for point: precision other than 'float' or 'double'." << std::endl;
+        }
+
+        pointSet_ = points->GetData()->GetVoidPointer(0);
+        vertexNumber_ = points->GetNumberOfPoints();
+
+        // Cells
+        cellNumber_ = cells->GetNumberOfCells();
+        if(cellNumber_ > 0) {
+            // convert to 32-bit storage to reduce memory consumption
+            if(cells->IsStorage64Bit()) {
+                if(cells->CanConvertTo32BitStorage()) {
+                    std::cout << "[Gale] Converting the cell array to 32-bit storage" << std::endl;
+                    bool success = cells->ConvertTo32BitStorage();
+                    if(!success) {
+                        std::cerr << "[Gale] Error converting the provided cell array to 32-bit storage" << std::endl;
+                    }
+                } else {
+                    std::cerr << "[Gale] Cannot convert the provided cell array to 32-bit storage" << std::endl;
+                }
+            }
+            hConnectivity_ = static_cast<int *>(cells->GetConnectivityArray()->GetVoidPointer(0));
+            hOffsets_ = static_cast<int *>(cells->GetOffsetsArray()->GetVoidPointer(0));
+            cellDimension_ = hOffsets_[1] - hOffsets_[0] - 1;
+        }
+        // index array
+        hIndexArray_ = nullptr;
+        int hasIndexArray = pointSet->GetPointData()->HasArray("_index");
+        if (!hasIndexArray) {
+            std::cerr << "Cannot detect index array! Gale must run with a predefined clustering information!" << std::endl;
+            exit(EXIT_FAILURE);
+        }
+
+        // Semaphores probably should not re-init ever, likely undefined or undesirable
+        for (int i = 0; i < threadNumber_; ++i) {
+            sem_init(&relationSems_[i], 0, 0);
+        }
+    }
+
+    if (blockNum > 0) blocksPerThread_ = blockNum;
+    if (blockSize > 0) {
+        blockSize_ = blockSize;
+        if (blockSize % threadsPerCluster_ != 0) {
+            std::cerr << "Block size " << blockSize << " is not divisible by threads per cluster " << threadsPerCluster_ << std::endl;
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // Reordering block
+    // TODO: Don't allocate on vertexNumber_, allocate on n_in_partition || n_needed_for_partition
+    if (hIndexArray_ != nullptr) delete[] hIndexArray_;
+    hIndexArray_ = new int[vertexNumber_];
+    vtkDataArray *dataArray = pointSet->GetPointData()->GetArray("_index");
+    memcpy(hIndexArray_, dataArray->GetVoidPointer(0), sizeof(int) * vertexNumber_);
+    // TODO: ClusterNumber == 2 (in-partition = 1, not-in-partition = 0)
+    clusterNumber_ = 0;
+    for (int i = 0; i < vertexNumber_; ++i) {
+        hIndexArray_[i] += 1;
+        clusterNumber_ = std::max(hIndexArray_[i], clusterNumber_);
+    }
+    clusterNumber_ += 1;
+
+    std::cout << "[Gale] Reordering vertices and cells..." << std::endl;
+
+    // TODO: use Gale attribute vtkIdType * partition_remapping instead
+    std::vector<SimplexId> vertexMap;       // old vid : new vid
+    // TODO: Re-implement these as needed (similar to standalone SFCP)
+    reorderVertices(vertexMap);
+    reorderCells(vertexMap);
+    // change vertex orders of point data arrays
+    int arrNum = pointSet->GetPointData()->GetNumberOfArrays();
+    // TODO: Technically this only needs to be performed on the user's target data array
+    for (int i = 0; i < arrNum; ++i) {
+        vtkDataArray *dataArray = pointSet->GetPointData()->GetArray(i);
+        vtkFieldData *fieldData = pointSet->GetAttributesAsFieldData(i);
+        vtkDataArray *orderArray = nullptr;
+        if (fieldData != nullptr)
+            orderArray = fieldData->GetArray((std::string(dataArray->GetName()) + "_Order").data());
+
+        if (dataArray->GetName() == "_index") continue;
+        switch(dataArray->GetDataType()) {
+            case VTK_INT:
+            {
+                vtkIntArray *dataIntArray = vtkIntArray::SafeDownCast(dataArray);
+                vtkSmartPointer<vtkIntArray> tmpArray = vtkSmartPointer<vtkIntArray>::New();
+                tmpArray->DeepCopy(dataIntArray);
+                for (SimplexId vid = 0; vid < vertexNumber_; ++vid) {
+                    dataIntArray->SetValue(vertexMap[vid], tmpArray->GetValue(vid));
+                }
+                break;
+            }
+            case VTK_FLOAT:
+            {
+                vtkFloatArray *dataFloatArray = vtkFloatArray::SafeDownCast(dataArray);
+                vtkSmartPointer<vtkFloatArray> tmpArray = vtkSmartPointer<vtkFloatArray>::New();
+                tmpArray->DeepCopy(dataFloatArray);
+                for (SimplexId vid = 0; vid < vertexNumber_; ++vid) {
+                    dataFloatArray->SetValue(vertexMap[vid], tmpArray->GetValue(vid));
+                }
+                break;
+            }
+            case VTK_DOUBLE:
+            {
+                vtkDoubleArray *dataDoubleArray = vtkDoubleArray::SafeDownCast(dataArray);
+                vtkSmartPointer<vtkDoubleArray> tmpArray = vtkSmartPointer<vtkDoubleArray>::New();
+                tmpArray->DeepCopy(dataDoubleArray);
+                for (SimplexId vid = 0; vid < vertexNumber_; ++vid) {
+                    dataDoubleArray->SetValue(vertexMap[vid], tmpArray->GetValue(vid));
+                }
+                break;
+            }
+            case VTK_ID_TYPE:
+            {
+                vtkIdTypeArray *dataIdTypeArray = vtkIdTypeArray::SafeDownCast(dataArray);
+                vtkSmartPointer<vtkIdTypeArray> tmpArray = vtkSmartPointer<vtkIdTypeArray>::New();
+                tmpArray->DeepCopy(dataIdTypeArray);
+                for (SimplexId vid = 0; vid < vertexNumber_; ++vid) {
+                    dataIdTypeArray->SetValue(vertexMap[vid], tmpArray->GetValue(vid));
+                }
+                break;
+            }
+            default:
+                std::cerr << "[Gale] Not supported data array type: " << dataArray->GetDataType() << std::endl;
+                break;
+        }
+        if (orderArray != nullptr) {
+            switch(orderArray->GetDataType()) {
+                case VTK_INT:
+                {
+                    vtkIntArray *orderIntArray = vtkIntArray::SafeDownCast(orderArray);
+                    vtkSmartPointer<vtkIntArray> tmpArray = vtkSmartPointer<vtkIntArray>::New();
+                    tmpArray->DeepCopy(orderIntArray);
+                    for (SimplexId vid = 0; vid < vertexNumber_; ++vid) {
+                        orderIntArray->SetValue(vertexMap[vid], tmpArray->GetValue(vid));
+                    }
+                    break;
+                }
+                case VTK_ID_TYPE:
+                {
+                    vtkIdTypeArray *orderIdTypeArray = vtkIdTypeArray::SafeDownCast(orderArray);
+                    vtkSmartPointer<vtkIdTypeArray> tmpArray = vtkSmartPointer<vtkIdTypeArray>::New();
+                    tmpArray->DeepCopy(orderIdTypeArray);
+                    for (SimplexId vid = 0; vid < vertexNumber_; ++vid) {
+                        orderIdTypeArray->SetValue(vertexMap[vid], tmpArray->GetValue(vid));
+                    }
+                    break;
+                }
+                default:
+                    std::cerr << "[Gale] Not supported data array type: " << orderArray->GetDataType() << std::endl;
+                    break;
+            }
+        }
+    }
+    precompClusterNumber_ = blockSize_ / threadsPerCluster_ * blocksPerThread_;
+    allClusters_ = std::vector<MeshSegment>(clusterNumber_);
+    clusterMutexes_ = std::vector<boost::shared_mutex>(clusterNumber_);
+    for (int cid = 1; cid < clusterNumber_; ++cid) {
+        allClusters_[cid] = MeshSegment(cid);
+    }
+
+    printf("[Gale] GPU threads per cluster: %d, thread num: %d, block number: %d, block size: %d, cluster number: %d, cell number: %d, vertex number: %d\n", threadsPerCluster_, threadNumber_, blocksPerThread_, blockSize_, clusterNumber_, cellNumber_, vertexNumber_);
+
+    // copy input mesh arrays to the GPU
+    // TODO: Maybe don't allocate based on bool reuse_allocations
+    CHECK(cudaMallocAsync(&dConnectivity_, sizeof(int) * (cellNumber_ * 4), 0));
+    CHECK(cudaMemcpyAsync(dConnectivity_, hConnectivity_, sizeof(int) * (cellNumber_ * 4), cudaMemcpyHostToDevice));
+    CHECK(cudaMallocAsync(&dOffsets_, sizeof(int) * (cellNumber_+1), 0));
+    CHECK(cudaMemcpyAsync(dOffsets_, hOffsets_, sizeof(int) * (cellNumber_+1), cudaMemcpyHostToDevice));
+    CHECK(cudaMallocAsync(&dIndexArray_, sizeof(int) * vertexNumber_, 0));
+    CHECK(cudaMemcpyAsync(dIndexArray_, hIndexArray_, sizeof(int) * vertexNumber_, cudaMemcpyHostToDevice));
+
+    // copy cell intervals and vertex intervals
+    CHECK(cudaMemcpyAsync(dCellIntervals_, hCellIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpyAsync(dExternalCellOffsets_, hExternalCellOffsets_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpyAsync(dExternalCells_, hExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpyAsync(dVertexIntervals_, hVertexIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice, 0));
+}
+
 /**
  * Compute the cell interval array.
 */
@@ -2386,6 +2592,7 @@ int Gale::preconditionVertexNeighborsInternal() {
     // for (int vid = 1; vid < 20; ++vid) {
     //     std::cout << vid << ": " << relationCompVecs_[0].hSizeArray[vid] << std::endl;
     // }
+    CHECK(cudaDeviceSynchronize());
     return 0;
 }
 

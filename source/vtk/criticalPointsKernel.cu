@@ -184,6 +184,7 @@ __global__ void critPointsA(const int * __restrict__ VV,                // FLAT 
  */
 int main(int argc, char *argv[])
 {
+    ttk::Timer compat_timer;
     if (argc < 2) {
         std::cout << "Usage: " << argv[0] << " -i <input.vtu>" << std::endl;
         std::cout << "Missing required input .vtu file!" << std::endl;
@@ -196,9 +197,9 @@ int main(int argc, char *argv[])
     int threadNumber = 1;
     int numThreadsPerCluster = 32;
     std::string fileName = "";
-    std::string inputArrayName = "";
+    std::string inputArrayName = "", partitionArrayName = "";
 
-    while ((c = getopt(argc, argv, "a:b:i:p:s:t:v:")) != -1) {
+    while ((c = getopt(argc, argv, "a:p:b:i:c:s:t:v:")) != -1) {
         switch (c) {
             case 'i':
                 fileName = optarg;
@@ -206,10 +207,13 @@ int main(int argc, char *argv[])
             case 'a':
                 inputArrayName = optarg;
                 break;
+            case 'p':
+                partitionArrayName = optarg;
+                break;
             case 'b':
                 blockNumber = atoi(optarg);
                 break;
-            case 'p':
+            case 'c':
                 numThreadsPerCluster = atoi(optarg);
                 break;
             case 's':
@@ -225,12 +229,19 @@ int main(int argc, char *argv[])
     }
     std::cout << "CMDLINE ARGS:" << std::endl;
     std::cout << "Parsing vtu file (-i): " << fileName << std::endl;
-    std::cout << "Look for array (-a): " << inputArrayName << std::endl;
+    std::cout << "Look for data array (-a): " << inputArrayName << std::endl;
+    std::cout << "Look for partition array (-p): " << partitionArrayName << std::endl;
     std::cout << "Block Number (-b): " << blockNumber << std::endl;
-    std::cout << "numThreadsPerCluster (-p): " << numThreadsPerCluster << std::endl;
+    std::cout << "numThreadsPerCluster (-c): " << numThreadsPerCluster << std::endl;
     std::cout << "Block Size (-s):" << blockSize << std::endl;
     std::cout << "CPU threads (-t):" << threadNumber << std::endl;
     std::cout << "SFCP Column Num (-v):" << SFCP_ColumnNum << std::endl;
+    std::cout << "[TIMER] Argument parsing: " << compat_timer.getElapsedTime() << std::endl;
+    compat_timer.reStart();
+    // Create CUDA Context
+    (void)cudaFree(0);
+    std::cout << "[TIMER] Create CUDA Context: " << compat_timer.getElapsedTime() << std::endl;
+    compat_timer.reStart();
 
     //read all the data from the file
     vtkSmartPointer<vtkXMLGenericDataObjectReader> reader =
@@ -248,30 +259,70 @@ int main(int argc, char *argv[])
     }
     vtkDataSet *inputDataSet = vtkDataSet::SafeDownCast(inputDataObject);
     vtkDataArray *inputArray = GetInputArray(inputArrayName, inputDataSet, scalarFieldIndex);
+    int partitionIndex = 0;
+    vtkDataArray *partitionArray = GetInputArray(partitionArrayName, inputDataSet, partitionIndex);
+
+    const int FORCE_PARTITION = 0;
+    vtkIdType n_in_partition = 0;
+    for (vtkIdType i = 0; i < partitionArray->GetNumberOfTuples(); ++i) {
+        // Should be able to modify data via partitionArray->SetComponent(i, 0, VALUE);
+        if (partitionArray->GetComponent(i, 0) == FORCE_PARTITION) {
+            n_in_partition++;
+        }
+    }
+    std::cout << "Found " << n_in_partition << " points in partition " << FORCE_PARTITION << std::endl;
 
     ttk::Gale gale(threadNumber, numThreadsPerCluster, SFCP_ColumnNum);
+    // TODO: Replace initialization here with NEW gale.partitionInitialize()
     // Memory initi here
     if (blockNumber > 0 && blockSize > 0)
-        gale.initialize(inputDataSet, blockNumber, blockSize, false);
+        gale.initialize(inputDataSet, blockNumber, blockSize, true);
     else if (blockNumber > 0)
         gale.initialize(inputDataSet, blockNumber);
     else
         gale.initialize(inputDataSet);
+    std::cout << "[TIMER] Initialize VTK: " << compat_timer.getElapsedTime() << std::endl;
+    compat_timer.reStart();
 
-    // the following code of calling preconditionVertexNeighbor() does not work somehow
-
-    // VV kernel only
+    /* -- OLD -- FULL MESH VV
+    // VV kernel only -- handles entire VV for all data
     gale.preconditionVertexNeighbors();
+    */
+    // TODO: Set up VV on just the one partition
+    /*
+       gale.computeVertexNeighbors<<<gale.numBlocks, gale.blockSize>>>(
+            gale.dVVDataArray_, // VV_compute, memset to -1 before launch!
+            gale.dVVIndexArray_, // VV_index, memset to 0 before launch!
+            FORCE_PARTITION_ID,
+            TOTAL_NUM_PARTITIONS,
+            // From VTK data, set by partitionInitialize()
+            gale.dConnectivity_,
+            gale.dOffsets_,
+            gale.dVertexIntervals_,
+            gale.dCellIntervals_,
+            gale.dExternalCells_,
+            gale.dExternalCellOffsets_,
+            DIMENSION, // 3?
+            numThreadsPerCluster,
+            SFCP_ColumnNum
+        );
+    */
+
+    std::cout << "[TIMER] GALE VV: " << compat_timer.getElapsedTime() << std::endl;
+    compat_timer.reStart();
 
     /* BEYOND THIS POINT IS FOR CLARITY ON THE MEMORY LAYOUT AND KERNEL INVOCATION */
+    // TODO: Ensure these are partition-local counts
     int nCells = gale.getNumberOfCells();
     int nPoints = gale.getNumberOfVertices();
+
     size_t classes_size = sizeof(unsigned int) * nPoints * 3, // #Upper, #Lower, Classification
         valences_size = sizeof(vtkIdType) * nPoints * SFCP_ColumnNum,
         scalars_size = sizeof(double) * nPoints;
 
     // Set scalars here
     double *vertexAttributes = new double[nPoints];
+    // TODO: May be able to yank this from gale internals easily
     for (vtkIdType i = 0; i < nPoints; i++) vertexAttributes[i] = inputArray->GetTuple1(i);
 
     // Allocations
@@ -286,7 +337,8 @@ int main(int argc, char *argv[])
     // Scalar values from VTK
     CUDA_WARN(cudaMemcpyAsync(device_scalar_values, vertexAttributes, scalars_size, cudaMemcpyHostToDevice));
 
-    ttk::Timer t;
+    std::cout << "[TIMER] GALE SFCP preparation: " << compat_timer.getElapsedTime() << std::endl;
+    compat_timer.reStart();
 
     // Critical Points
     // Set kernel launch parameters here
@@ -301,6 +353,7 @@ int main(int argc, char *argv[])
     // Need one entry per block (VV width) + 2 entries for tracking edits to # upper and #lower components
     const int shared_mem_size = sizeof(unsigned long long) * (2+SFCP_ColumnNum);
 
+    // TODO: Convert to partition-based kernel!
     critPointsA<<<grid_size, thread_block_size, shared_mem_size>>>(
             gale.dVVDataArray_,
             gale.dVVIndexArray_,
@@ -311,10 +364,14 @@ int main(int argc, char *argv[])
             device_CPC);
     CUDA_WARN(cudaDeviceSynchronize()); // Make algorithm timing accurate
     // // Results are retrieved from GPU
-    std::cout << "[ScalarFieldCriticalPoints] Time usage for computation: " << t.getElapsedTime() << " s." << std::endl;
+    std::cout << "[ScalarFieldCriticalPoints] Time usage for computation: " << compat_timer.getElapsedTime() << " s." << std::endl;
     std::cout << "[ScalarFieldCriticalPoints] Memory usage: " << m.getValue_in_MB(false) << " MB." << std::endl;
+    compat_timer.reStart();
     CUDA_WARN(cudaMemcpy(host_CPC, device_CPC, classes_size, cudaMemcpyDeviceToHost));
+    std::cout << "[TIMER] Retrieve results from GPU: " << compat_timer.getElapsedTime() << std::endl;
+    compat_timer.reStart();
 
+    // TODO: Make output comparable to standalone
     int numMinimum = 0, numMaximum = 0, numSaddles = 0;
     for (int i = 0; i < nPoints; i++) {
         if (host_CPC[(i*3)+2] == MINIMUM_CLASS) {
