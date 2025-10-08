@@ -1,5 +1,5 @@
 #include <Gale.h>
-//#include <Relations.cuh>
+#include <Relations.cuh>
 #include <TestTopoRelations.h>
 #include <vtkSmartPointer.h>
 #include <vtkXMLUnstructuredGridReader.h>
@@ -39,7 +39,7 @@
 #define MINIMUM_CLASS 2
 #define REGULAR_CLASS 3
 #define SADDLE_CLASS  4
-int SFCP_ColumnNum = 30;
+int SFCP_ColumnNum = 80;
 //#define FORCE_BLOCK_IDX 13
 
 using namespace ttk;
@@ -199,7 +199,7 @@ int main(int argc, char *argv[])
     std::string fileName = "";
     std::string inputArrayName = "", partitionArrayName = "";
 
-    while ((c = getopt(argc, argv, "a:p:b:i:c:s:t:v:")) != -1) {
+    while ((c = getopt(argc, argv, "i:a:p:b:c:s:t:v:")) != -1) {
         switch (c) {
             case 'i':
                 fileName = optarg;
@@ -259,28 +259,21 @@ int main(int argc, char *argv[])
     }
     vtkDataSet *inputDataSet = vtkDataSet::SafeDownCast(inputDataObject);
     vtkDataArray *inputArray = GetInputArray(inputArrayName, inputDataSet, scalarFieldIndex);
-    int partitionIndex = 0;
-    vtkDataArray *partitionArray = GetInputArray(partitionArrayName, inputDataSet, partitionIndex);
-
-    const int FORCE_PARTITION = 0;
-    vtkIdType n_in_partition = 0;
-    for (vtkIdType i = 0; i < partitionArray->GetNumberOfTuples(); ++i) {
-        // Should be able to modify data via partitionArray->SetComponent(i, 0, VALUE);
-        if (partitionArray->GetComponent(i, 0) == FORCE_PARTITION) {
-            n_in_partition++;
-        }
-    }
-    std::cout << "Found " << n_in_partition << " points in partition " << FORCE_PARTITION << std::endl;
 
     ttk::Gale gale(threadNumber, numThreadsPerCluster, SFCP_ColumnNum);
-    // TODO: Replace initialization here with NEW gale.partitionInitialize()
-    // Memory initi here
-    if (blockNumber > 0 && blockSize > 0)
-        gale.initialize(inputDataSet, blockNumber, blockSize, true);
-    else if (blockNumber > 0)
-        gale.initialize(inputDataSet, blockNumber);
-    else
-        gale.initialize(inputDataSet);
+    /*
+    vtkPointSet *PS = static_cast<vtkPointSet *>(inputDataSet);
+    int hasIndexArray = pointSet->GetPointData()->HasArray("_index");
+    if (!hasIndexArray) {
+        std::cerr << "Cannot detect index array! Gale must run with a predefined clustering information!" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    vtkDataArray *PartitionArray = pointSet->GetPointData()->GetArray("_index");
+    vtkIdType nPoints = pointSet->GetPoints()->GetNumberOfPoints();
+    gale.setPartitionAttributes(PartitionArray, nPoints);
+    */
+    gale.initialize(inputDataSet, blockNumber, blockSize, true);
+    //gale.partitionInitialize(inputDataset, /* PARTITION_ID */ 0, blockNumber, blockSize, false);
     std::cout << "[TIMER] Initialize VTK: " << compat_timer.getElapsedTime() << std::endl;
     compat_timer.reStart();
 
@@ -289,50 +282,71 @@ int main(int argc, char *argv[])
     gale.preconditionVertexNeighbors();
     */
     // TODO: Set up VV on just the one partition
-    /*
-       gale.computeVertexNeighbors<<<gale.numBlocks, gale.blockSize>>>(
-            gale.dVVDataArray_, // VV_compute, memset to -1 before launch!
-            gale.dVVIndexArray_, // VV_index, memset to 0 before launch!
-            FORCE_PARTITION_ID,
-            TOTAL_NUM_PARTITIONS,
-            // From VTK data, set by partitionInitialize()
-            gale.dConnectivity_,
-            gale.dOffsets_,
-            gale.dVertexIntervals_,
-            gale.dCellIntervals_,
-            gale.dExternalCells_,
-            gale.dExternalCellOffsets_,
-            DIMENSION, // 3?
-            numThreadsPerCluster,
-            SFCP_ColumnNum
-        );
-    */
+    const int FORCE_PARTITION = 1;
+    int * HVertexIntervals = gale.getHVertexIntervals();
+    int n_in_partition = HVertexIntervals[FORCE_PARTITION] - HVertexIntervals[FORCE_PARTITION-1];
+    std::cout << "Found " << n_in_partition << " points in partition " << FORCE_PARTITION << std::endl;
+
+    // Memory initi here
+    int * dataArray = nullptr,
+        * sizeArray = nullptr;
+    // Data are NOT re-indexed to the specific partition, but container size is limited to partition's requirement
+    const size_t data_size = sizeof(int) * n_in_partition * SFCP_ColumnNum,
+                 size_size = sizeof(int) * n_in_partition;
+    cudaMalloc((void**)&dataArray, data_size);
+    cudaMalloc((void**)&sizeArray, size_size);
+    cudaMemset(dataArray, -1, data_size);
+    cudaMemset(sizeArray, 0, size_size);
+    // Yank from GALE internals
+    int n_clusters = gale.getNumberOfClusters(),
+        // TODO: Copy this memory to other GPU if not the initial GPU GALE allocates to
+        * conn = gale.getDConnectivity(),
+        * offs = gale.getDOffsets(),
+        * verI = gale.getDVertexIntervals(), // set for partition by reorderVertices() reimpl
+        * celI = gale.getDCellIntervals(),
+        * ECel = gale.getDExternalCells(),
+        * ECeO = gale.getDExternalCellOffsets();
+    /* PROBLEM WAS: block size too big! Have to limit thread_block_size
+       ( -b * -s ) / (-p) = #clusters to compute in one kernel */
+    computeVertexNeighbors<<<blockNumber, blockSize>>>(
+        dataArray,
+        sizeArray,
+        FORCE_PARTITION,
+        n_clusters,
+        conn, offs, verI, celI, ECel, ECeO,
+        3, // Cell Dimension == 3?
+        numThreadsPerCluster,
+        SFCP_ColumnNum);
+    // No need to pull back to CPU, just synchronize with the device
+    cudaDeviceSynchronize();
 
     std::cout << "[TIMER] GALE VV: " << compat_timer.getElapsedTime() << std::endl;
     compat_timer.reStart();
 
     /* BEYOND THIS POINT IS FOR CLARITY ON THE MEMORY LAYOUT AND KERNEL INVOCATION */
     // TODO: Ensure these are partition-local counts
-    int nCells = gale.getNumberOfCells();
-    int nPoints = gale.getNumberOfVertices();
+    int nCells = static_cast<int>(gale.getNumberOfCells()), // cellNumber_
+        nPoints = static_cast<int>(gale.getNumberOfVertices()); // vertexNumber_
 
     size_t classes_size = sizeof(unsigned int) * nPoints * 3, // #Upper, #Lower, Classification
-        valences_size = sizeof(vtkIdType) * nPoints * SFCP_ColumnNum,
-        scalars_size = sizeof(double) * nPoints;
+           valences_size = sizeof(vtkIdType) * nPoints * SFCP_ColumnNum,
+           scalars_size = sizeof(double) * nPoints;
 
     // Set scalars here
-    double *vertexAttributes = new double[nPoints];
+    double * vertexAttributes = new double[nPoints];
     // TODO: May be able to yank this from gale internals easily
-    for (vtkIdType i = 0; i < nPoints; i++) vertexAttributes[i] = inputArray->GetTuple1(i);
+    for (vtkIdType i = 0; i < nPoints; i++) {
+        vertexAttributes[i] = inputArray->GetTuple1(i);
+    }
 
     // Allocations
-    unsigned int *host_CPC = new unsigned int[classes_size];
-    unsigned int *device_CPC = nullptr;
+    unsigned int * host_CPC = new unsigned int[classes_size],
+                 * device_CPC = nullptr;
     CUDA_ASSERT(cudaMalloc((void**)&device_CPC, classes_size));
     // valences = adjacency upper/lower classification PRIOR to point classification
-    int *device_valences = nullptr;
+    int * device_valences = nullptr;
     CUDA_ASSERT(cudaMalloc((void**)&device_valences, valences_size));
-    double *device_scalar_values = nullptr;
+    double * device_scalar_values = nullptr;
     CUDA_ASSERT(cudaMalloc((void**)&device_scalar_values, scalars_size));
     // Scalar values from VTK
     CUDA_WARN(cudaMemcpyAsync(device_scalar_values, vertexAttributes, scalars_size, cudaMemcpyHostToDevice));
@@ -355,8 +369,8 @@ int main(int argc, char *argv[])
 
     // TODO: Convert to partition-based kernel!
     critPointsA<<<grid_size, thread_block_size, shared_mem_size>>>(
-            gale.dVVDataArray_,
-            gale.dVVIndexArray_,
+            dataArray,
+            sizeArray,
             device_valences,
             nPoints,
             SFCP_ColumnNum,

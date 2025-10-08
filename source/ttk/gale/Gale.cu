@@ -85,7 +85,9 @@ Gale::~Gale() {
     #endif
 
     // Extension at top
-    if (partition_remapping != nullptr) delete[] partition_remapping;
+    if (partition_attributes_ != nullptr) delete[] partition_attributes_;
+    if (n_per_partition_ != nullptr) delete[] n_per_partition_;
+    if (partition_remapping_ != nullptr) delete[] partition_remapping_;
 
     // host memory deallocation
     if (hVertexIntervals_ != nullptr) free(hVertexIntervals_);
@@ -2120,7 +2122,74 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
     // #endif
 }
 
-void Gale::partitionInitialize(vtkDataSet *dataSet, int partitionID, int blockNum, int blockSize, bool reuse_allocations) {
+// EXTENSIONS
+void Gale::setPartitionAttributes(vtkDataArray *dataArray, vtkIdType nPoints) {
+    if (partition_attributes_ != nullptr) delete[] partition_attributes_;
+    // Freed in destructor
+    partition_attributes_ = new vtkIdType[nPoints];
+
+    // TODO: Parallelize (EP)
+    for (vtkIdType i = 0; i < nPoints; i++) {
+        partition_attributes_[i] = dataArray->GetTuple1(i);
+    }
+
+    // Set partition info
+    std::set<vtkIdType> partitions(partition_attributes_, partition_attributes_+nPoints);
+    clusterNumber_ = partitions.size();
+    if (n_per_partition_ != nullptr) delete[] n_per_partition_;
+    // Freed in destructor
+    n_per_partition_ = new vtkIdType[clusterNumber_];
+    // TODO: Parallelize (EP with atomic increment for safety)
+    for (vtkIdType i = 0; i < nPoints; i++) {
+        n_per_partition_[partition_attributes_[i]]++;
+    }
+}
+
+void Gale::partitionInitialize(vtkDataSet *dataSet, int partitionID,
+                               int blockNum, int blockSize,
+                               bool reuse_allocations) {
+    /* We need to allocate/set the following:
+       // FOR VTK COMPAT
+       * dConnectivity_ (hConnectivity_ for xfer -- VTK connectivity array OF PARTITION)
+            // FULL MESH
+            vtkPointSet *pointSet = static_cast<vtkPointSet *>(dataSet);
+            vtkCellArray *cells = static_cast<vtkUnstructuredGrid *>(pointSet)->GetCells();
+            hConnectivity_ = static_cast<int *>(cells->GetConnectivityArray()->GetVoidPointer(0));
+            // Has to be adjusted to just reflect the partition data
+            // hConnectivity_[i*4]@4 should be the vertex IDs of the four vertices in the ith cell
+            // GALE also assumes these vertices will be sorted within a single cell
+
+       * dOffsets_ (hOffsets_ for xfer -- VTK connectivity offsets array OF PARTITION)
+            // FULL MESH
+            hOffsets_ = static_cast<int *>(cells->GetOffsetsArray()->GetVoidPointer(0));
+            // THEORETICALLY, offsets is always orderly such that offsets[i] = 4*i
+
+       * dIndexArray_ (hIndexArray_ for xfer -- partitions info?)
+            // FULL MESH
+            hIndexArray_ = (int *)pointSet->GetPointData()->GetArray("_index")->GetVoidPointer(0);
+            // Has to be adjusted to reflect partition reordering as per reorderVertices()
+
+       * dCellIntervals_ (hCellIntervals_ for xfer -- # cells per partition)
+            // FULL MESH set by computeCellIntervals() or reorderCells()
+            hCellIntervals_[i] = cellCount per Partition i
+
+       * dExternalCellOffsets_ (hExternalCellOffsets_ for xfer -- ?)
+            // FULL MESH set by computeCellIntervals() or reorderCells()
+            hExternalCellOffsets_[i] = number of external cells vs basis of tetra? ie extra partition connections?
+
+       * dVertexIntervals_ (hVertexIntervals_ for xfer -- # vertices per partition)
+            // FULL MESH set by computeVertexIntervals() or reorderVertices()
+            hVertexIntervals_[i] = number of vertices in Partition i
+
+       // FOR VV COMPUTE
+       * dVVDataArray_ (AKA VV_compute)
+       * dVVIndexArray_ (AKA VV_index)
+       * cellDimension_ =? hOffsets_[1] - hOffsets_[0] - 1;
+
+       // FOR SFCP COMPUTE
+       * cellNumber_ attribute == #cells
+       * vertexNumber_ attribute == #points
+     */
     if (dataSet->GetDataObjectType() != VTK_UNSTRUCTURED_GRID) {
         std::cerr << "The input dataset is not unstructured grid!" << std::endl;
         return;
@@ -2136,6 +2205,9 @@ void Gale::partitionInitialize(vtkDataSet *dataSet, int partitionID, int blockNu
         std::cerr << "DataSet has uninitialized `vtkCellArray`." << std::endl;
     }
 
+    pointSet_ = points->GetData()->GetVoidPointer(0);
+    vertexNumber_ = points->GetNumberOfPoints();
+
     // INTERNAL ATTRIBUTES
     if (!reuse_allocations) {
         // Points
@@ -2147,9 +2219,6 @@ void Gale::partitionInitialize(vtkDataSet *dataSet, int partitionID, int blockNu
         } else {
             std::cerr << "Unable to initialize 'ttk::Triangulation' for point: precision other than 'float' or 'double'." << std::endl;
         }
-
-        pointSet_ = points->GetData()->GetVoidPointer(0);
-        vertexNumber_ = points->GetNumberOfPoints();
 
         // Cells
         cellNumber_ = cells->GetNumberOfCells();
@@ -2178,7 +2247,7 @@ void Gale::partitionInitialize(vtkDataSet *dataSet, int partitionID, int blockNu
             exit(EXIT_FAILURE);
         }
 
-        // Semaphores probably should not re-init ever, likely undefined or undesirable
+        // Semaphores probably should never re-init, likely undefined or undesirable
         for (int i = 0; i < threadNumber_; ++i) {
             sem_init(&relationSems_[i], 0, 0);
         }
@@ -2194,24 +2263,98 @@ void Gale::partitionInitialize(vtkDataSet *dataSet, int partitionID, int blockNu
     }
 
     // Reordering block
-    // TODO: Don't allocate on vertexNumber_, allocate on n_in_partition || n_needed_for_partition
-    if (hIndexArray_ != nullptr) delete[] hIndexArray_;
-    hIndexArray_ = new int[vertexNumber_];
     vtkDataArray *dataArray = pointSet->GetPointData()->GetArray("_index");
-    memcpy(hIndexArray_, dataArray->GetVoidPointer(0), sizeof(int) * vertexNumber_);
-    // TODO: ClusterNumber == 2 (in-partition = 1, not-in-partition = 0)
-    clusterNumber_ = 0;
-    for (int i = 0; i < vertexNumber_; ++i) {
-        hIndexArray_[i] += 1;
-        clusterNumber_ = std::max(hIndexArray_[i], clusterNumber_);
+    // Determine n_in_partition, total_in_partition values
+    if (partition_attributes_ == nullptr) {
+        // Freed by deconstructor, should ONLY be done once for entire mesh
+        setPartitionAttributes(dataArray, vertexNumber_);
     }
-    clusterNumber_ += 1;
 
     std::cout << "[Gale] Reordering vertices and cells..." << std::endl;
 
-    // TODO: use Gale attribute vtkIdType * partition_remapping instead
-    std::vector<SimplexId> vertexMap;       // old vid : new vid
-    // TODO: Re-implement these as needed (similar to standalone SFCP)
+    // reorderVertices() reimplementation!
+    {
+        if (!reuse_allocations){
+            CHECK(cudaMallocAsync(&dVertexIntervals_, sizeof(int) * clusterNumber_, 0));
+        }
+        else {
+            CHECK(cudaMemset(dVertexIntervals_, 0, sizeof(int) * clusterNumber_));
+        }
+
+        // Get partition info (EXPENSIVE)
+        std::set<vtkIdType> included_points;
+        std::vector<vtkIdType> included_cells;
+        // Use hConnectivity_ and hOffsets_ for connectivity/offsets
+        for (vtkIdType cellId = 0; cellId < cellNumber_; cellId++) {
+            //cells[i][j] = connectivity[offsets[i]+{0-3}]
+            vtkIdType base_offset = hOffsets_[cellId];
+            bool tetra_include = false;
+            for (int offset = 0; offset < 4; offset++) {
+                vtkIdType point = hConnectivity_[base_offset+offset];
+                if (partition_attributes_[point] == partitionID) {
+                    tetra_include = true;
+                    break;
+                }
+            }
+            if (tetra_include) {
+                // Include ALL vertices
+                included_cells.emplace_back(cellId);
+                for (int offset = 0; offset < 4; offset++) {
+                    included_points.insert(hConnectivity_[base_offset+offset]);
+                }
+            }
+        }
+        std::vector<vtkIdType> stable_vertices(included_points.begin(), included_points.end());
+        std::sort(stable_vertices.begin(), stable_vertices.end());
+
+        if (!reuse_allocations) {
+            // De-allocated in destructor
+            partition_remapping_ = new vtkIdType[stable_vertices.size()];
+            // Mark max_points HERE for else branch to know if it has to re-allocate!
+        }
+        else /* if stable_vertices.size() > max_points */ { /* reallocate partition_remapping_ */ }
+        vtkIdType nth_point = 0;
+        for (const vtkIdType point : stable_vertices) {
+            partition_remapping_[nth_point++] = point;
+        }
+
+        // n_in_partition = n_per_partition_[partition_ID];
+        // hVertexIntervals_[0] = stable_vertices.size()
+        // TODO: Don't allocate on vertexNumber_, allocate on n_in_partition || n_needed_for_partition
+        if (hIndexArray_ != nullptr) delete[] hIndexArray_;
+        hIndexArray_ = new int[stable_vertices.size()];
+        for (vtkIdType i = 0; i < stable_vertices.size(); i++) {
+            // Set index == 0 for out-, 1 for in- partition
+            hIndexArray_[i] = (partition_attributes_[partition_remapping_[i]] == partitionID);
+        }
+        if (hVertexIntervals_ != nullptr) delete[] hVertexIntervals_;
+        hVertexIntervals_ = new int[clusterNumber_];
+        hVertexIntervals_[0] = 0;
+        hVertexIntervals_[1] = stable_vertices.size() - n_per_partition_[partitionID];
+        CHECK(cudaMemcpyAsync(dVertexIntervals_, hVertexIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice, 0));
+
+        // rearrange the vertex coordinate values
+        if(doublePrecision_) {
+            // What Guoxi does here is read-coalesce but write-random to reorder the pointSet values,
+            // I don't need to do this for VV but I do need to do it for SFCP!
+            double *newPointSet = new double[3 * vertexNumber_];
+            memcpy(newPointSet, pointSet_, sizeof(double) * 3 * vertexNumber_);
+            for (vtkIdType v = 0; v < vertexNumber_; v++) {
+                // 3d data
+                for (int j = 0; j < 3; j++) {
+                    // Full mesh, needs to be just partition piece
+                    ((double *)pointSet_)[3 * partition_remapping_[v] + j] = newPointSet[3 * v + j];
+                }
+            }
+            delete[] newPointSet;
+        }
+        else {
+        }
+
+        // return to normal reorderVertices():2180
+        // clear clusterVertices(); clusterVertices[hIndexArray_[vid]].push_back(vid);
+    }
+    std::vector<SimplexId> vertexMap;
     reorderVertices(vertexMap);
     reorderCells(vertexMap);
     // change vertex orders of point data arrays

@@ -126,7 +126,13 @@ class Gale final : public AbstractTriangulation {
         void initialize(vtkDataSet *dataSet, int numBlocks = 100, int blockSize = 32, bool reorder = false);
         void enableTracking() { startTracking_ = true; }
         // Extensions
-        vtkIdType * partition_remapping = nullptr;
+        vtkIdType * partition_attributes_ = nullptr,
+                  * n_per_partition_ = nullptr,
+                  // TO-USE
+                  * partition_remapping_ = nullptr,
+                  max_allocated_points = 0,
+                  max_allocated_cells = 0,
+                  max_allocated_VV = 0;
         void partitionInitialize(vtkDataSet *dataSet, int partitionID, int numBlocks = 100, int blockSize = 32, bool reuse_allocations = false);
         
         /**
@@ -359,6 +365,37 @@ class Gale final : public AbstractTriangulation {
             // #endif
             return 0;
         }
+
+        // Publicizing the internals
+        inline int getNumberOfClusters() {
+                return clusterNumber_;
+        }
+        inline int * getDConnectivity() {
+                return dConnectivity_;
+        }
+        inline int * getDOffsets() {
+                return dOffsets_;
+        }
+        inline int * getDVertexIntervals() {
+                return dVertexIntervals_;
+        }
+        inline int * getDCellIntervals() {
+                return dCellIntervals_;
+        }
+        inline int * getDExternalCells() {
+                return dExternalCells_;
+        }
+        inline int * getDExternalCellOffsets() {
+                return dExternalCellOffsets_;
+        }
+        inline int * getHVertexIntervals() {
+                return hVertexIntervals_;
+        }
+        // End publicized internals
+        // Additional functions
+        void setPartitionAttributes(vtkDataArray *dataArray, vtkIdType nPoints);
+        // End additional functions
+
 
         inline SimplexId getNumberOfCells() const override {
                 return cellNumber_;
@@ -1307,6 +1344,9 @@ class Gale final : public AbstractTriangulation {
             return allClusters_[segId].boundaryVertices_.at(localVertexId);
         }
 
+        /* Compute the interval array for vertices */
+        // THIS WAS PRIVATE, I'M MAKING IT PUBLIC
+        void computeVertexIntervals();
 
     private:
     
@@ -1318,9 +1358,6 @@ class Gale final : public AbstractTriangulation {
 
         /* Compute the interval array for cells */
         void computeCellIntervals();
-
-        /* Compute the interval array for vertices */
-        void computeVertexIntervals();
 
         /* Change the vertex id based on the cluster index */
         int reorderVertices(std::vector<SimplexId> &vertexMap);
