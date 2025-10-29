@@ -62,7 +62,7 @@ namespace ttk {
       std::cout << ", cell num: " << cellNumber;
       // std::cout << ", edge num: " << edgeNumber;
       // std::cout << ", triangle num: " << triangleNumber;
-      // std::cout << std::endl;
+      std::cout << std::endl;
 
       // SimplexId verticesPerCell = triangulation->getCellVertexNumber(0);
       // SimplexId edgesPerCell = triangulation->getCellEdgeNumber(0);
@@ -71,9 +71,12 @@ namespace ttk {
       Timer t, tot;
 
       /* Test the number of threads per mesh segment */
-      // Gale *gale = dynamic_cast<Gale *>(triangulation);
+      Gale *gale = dynamic_cast<Gale *>(triangulation);
       // // const SimplexId testVertexNumber = 100000;
-      // if (gale != nullptr) {
+      if (gale != nullptr) {
+        for (int i = 1; i < 20; ++i)
+          gale->computeVertexNeighborWithExternals(i);
+        // gale->computeVertexNeighborWithExternals(2);
       //   // int clusterId = gale->hIndexArray_[testVertexNumber];
       //   // gale->numBlocks_ = clusterId / gale->blockSize_ + 1;
       //   // std::cout << "Computing " << gale->numBlocks_ << " blocks" << std::endl;
@@ -105,7 +108,7 @@ namespace ttk {
       //   t.reStart();
       //   gale->computeRelation(RelationType::VTRelation, 1, 0, false);
       //   std::cout << "[TestTopoRelations] Time usage for VT: " << t.getElapsedTime() << " s.\n";
-      // }
+      }
 
       /* Time measurement for getting global relation arrays */
       // t.reStart();

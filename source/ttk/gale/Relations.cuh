@@ -10,6 +10,44 @@ const int vtColumnNum = 60;
 const int veColumnNum = 30;
 const int vfColumnNum = 80;
 
+/**
+ * Check if a value exists in an array. If not found, insert it atomically.
+ * Returns the position of the value in the array.
+ * 
+ * @param arr - pointer to the array
+ * @param size - pointer to the current size of the array (will be atomically updated if insertion occurs)
+ * @param value - the value to search for or insert
+ * @return the position of the value in the array (either existing position or newly inserted position)
+ */
+__device__ inline int findOrInsert(int *arr, int *size, int value) {
+    // Linear search to check if value already exists
+    int localSize = *size;
+    for (int k = 0; k < localSize; ++k) {
+        if (arr[k] == value) {
+            return k;  // Found at position k
+        }
+    }
+    
+    // Not found, need to insert the element
+    int insertPos = localSize;
+    int oldVal = -1;
+    
+    // Handle the case where multiple threads work with the same location
+    // One array index can only be updated by one thread
+    do {
+        oldVal = atomicCAS(&arr[insertPos], -1, value);
+        if (oldVal == -1) {
+            atomicAdd(size, 1);
+            return insertPos;
+        } else if (oldVal == value) {
+            return insertPos;
+        }
+        insertPos++;
+    } while (oldVal != -1 && oldVal != value);
+
+    return -1;
+}
+
 
 __global__ void countCells(int *localCellCounts, const int *connectivity, const int *offset, const int *vertexMap, const int cellNumber, const int dimension) {
     /* Divide the job by cells */
@@ -796,6 +834,103 @@ __global__ void computeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int *ve
                 oldVal = atomicCAS(&arr[localSize++], -1, edgeId);
             } while (oldVal != -1);
             atomicAdd(&vertexEdgeSizes[relativeVid], 1);
+        }
+    }
+}
+
+/**
+ * Compute the vertex neighbor relations for ONLY ONE CLUSTER including the vertices in the external cells.
+ * The relation array will store the local vertex ids. 
+ * vertexMap: map the local vertex id to the global vertex id (need to be initialized to -1)
+ * totalVertexNum: the number of vertices in the vertex neighbor relations (need to be initialized to internal vertex number)
+ *
+*/
+__global__ void computeVertexNeighborsWithExternals(
+            int *vertexNeighborMatrix, int *vertexNeighborSizes, 
+            int *vertexMap, int *totalVertexNum,
+            const int baseCluster, const int clusterNumber,
+            const int *connectivity, const int *offsets, 
+            const int *vertexIntervals, const int *cellIntervals, 
+            const int *externalCells, const int *externalCellOffsets,
+            const int dimension, const int sfcp_ColumnNum) {
+    
+    // redudant check if necessary to make sure only one cluster is processed
+    // int clustersToCompute = (gridDim.x * blockDim.x) / numThreadsPerCluster;
+    // multiple threads compute one cluster
+    int numThreadsPerCluster = gridDim.x * blockDim.x;
+    int threadId = blockIdx.x * blockDim.x + threadIdx.x;
+    // printf("Thread %d, Block %d: tid=%d, clusterNumber=%d\n", threadIdx.x, blockIdx.x, tid, clusterNumber);
+    if (baseCluster >= clusterNumber) return;
+
+    /*
+    * divide the job by clusters
+    */
+    const int startVertexId = vertexIntervals[baseCluster-1];
+    const int endVertexId = vertexIntervals[baseCluster];
+    
+    // parallel writes to the vertex map for the internal vertices 
+    // (might be optional as not too much speedup expected)
+    int verticesPerThread = (endVertexId - startVertexId) / numThreadsPerCluster;
+    int startVid = startVertexId + threadId * verticesPerThread;
+    int endVid = (threadId == (numThreadsPerCluster - 1)) ? endVertexId : (startVid + verticesPerThread);
+    for (int vid = startVid; vid < endVid; ++vid) {
+        vertexMap[vid - startVertexId] = vid;
+    }
+
+    // printf("threadIdx.x: %d, tid: %d, startVertexId: %d, endVertexId: %d\n", threadIdx.x, tid, startVertexId, endVertexId);
+
+    // determine the range of vertices
+    int clusterStartCellId = cellIntervals[baseCluster - 1];
+    int clusterEndCellId = cellIntervals[baseCluster];
+    int cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
+    int startCellId = clusterStartCellId + threadId * cellsPerThread;
+    int endCellId = (threadId == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
+    
+    // loop through the internal cell list
+    for (int cid = startCellId; cid < endCellId; ++cid) {
+        int cellId = offsets[cid];
+        for (int vi = 0; vi < dimension; ++vi) {
+            int viId = connectivity[cellId + vi];
+            for (int vj = vi+1; vj <= dimension; ++vj) {
+                int vjId = connectivity[cellId + vj];
+                if (viId >= startVertexId && viId < endVertexId) {
+                    int localViId = viId - startVertexId;
+                    int localVjId = findOrInsert(vertexMap, totalVertexNum, vjId);
+                    
+                    int *arr = vertexNeighborMatrix + sfcp_ColumnNum * localViId;
+                    findOrInsert(arr, &vertexNeighborSizes[localViId], localVjId);
+                    arr = vertexNeighborMatrix + sfcp_ColumnNum * localVjId;
+                    findOrInsert(arr, &vertexNeighborSizes[localVjId], localViId);
+                }
+            }
+        }
+    }
+    
+    // loop through the external cell list
+    // reuse previous variables
+    clusterStartCellId = externalCellOffsets[baseCluster - 1];
+    clusterEndCellId = externalCellOffsets[baseCluster];
+    cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
+    startCellId = clusterStartCellId + threadId * cellsPerThread;
+    endCellId = (threadId == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
+
+    // printf("threadIdx.x: %d, tid: %d, startVertexId: %d, endVertexId: %d, startExCellIdx: %d, endExCellIdx: %d\n", threadIdx.x, tid, startVertexId, endVertexId, startCellId, endCellId);
+
+    for (int cid = startCellId; cid < endCellId; ++cid) {
+        int cellId = offsets[externalCells[cid]];
+        for (int vi = 0; vi < dimension; ++vi) {
+            int viId = connectivity[cellId + vi];
+            for (int vj = vi + 1; vj <= dimension; ++vj) {
+                int vjId = connectivity[cellId + vj];
+                if (vjId >= startVertexId && vjId < endVertexId) {
+                    int localVjId = vjId - startVertexId;
+                    int localViId = findOrInsert(vertexMap, totalVertexNum, viId);
+                    int *arr = vertexNeighborMatrix + sfcp_ColumnNum * localVjId;
+                    findOrInsert(arr, &vertexNeighborSizes[localVjId], localViId);
+                    arr = vertexNeighborMatrix + sfcp_ColumnNum * localViId;
+                    findOrInsert(arr, &vertexNeighborSizes[localViId], localVjId);
+                }
+            }
         }
     }
 }

@@ -134,6 +134,7 @@ class Gale final : public AbstractTriangulation {
                   max_allocated_cells = 0,
                   max_allocated_VV = 0;
         void partitionInitialize(vtkDataSet *dataSet, int partitionID, int numBlocks = 100, int blockSize = 32, bool reuse_allocations = false);
+        void computeVertexNeighborWithExternals(const SimplexId clusterId);
         
         /**
          * Preconditioning relation functions.

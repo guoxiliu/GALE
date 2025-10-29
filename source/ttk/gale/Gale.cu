@@ -234,6 +234,84 @@ int Gale::buildInternalTriangleList(const SimplexId &clusterId, std::vector<std:
     return triangleCount;
 }
 
+// Testing function for the new vertex neighbor kernel
+void Gale::computeVertexNeighborWithExternals(const SimplexId clusterId) {
+    int localVertexNum = hVertexIntervals_[clusterId] - hVertexIntervals_[clusterId - 1];
+    int vertexCount = localVertexNum + (hCellIntervals_[clusterId] - hCellIntervals_[clusterId - 1] + hExternalCellOffsets_[clusterId] - hExternalCellOffsets_[clusterId - 1]) * 3; // other vertices (upper bound)
+    int hTotalVertexNum = localVertexNum;
+    
+    // Use local variables instead of relationCompVecs_[0] to avoid conflicts
+    int *dVertexMap, *dTotalVertexNum;
+    int *dSizeArray, *dDataArray;
+    int *hVertexMap = new int[vertexCount];
+    int *hSizeArray = new int[vertexCount];
+    int *hDataArray = new int[vertexCount * SFCP_ColumnNum];
+    std::cout << "localVertexNum: " << localVertexNum << ", vertexCount (over-estimated): " << vertexCount << std::endl;
+
+    CHECK(cudaMalloc(&dVertexMap, vertexCount * sizeof(int)));
+    CHECK(cudaMalloc(&dTotalVertexNum, sizeof(int)));
+    CHECK(cudaMalloc(&dSizeArray, sizeof(int) * vertexCount));
+    CHECK(cudaMalloc(&dDataArray, sizeof(int) * vertexCount * SFCP_ColumnNum));
+    CHECK(cudaMemset(dVertexMap, -1, vertexCount * sizeof(int)));
+    CHECK(cudaMemcpy(dTotalVertexNum, &hTotalVertexNum, sizeof(int), cudaMemcpyHostToDevice));
+    CHECK(cudaMemset(dSizeArray, 0, sizeof(int) * vertexCount));
+    CHECK(cudaMemset(dDataArray, -1, sizeof(int) * vertexCount * SFCP_ColumnNum));
+    
+    computeVertexNeighborsWithExternals<<<1, 32>>>(
+        dDataArray, dSizeArray,
+        dVertexMap, dTotalVertexNum,
+        clusterId, clusterNumber_,
+        dConnectivity_, dOffsets_,
+        dVertexIntervals_, dCellIntervals_,
+        dExternalCells_, dExternalCellOffsets_, 
+        cellDimension_, SFCP_ColumnNum);
+    
+    // Check for kernel errors
+    CHECK(cudaMemcpy(&hTotalVertexNum, dTotalVertexNum, sizeof(int), cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(hVertexMap, dVertexMap, sizeof(int) * hTotalVertexNum, cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(hSizeArray, dSizeArray, sizeof(int) * hTotalVertexNum, cudaMemcpyDeviceToHost));
+    CHECK(cudaMemcpy(hDataArray, dDataArray, sizeof(int) * hTotalVertexNum * vvColumnNum, cudaMemcpyDeviceToHost));
+
+    std::cout << "Total vertex number (actual): " << hTotalVertexNum << std::endl;
+    std::vector<SimplexId> vertexNeighborData{};
+    std::vector<SimplexId> vertexNeighborOffsets(hTotalVertexNum + 1);
+    vertexNeighborOffsets[0] = 0;
+    int rvid = 0;
+    for (int vid = 0; vid < hTotalVertexNum; ++vid) {
+        vertexNeighborData.insert(vertexNeighborData.end(), hDataArray + rvid * vvColumnNum, hDataArray + rvid * vvColumnNum + hSizeArray[rvid]);
+        vertexNeighborOffsets[vid+1] = vertexNeighborOffsets[vid] + hSizeArray[rvid];
+        ++rvid;
+    }
+    
+    // verify the relation computation
+    for (int i = 0; i < hTotalVertexNum; ++i) {
+        for (int j = vertexNeighborOffsets[i]; j < vertexNeighborOffsets[i+1]; ++j) {
+            SimplexId localNeighborId = vertexNeighborData[j];
+            bool exist = false;
+            for (int k = vertexNeighborOffsets[localNeighborId]; k < vertexNeighborOffsets[localNeighborId+1]; ++k) {
+                if (vertexNeighborData[k] == i) {
+                    exist = true;
+                    break;
+                }
+            }
+            if (!exist) {
+                std::cerr << "[Gale] Error: local vertex " << i << " missing neighbor " << localNeighborId << std::endl;
+            }
+        }
+    }
+
+    // Clean up device memory
+    CHECK(cudaFree(dVertexMap));
+    CHECK(cudaFree(dTotalVertexNum));
+    CHECK(cudaFree(dSizeArray));
+    CHECK(cudaFree(dDataArray));
+    
+    // Clean up host memory
+    delete[] hVertexMap;
+    delete[] hSizeArray;
+    delete[] hDataArray;
+}
+
 
 /**
  * Compute relations when there is only one single consumer thread

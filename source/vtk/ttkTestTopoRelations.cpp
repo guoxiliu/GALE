@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
     ttk::TestTopoRelations testPlugin;
     testPlugin.preconditionTriangulation(&gale);
     testPlugin.setThreadNumber(threadNumber);
-    // testPlugin.execute(&gale);
+    testPlugin.execute(&gale);
 
     return 0;
 }
