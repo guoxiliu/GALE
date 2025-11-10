@@ -45,138 +45,287 @@ int SFCP_ColumnNum = 80;
 using namespace ttk;
 
 
-__global__ void critPointsA(const int * __restrict__ VV,                // FLAT array of <#points, #adjacent to point>
-                            const int * __restrict__ VV_index, // Offset array into VV
-                            int * __restrict__ valences,                // FLAT array same size/indexing as VV, used to reference relationship between point pairs based on their Scalar Values
-                            const int points,                    // Number of points (== #blocks)
-                            const int SFCP_ColumnNum,              // Padding factor for my algorithm (#adjacent to point)
-                            const double * __restrict__ scalar_values, // Actual scalar values, vector of size #points
-                            unsigned int * __restrict__ classes       // Output as vector of size #points
-                            ) {
-    extern __shared__ unsigned long long block_shared[]; // Used for GPU Union-Find!
+__global__ void critPoints(const vtkIdType * __restrict__ VV, // formerly int
+                           const unsigned int * __restrict__ VV_index, // formerly int
+                           int * __restrict__ valences,
+                           const int points,
+                           const int max_VV_guess, // formerly SFCP_ColumnNum
+                           const double * __restrict__ scalar_values,
+                           const int * __restrict__ partition, // NEW
+                           const vtkIdType * __restrict__ vvi, // NEW
+                           const vtkIdType * __restrict__ ivvi, // NEW
+                           unsigned int * __restrict__ classes) {
+    extern __shared__ unsigned int block_shared[];
 
-    unsigned long long *component_edits = &block_shared[0], // Handle that can be mathematically offset (compiler can probably optimize out)
-                       *upper_edits = &block_shared[0],  // Number of edits to the blocks' upper components in a cycle
-                       *lower_edits = &block_shared[1],  // Number of edits to the blocks' lower components in a cycle
-                       *neighborhood = &block_shared[2]; // Tracks current components within the thread block
+    unsigned int *component_edits = &block_shared[0],
+                 *upper_edits = &block_shared[0],
+                 *lower_edits = &block_shared[1];
+    vtkIdType *neighborhood = (vtkIdType*)(block_shared+2); // NEW: Multiple datatype shared
 
-    // Parallelized VV on second-dimension (number of adjacenies to each vertex)
-    #ifdef FORCE_BLOCK_IDX
-    const int tid = (blockDim.x * FORCE_BLOCK_IDX) + threadIdx.x,
-                    // VV[tid] shows the SECOND point, the block ID is the first point
-                    my_1d = FORCE_BLOCK_IDX,
-    #else
-    const int tid = (blockDim.x * blockIdx.x) + threadIdx.x,
-                    // VV[tid] shows the SECOND point, the block ID is the first point
-                    my_1d = blockIdx.x,
-    #endif
-                    my_2d = VV[tid];
-    // No work for this point's valence (final thread block may be too big)
-    if (VV_index[my_1d] <= 0 || my_2d < 0) return;
-
+    // Set execution mask to EXCLUDE no work / out-of-partition points
+    bool execution_mask = true;
     /*
-        1) Read the scalar value used for point classification and classify
-           yourself relative to your primary-dimension scalar value as upper (-1)
-           or lower (1) neighbor. Store the result in shmem for Union-Find
-           visibility across the block.
+        1) Parallelize VV on second-dimension
+
+           my_1d and my_2d have the GLOBAL vertex IDs
+           indirect_my*    have the LOCAL vertex IDs used to index in all
+                            arrays except ivvi
     */
-    // Classify yourself as an upper or lower valence neighbor to your 1d point
-    // Upper = -1, Lower = 1
-    // This little ternary gadget makes my algorithm match paraview's tiebreakers on flat portions of the mesh
-    const int my_class = 1 - ((scalar_values[my_2d] == scalar_values[my_1d] ? \
-                                    my_2d < my_1d : \
-                                    scalar_values[my_2d] < scalar_values[my_1d]) \
-                                    << 1);
-    // Global mesh visibility of what component you belong to
-    valences[tid] = my_class;
-    #ifdef FORCE_BLOCK_IDX
-    printf("Block %d Thread %d has 2d point %d with valence %d based on %lf (block) vs %lf (thread)\n", my_1d, tid, my_2d, valences[tid], scalar_values[my_1d], scalar_values[my_2d]);
+    const int tid = (blockDim.x * blockIdx.x) + threadIdx.x;
+    const vtkIdType indirect_my_1d = tid / max_VV_guess,
+                    my_1d = vvi[indirect_my_1d],
+                    my_2d = VV[tid];
+    vtkIdType indirect_my_2d;
+    if (my_2d < 0) {
+        execution_mask = false;
+    }
+    else {
+        indirect_my_2d = ivvi[my_2d];
+    }
+
+    if (VV_index[indirect_my_1d] <= 0 || partition[indirect_my_1d] == 0) {
+        #if PRINT_ON
+        /*
+        printf("Block %d Thread %02d exits due to partitioning or OOB data\n",
+               blockIdx.x, threadIdx.x);
+        */
+        #endif
+        execution_mask = false;
+    }
+    // Prefix scan as anti-duplication
+    for (vtkIdType i = indirect_my_1d * max_VV_guess; i < tid; i++) {
+        if (VV[i] == my_2d) {
+            #if PRINT_ON
+            /*
+            printf("Block %d Thread %02d exits from prefix scan\n",
+                   blockIdx.x, threadIdx.x);
+            */
+            #endif
+            execution_mask = false;
+        }
+    }
+
+    #if PRINT_ON
+    /*
+    printf("Block %d Thread %02d remains to participate in computation (VV_index=%u)\n",
+           blockIdx.x, threadIdx.x, VV_index[indirect_my_1d]);
+    */
     #endif
 
-    // Iteration bounds for Union-Find
-    const int min_my_1d = (my_1d * SFCP_ColumnNum),
-              max_my_1d = min_my_1d + VV_index[my_1d];
-
-    // Initialize neighborhood with YOURSELF, barrier for block visibility
-    neighborhood[threadIdx.x] = my_2d;
-    __syncthreads();
     /*
-        2) For all other threads sharing your neighborhood classification, scan
-           their connectivity in VV and update your "lowest classifying point"
-           to be the lowest IDX (including yourself). Repeat until convergence
-           where no edits are made, then if you have your own IDX at your
-           location in memory, you log +1 component of your type.
+        2) Read the scalar value used for point classification and classify
+           your 2nd point relative to your 1st scalar value as upper (-1) or
+           lower (1) neighbor
+
+           For parity with Paraview, tied scalar values are tie-broken such
+           that the lesser vertex ID is assigned as lower
+    */
+
+    /* These variables COULD be const, but non-executing threads cannot be
+       allowed to potentially read bad memory addresses */
+    int my_class;
+    vtkIdType min_my_1d, max_my_1d;
+    if (execution_mask) {
+        my_class = 1 - (
+                        (scalar_values[indirect_my_2d] == scalar_values[indirect_my_1d] ?
+                            my_2d < my_1d :
+                            scalar_values[indirect_my_2d] < scalar_values[indirect_my_1d])
+                        << 1);
+        // Allow other threads in the block to read your class for matching
+        // Not SHMEM yet -- could be as there are no cross-block reads here
+        valences[tid] = my_class;
+        min_my_1d = (indirect_my_1d * max_VV_guess);
+        max_my_1d = min_my_1d + VV_index[indirect_my_1d];
+        // Initialize your neighborhood with your own 2d value
+        // If you END the union-find without editing your neighborhood, you are
+        // the root of a component of your class.
+        neighborhood[threadIdx.x] = my_2d;
+    }
+    __syncthreads();
+    #if PRINT_ON
+    if (execution_mask) {
+        printf("Block %d Thread %02d B init on my_1d %ld and my_2d %ld with "
+               "valence %d based on %lf (block) vs %lf (thread)\n",
+               blockIdx.x, threadIdx.x, my_1d, my_2d, my_class,
+               scalar_values[indirect_my_1d], scalar_values[indirect_my_2d]);
+    }
+    #endif
+    /*
+        3) Union-Find: All threads with a common classification attempt to
+            union such that the lowest-connected point with the same class
+            is set as your neighborhood value (accelerating future decisions)
+
+            Repeat until convergence. The `to_converge` variable should NEVER
+            be a termination condition but guarantees kernel termination (even
+            if all points share the same class, Union-Find CANNOT execute more
+            iterations than this maximum).
     */
     bool upper_converge = false, lower_converge = false;
-    // Repeat until both component directions converge
-    while (!(upper_converge && lower_converge)) {
-        // Sanity: Guarantee zero-init
+    int to_converge = 0;
+
+    while (!(upper_converge && lower_converge) && to_converge < max_VV_guess) {
+        // Reset convergence indicators for the iteration
         if (threadIdx.x == 0) {
+            #if PRINT_ON
+            /*
+            printf("Block %d Iteration %d: upper_edits %u lower_edits %u "
+                   "Neighborhood %ld %ld %ld %ld %ld %ld %ld %ld "
+                                "%ld %ld %ld %ld %ld %ld %ld %ld "
+                                "%ld %ld %ld %ld %ld %ld %ld %ld "
+                                "%ld %ld %ld %ld %ld %ld %ld %ld\n",
+                    blockIdx.x, to_converge, *upper_edits, *lower_edits,
+                    neighborhood[0],neighborhood[1],neighborhood[2],neighborhood[3],
+                    neighborhood[4],neighborhood[5],neighborhood[6],neighborhood[7],
+                    neighborhood[8],neighborhood[9],neighborhood[10],neighborhood[11],
+                    neighborhood[12],neighborhood[13],neighborhood[14],neighborhood[15],
+                    neighborhood[16],neighborhood[17],neighborhood[18],neighborhood[19],
+                    neighborhood[20],neighborhood[21],neighborhood[22],neighborhood[23],
+                    neighborhood[24],neighborhood[25],neighborhood[26],neighborhood[27],
+                    neighborhood[28],neighborhood[29],neighborhood[30],neighborhood[31]);
+            */
+            #endif
             *upper_edits = 0;
             *lower_edits = 0;
-            #ifdef FORCE_BLOCK_IDX
-            for(int i = 0; i < VV_index[my_1d]; i++) {
-                printf("Iteration %d Neighborhood %d: %llu\n", to_converge, i, neighborhood[i]);
-            }
-            #endif
         }
+        to_converge++;
         __syncthreads();
 
+        if (execution_mask) {
+            #if PRINT_ON
+            printf("Block %d thread %02d clears START UF sync %d\n", blockIdx.x,
+                    threadIdx.x, to_converge);
+            #endif
 
-        // Union-Find iteration
-        for(int i = min_my_1d; i < max_my_1d; i++) {
-            // Found same valence
-            const int candidate_component_2d = VV[i];
-            if (i != tid && valences[i] == my_class) {
-                // Find yourself in their adjacency to become a shared component and release burden
-                const int start_2d = candidate_component_2d*SFCP_ColumnNum,
-                          stop_2d  = start_2d + VV_index[candidate_component_2d];
-                for(int j = start_2d; j < stop_2d; j++) {
+            // Union-Find iteration
+            for(vtkIdType i = min_my_1d; i < max_my_1d; i++) {
+                // Find a matching valence
+                const vtkIdType candidate_component_2d = VV[i],
+                                indirect_candidate_component_2d = ivvi[candidate_component_2d];
+                if (i != tid && valences[i] == my_class) {
+                    const vtkIdType start_2d = indirect_candidate_component_2d*max_VV_guess,
+                                    stop_2d  = start_2d + VV_index[indirect_candidate_component_2d];
+                    #if PRINT_ON
+                    /*
+                    if (start_2d > blockDim.x * gridDim.x) {
+                        printf("Block %d Thread %02d has bad iterator from %ld "
+                                "to %ld based on direct %ld and indirect %ld "
+                                "at iteration %ld\n",
+                                blockIdx.x, threadIdx.x, start_2d, stop_2d,
+                                candidate_component_2d,
+                                indirect_candidate_component_2d, i);
+                    }
+                    */
+                    #endif
                     /* Do you see your 2d in their 2d? If so, update your
                        neighborhood with the minimum of your two points
                     */
-                    const int theirNeighborhood = neighborhood[i-min_my_1d];
-                    if (VV[j] == my_2d && neighborhood[threadIdx.x] > theirNeighborhood) {
-                        neighborhood[threadIdx.x] = theirNeighborhood;
-                        // +1 if lower, else +0
-                        atomicAdd(component_edits+((my_class+1)/2), 1);
+                    for(vtkIdType j = start_2d; j < stop_2d; j++) {
+                        const vtkIdType theirNeighborhood = neighborhood[i-min_my_1d];
+                        if (VV[j] == my_2d && neighborhood[threadIdx.x] > theirNeighborhood) {
+                            #if PRINT_ON
+                            /*
+                            printf("Block %d Thread %02d neighborhood update "
+                                    "iteration %0d moves %ld --> %ld\n",
+                                    blockIdx.x, threadIdx.x, to_converge,
+                                    neighborhood[threadIdx.x],
+                                    theirNeighborhood);
+                            */
+                            #endif
+                            neighborhood[threadIdx.x] = theirNeighborhood;
+                            // Denote LACK of convergence this iteration
+                            atomicAdd(component_edits+((my_class+1)/2), 1);
+                        }
                     }
                 }
             }
         }
-        __syncthreads();
-        upper_converge = *upper_edits == 0;
-        lower_converge = *lower_edits == 0;
-    }
-    // End Union-Find
+        // End Union-Find iteration
 
-    if (neighborhood[threadIdx.x] == my_2d) { // You are the root of a component!
-        // Memory layout is [#upper, #lower, <CLASSIFICATION>], need to aggregate
-        // the component counts at block-visible memory
-        const int memoffset = ((my_1d*3)+((my_class+1)/2));
+        __syncthreads();
+        upper_converge = (*upper_edits == 0);
+        lower_converge = (*lower_edits == 0);
+        #if PRINT_ON
+        if (execution_mask) {
+            printf("Block %d Thread %02d ends UF loop %02d with upper_edits %u "
+                    "lower_edits %u (loop condition: %d = [%d[!%d && %d] && %d])\n",
+                    blockIdx.x, threadIdx.x, to_converge, *upper_edits, *lower_edits,
+                    !(upper_converge && lower_converge) && to_converge < max_VV_guess,
+                    !(upper_converge && lower_converge),
+                    upper_converge, lower_converge,
+                    to_converge < max_VV_guess
+                    );
+        }
+        #endif
+    }
+    // End all Union-Finds
+
+    /*
+       4) Each root of each component increments the counter for its class to
+            contribute to the final classification of the per-block point
+    */
+    if (execution_mask && neighborhood[threadIdx.x] == my_2d) {
+        const vtkIdType memoffset = ((indirect_my_1d*3)+((my_class+1)/2));
         const unsigned int old = atomicAdd(classes+memoffset,1);
+        #if PRINT_ON
+        printf("Block %d Thread %02d Writes %s component @ mem offset %ld "
+                "(old: %u) after %02d iterations\n",
+                blockIdx.x, threadIdx.x,
+                (my_class == -1 ? "Upper" : "Lower"), memoffset, old, to_converge);
+        #endif
     }
     __syncthreads();
+
     /*
-        3) Classification is performed as follows: Exactly 1 upper component is
+        5) Classification is performed as follows: Exactly 1 upper component is
            a maximum; exactly 1 lower component is a minimum; two or more upper
            or lower components is a saddle; other values are regular.
     */
-    // Limit classification to lowest-ranked thread for single write
     if (threadIdx.x == 0) {
-        const int my_classes = my_1d*3;
+        const vtkIdType my_classes = indirect_my_1d*3;
         const unsigned int upper = classes[my_classes],
                            lower = classes[my_classes+1];
-        #ifdef FORCE_BLOCK_IDX
-        if (blockIdx.x < 4) {
-            printf("Upper: %d\tLower: %d\n", upper, lower);
-        }
+        #if PRINT_ON
+        printf("Block %d Thread %02d Verdict: my_1d (%ld) has %u upper and %u "
+                "lower after %02d iterations\n",
+                blockIdx.x, threadIdx.x, my_1d, upper, lower, to_converge);
         #endif
-        if (upper == 1 && lower == 1) classes[my_classes+2] = REGULAR_CLASS;
-        else if (upper == 0 && lower >= 1) classes[my_classes+2] = MINIMUM_CLASS;
-        else if (upper >= 1 && lower == 0) classes[my_classes+2] = MAXIMUM_CLASS;
-        else classes[my_classes+2] = SADDLE_CLASS;
+
+        // Set classification
+        if (upper >= 1 && lower == 0) {
+            #if PRINT_ON
+            printf("Block %d Thread %02d set classification as %s\n",
+                    blockIdx.x, threadIdx.x, "MINIMUM");
+            #endif
+            classes[my_classes+2] = MINIMUM_CLASS;
+        }
+        else if (upper == 0 && lower >= 1) {
+            #if PRINT_ON
+            printf("Block %d Thread %02d set classification as %s\n",
+                    blockIdx.x, threadIdx.x, "MAXIMUM");
+            #endif
+            classes[my_classes+2] = MAXIMUM_CLASS;
+        }
+        else if (upper == 1 && lower == 1) {
+            #if PRINT_ON
+            printf("Block %d Thread %02d set classification as %s\n",
+                    blockIdx.x, threadIdx.x, "REGULAR");
+            #endif
+            classes[my_classes+2] = REGULAR_CLASS;
+        }
+        else {
+            #if PRINT_ON
+            printf("Block %d Thread %02d set classification as %s\n",
+                    blockIdx.x, threadIdx.x, "SADDLE");
+            #endif
+            classes[my_classes+2] = SADDLE_CLASS;
+        }
     }
+    // END OF KERNEL
+    #if PRINT_ON
+    printf("Block %d Thread %02d exits normally at end of computation with "
+            "%02d iterations\n",
+            blockIdx.x, threadIdx.x, to_converge);
+    #endif
 }
 
 /**
@@ -191,13 +340,14 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    int c;
-    int blockNumber = 8;
-    int blockSize = 512;
-    int threadNumber = 1;
-    int numThreadsPerCluster = 32;
-    std::string fileName = "";
-    std::string inputArrayName = "", partitionArrayName = "";
+    int c,
+        blockNumber = 8,
+        blockSize = 512,
+        threadNumber = 1,
+        numThreadsPerCluster = 32;
+    std::string fileName = "",
+                inputArrayName = "",
+                partitionArrayName = "";
 
     while ((c = getopt(argc, argv, "i:a:p:b:c:s:t:v:")) != -1) {
         switch (c) {
@@ -261,69 +411,78 @@ int main(int argc, char *argv[])
     vtkDataArray *inputArray = GetInputArray(inputArrayName, inputDataSet, scalarFieldIndex);
 
     ttk::Gale gale(threadNumber, numThreadsPerCluster, SFCP_ColumnNum);
-    /*
-    vtkPointSet *PS = static_cast<vtkPointSet *>(inputDataSet);
-    int hasIndexArray = pointSet->GetPointData()->HasArray("_index");
-    if (!hasIndexArray) {
-        std::cerr << "Cannot detect index array! Gale must run with a predefined clustering information!" << std::endl;
-        exit(EXIT_FAILURE);
-    }
-    vtkDataArray *PartitionArray = pointSet->GetPointData()->GetArray("_index");
-    vtkIdType nPoints = pointSet->GetPoints()->GetNumberOfPoints();
-    gale.setPartitionAttributes(PartitionArray, nPoints);
-    */
     gale.initialize(inputDataSet, blockNumber, blockSize, true);
-    //gale.partitionInitialize(inputDataset, /* PARTITION_ID */ 0, blockNumber, blockSize, false);
     std::cout << "[TIMER] Initialize VTK: " << compat_timer.getElapsedTime() << std::endl;
     compat_timer.reStart();
 
-    /* -- OLD -- FULL MESH VV
-    // VV kernel only -- handles entire VV for all data
-    gale.preconditionVertexNeighbors();
-    */
     // TODO: Set up VV on just the one partition
     const int FORCE_PARTITION = 1;
-    int * HVertexIntervals = gale.getHVertexIntervals();
+    int * HVertexIntervals = gale.getHVertexIntervals(),
+        * HCellIntervals   = gale.getHCellIntervals(),
+        * HExternalCells   = gale.getHExternalCells();
     int n_in_partition = HVertexIntervals[FORCE_PARTITION] - HVertexIntervals[FORCE_PARTITION-1];
-    std::cout << "Found " << n_in_partition << " points in partition " << FORCE_PARTITION << std::endl;
+    // Other vertices included (as upper bound)
+    int vertexCount = n_in_partition + 3 * ((HCellIntervals[FORCE_PARTITION] - HCellInteravls[FORCE_PARTITION-1])
+                                           + (HExternalCells[FORCE_PARTITION] - HExternalCells[FORCE_PARTITION-1]));
+    std::cout << "Found " << n_in_partition << " points in partition "
+              << FORCE_PARTITION << " (at most " << vertexCount << " vertices)"
+              << std::endl;
 
-    // Memory initi here
-    int * dataArray = nullptr,
-        * sizeArray = nullptr;
-    // Data are NOT re-indexed to the specific partition, but container size is limited to partition's requirement
-    const size_t data_size = sizeof(int) * n_in_partition * SFCP_ColumnNum,
-                 size_size = sizeof(int) * n_in_partition;
-    cudaMalloc((void**)&dataArray, data_size);
-    cudaMalloc((void**)&sizeArray, size_size);
-    cudaMemset(dataArray, -1, data_size);
-    cudaMemset(sizeArray, 0, size_size);
-    // Yank from GALE internals
-    int n_clusters = gale.getNumberOfClusters(),
-        // TODO: Copy this memory to other GPU if not the initial GPU GALE allocates to
-        * conn = gale.getDConnectivity(),
-        * offs = gale.getDOffsets(),
-        * verI = gale.getDVertexIntervals(), // set for partition by reorderVertices() reimpl
-        * celI = gale.getDCellIntervals(),
-        * ECel = gale.getDExternalCells(),
-        * ECeO = gale.getDExternalCellOffsets();
-    /* PROBLEM WAS: block size too big! Have to limit thread_block_size
-       ( -b * -s ) / (-p) = #clusters to compute in one kernel */
-    computeVertexNeighbors<<<blockNumber, blockSize>>>(
-        dataArray,
-        sizeArray,
-        FORCE_PARTITION,
-        n_clusters,
-        conn, offs, verI, celI, ECel, ECeO,
-        3, // Cell Dimension == 3?
-        numThreadsPerCluster,
-        SFCP_ColumnNum);
+    // Locla variables for kernel
+    int *dVertexMap = nullptr,
+        *hVertexMap = new int[vertexCount],
+        *dTotalVertexNum = nullptr,
+        hTotalVertexNum = n_in_partition,
+        *dSizeArray = nullptr,
+        *hSizeArray = new int[vertexCount],
+        *dDataArray = nullptr,
+        *hDataArray = new int[vertexCount * SFCP_ColumnNum];
+
+    size_t vertices_size = vertexCount * sizeof(int),
+           vv_data_size  = vertexCount * SFCP_ColumnNum * sizeof(int);
+    CHECK(cudaMalloc(&dVertexMap, vertices_size));
+    CHECK(cudaMalloc(&dTotalVertexNum, sizeof(int)));
+    CHECK(cudaMalloc(&dSizeArray, vertices_size));
+    CHECK(cudaMalloc(&dDataArray, vv_data_size));
+    // Copy & Set
+    CHECK(cudaMemcpy(dTotalVertexNum, &hTotalVertexNum, sizeof(int), cudaMemcpyHostToDevice));
+    CHECK(cudaMemset(dVertexMap, -1, vertices_size));
+    CHECK(cudaMemset(dSizeArray, 0, vertices_size));
+    CHECK(cudaMemset(dDataArray, -1, vv_data_size));
+
+    // Call to kernel
+    /* PROBLEM WITH PREVIOUS KERNEL WAS: block size too big! Have to limit
+       thread_block_size ( -b * -s ) / (-p) = #clusters to compute in one
+                                              kernel */
+    computeVertexNeighborsWithExternals<<<1, 32>>>(
+            dDataArray,
+            dSizeArray,
+            dVertexMap,
+            dTotalVertexNum,
+            FORCE_PARTITION,
+            gale.getNumberOfClusters(),
+            gale.getDConnectivity(),
+            gale.getDOffsets(),
+            gale.getDVertexIntervals(),
+            gale.getDCellIntervals(),
+            gale.getDExternalCells(),
+            gale.getDExternalCellOffsets(),
+            3, /* cellDimension */
+            SFCP_ColumnNum,
+            );
+    cudaError_t code = cudaGetLastError();
+    if (code != cudaSuccess) {
+        std::cerr << "VV kernel launch failed (" << code << ") "
+                  << cudaGetErrorString(code) << std::endl;
+    }
+
     // No need to pull back to CPU, just synchronize with the device
     cudaDeviceSynchronize();
 
     std::cout << "[TIMER] GALE VV: " << compat_timer.getElapsedTime() << std::endl;
     compat_timer.reStart();
 
-    /* BEYOND THIS POINT IS FOR CLARITY ON THE MEMORY LAYOUT AND KERNEL INVOCATION */
+    /* BEYOND THIS POINT IS FOR CLARITY ON THE MEMORY LAYOUT AND KERNEL INVOCATION * /
     // TODO: Ensure these are partition-local counts
     int nCells = static_cast<int>(gale.getNumberOfCells()), // cellNumber_
         nPoints = static_cast<int>(gale.getNumberOfVertices()); // vertexNumber_
@@ -365,10 +524,10 @@ int main(int argc, char *argv[])
     #endif
          thread_block_size = SFCP_ColumnNum;
     // Need one entry per block (VV width) + 2 entries for tracking edits to # upper and #lower components
-    const int shared_mem_size = sizeof(unsigned long long) * (2+SFCP_ColumnNum);
+    const int shared_mem_size = (sizeof(unsigned int) * 2) + (sizeof(vtkIdType) * SFCP_ColumnNum);
 
     // TODO: Convert to partition-based kernel!
-    critPointsA<<<grid_size, thread_block_size, shared_mem_size>>>(
+    critPoints<<<grid_size, thread_block_size, shared_mem_size>>>(
             dataArray,
             sizeArray,
             device_valences,
@@ -399,6 +558,6 @@ int main(int argc, char *argv[])
     std::cout << "[ScalarFieldCriticalPoints] Number of minimum points: " << numMinimum << std::endl;
     std::cout << "[ScalarFieldCriticalPoints] Number of maximum points: " << numMaximum << std::endl;
     std::cout << "[ScalarFieldCriticalPoints] Number of saddle points: " << numSaddles << std::endl;
-
+    */
     return 0;
 }
