@@ -116,31 +116,24 @@ public:
 
 
 class Gale final : public AbstractTriangulation {
-    public: 
+    public:
         friend class TestTopoRelations;
         int *hIndexArray_{};
         int *dVVDataArray_;
         int *dVVIndexArray_;
+        std::vector<std::vector<SimplexId>> clusterVertices;
         Gale(int tnum = 1, int tnumPerCluster = 1, int SFCP_ColumnNum_=30);
         ~Gale();
         void initialize(vtkDataSet *dataSet, int numBlocks = 100, int blockSize = 32, bool reorder = false);
         void enableTracking() { startTracking_ = true; }
         // Extensions
-        vtkIdType * partition_attributes_ = nullptr,
-                  * n_per_partition_ = nullptr,
-                  // TO-USE
-                  * partition_remapping_ = nullptr,
-                  max_allocated_points = 0,
-                  max_allocated_cells = 0,
-                  max_allocated_VV = 0;
-        void partitionInitialize(vtkDataSet *dataSet, int partitionID, int numBlocks = 100, int blockSize = 32, bool reuse_allocations = false);
         void computeVertexNeighborWithExternals(const SimplexId clusterId);
-        
+
         /**
          * Preconditioning relation functions.
          * These functions are called before the algorithm execution to
-         * tell the toplogical data structure which relations will be used 
-         * 
+         * tell the toplogical data structure which relations will be used
+         *
         */
         inline int preconditionBoundaryEdgesInternal() override {
             if(cellDimension_ == 2) {
@@ -157,7 +150,7 @@ class Gale final : public AbstractTriangulation {
                 preconditionedRelations_.push_back(RelationType::BERelation);
                 #ifdef MEASURE_TIME
                 jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
-                #else 
+                #else
                 jobQueues_.push_back(std::queue<int>{});
                 #endif
                 producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
@@ -213,7 +206,7 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::BVRelation);
             #ifdef MEASURE_TIME
             jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
-            #else 
+            #else
             jobQueues_.push_back(std::queue<int>{});
             #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
@@ -237,7 +230,7 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::ETRelation);
             #ifdef MEASURE_TIME
             jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
-            #else 
+            #else
             jobQueues_.push_back(std::queue<int>{});
             #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
@@ -260,7 +253,7 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::EFRelation);
             #ifdef MEASURE_TIME
             jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
-            #else 
+            #else
             jobQueues_.push_back(std::queue<int>{});
             #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
@@ -284,7 +277,7 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::FTRelation);
             #ifdef MEASURE_TIME
             jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
-            #else 
+            #else
             jobQueues_.push_back(std::queue<int>{});
             #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
@@ -307,7 +300,7 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::VERelation);
             #ifdef MEASURE_TIME
             jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
-            #else 
+            #else
             jobQueues_.push_back(std::queue<int>{});
             #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
@@ -331,7 +324,7 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::VTRelation);
             #ifdef MEASURE_TIME
             jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
-            #else 
+            #else
             jobQueues_.push_back(std::queue<int>{});
             #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
@@ -354,7 +347,7 @@ class Gale final : public AbstractTriangulation {
             preconditionedRelations_.push_back(RelationType::VFRelation);
             #ifdef MEASURE_TIME
             jobQueues_.push_back(std::queue<std::pair<int, Timer>>{});
-            #else 
+            #else
             jobQueues_.push_back(std::queue<int>{});
             #endif
             producers_.push_back(std::thread(&Gale::leaderProducer, this, curId));
@@ -392,6 +385,12 @@ class Gale final : public AbstractTriangulation {
         inline int * getHVertexIntervals() {
                 return hVertexIntervals_;
         }
+        inline int * getHCellIntervals() {
+                return hCellIntervals_;
+        }
+        inline int * getHExternalCells() {
+                return hExternalCells_;
+        }
         // End publicized internals
         // Additional functions
         void setPartitionAttributes(vtkDataArray *dataArray, vtkIdType nPoints);
@@ -416,10 +415,10 @@ class Gale final : public AbstractTriangulation {
 
         inline int getCellEdgeInternal(const SimplexId &cellId,
             const int &localEdgeId, SimplexId &edgeId) const override {
-            
+
             std::array<int, 2> edgeIds;
             switch (localEdgeId) {
-                case 0:     // (v0, v1) 
+                case 0:     // (v0, v1)
                 {
                     edgeIds[0] = hConnectivity_[hOffsets_[cellId]];
                     edgeIds[1] = hConnectivity_[hOffsets_[cellId] + 1];
@@ -427,7 +426,7 @@ class Gale final : public AbstractTriangulation {
                     edgeId = findEdgeIdx(clusterId, edgeIds);
                     break;
                 }
-                case 1:     // (v0, v2) 
+                case 1:     // (v0, v2)
                 {
                     edgeIds[0] = hConnectivity_[hOffsets_[cellId]];
                     edgeIds[1] = hConnectivity_[hOffsets_[cellId] + 2];
@@ -435,7 +434,7 @@ class Gale final : public AbstractTriangulation {
                     edgeId = findEdgeIdx(clusterId, edgeIds);
                     break;
                 }
-                case 2:     // (v0, v3) 
+                case 2:     // (v0, v3)
                 {
                     edgeIds[0] = hConnectivity_[hOffsets_[cellId]];
                     edgeIds[1] = hConnectivity_[hOffsets_[cellId] + 3];
@@ -443,7 +442,7 @@ class Gale final : public AbstractTriangulation {
                     edgeId = findEdgeIdx(clusterId, edgeIds);
                     break;
                 }
-                case 3:     // (v1, v2) 
+                case 3:     // (v1, v2)
                 {
                     edgeIds[0] = hConnectivity_[hOffsets_[cellId] + 1];
                     edgeIds[1] = hConnectivity_[hOffsets_[cellId] + 2];
@@ -451,7 +450,7 @@ class Gale final : public AbstractTriangulation {
                     edgeId = findEdgeIdx(clusterId, edgeIds);
                     break;
                 }
-                case 4:     // (v1, v3) 
+                case 4:     // (v1, v3)
                 {
                     edgeIds[0] = hConnectivity_[hOffsets_[cellId] + 1];
                     edgeIds[1] = hConnectivity_[hOffsets_[cellId] + 3];
@@ -459,7 +458,7 @@ class Gale final : public AbstractTriangulation {
                     edgeId = findEdgeIdx(clusterId, edgeIds);
                     break;
                 }
-                case 5:     // (v2, v3) 
+                case 5:     // (v2, v3)
                 {
                     edgeIds[0] = hConnectivity_[hOffsets_[cellId] + 2];
                     edgeIds[1] = hConnectivity_[hOffsets_[cellId] + 3];
@@ -475,7 +474,7 @@ class Gale final : public AbstractTriangulation {
 
         inline SimplexId getCellEdgeNumberInternal(
             const SimplexId &cellId) const override {
-            
+
             (void) cellId;
             return 6;
         }
@@ -536,17 +535,17 @@ class Gale final : public AbstractTriangulation {
 
         inline const std::vector<std::vector<SimplexId>> *
             getCellEdgesInternal() override {
-            
+
             convertToVector(tetraEdgeList_, cellEdgeVector_);
             return &cellEdgeVector_;
         }
 
         inline int getCellTriangleInternal(const SimplexId &cellId,
             const int &localTriangleId, SimplexId &triangleId) const override {
-            
+
             std::array<int, 3> triangleIds;
             switch (localTriangleId) {
-                case 0:     // (v0, v1, v2) 
+                case 0:     // (v0, v1, v2)
                 {
                     triangleIds[0] = hConnectivity_[hOffsets_[cellId]];
                     triangleIds[1] = hConnectivity_[hOffsets_[cellId] + 1];
@@ -564,7 +563,7 @@ class Gale final : public AbstractTriangulation {
                     triangleId = findTriangleIdx(clusterId, triangleIds);
                     break;
                 }
-                case 2:     // (v0, v2, v3) 
+                case 2:     // (v0, v2, v3)
                 {
                     triangleIds[0] = hConnectivity_[hOffsets_[cellId]];
                     triangleIds[1] = hConnectivity_[hOffsets_[cellId] + 2];
@@ -573,7 +572,7 @@ class Gale final : public AbstractTriangulation {
                     triangleId = findTriangleIdx(clusterId, triangleIds);
                     break;
                 }
-                case 3:     // (v1, v2, v3) 
+                case 3:     // (v1, v2, v3)
                 {
                     triangleIds[0] = hConnectivity_[hOffsets_[cellId] + 1];
                     triangleIds[1] = hConnectivity_[hOffsets_[cellId] + 2];
@@ -590,27 +589,27 @@ class Gale final : public AbstractTriangulation {
 
         inline SimplexId getCellTriangleNumberInternal(
             const SimplexId &cellId) const override {
-            
+
             return 4;
         }
 
         inline const std::vector<std::vector<SimplexId>> *
             getCellTrianglesInternal() override {
-            
+
             convertToVector(tetraTriangleList_, cellTriangleVector_);
             return &cellTriangleVector_;
         }
 
         inline int getCellVertex(const SimplexId &cellId,
             const int &localVertexId, SimplexId &vertexId) const override {
-            
+
             vertexId = hConnectivity_[hOffsets_[cellId] + localVertexId];
             return 0;
         }
 
         inline SimplexId getCellVertexNumber(
             const SimplexId &cellId) const override {
-            
+
             return hOffsets_[cellId + 1] - hOffsets_[cellId];
         }
 
@@ -620,13 +619,13 @@ class Gale final : public AbstractTriangulation {
 
         inline const std::vector<std::array<SimplexId, 2>> *
             getEdges() override {
-            
+
             return &edgeList_;
         }
-        
+
         inline int getEdgeStar(const SimplexId &edgeId,
             const int &localStarId, SimplexId &starId) const override {
-            
+
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[edgeList_[edgeId][0]];
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
@@ -660,10 +659,10 @@ class Gale final : public AbstractTriangulation {
             starId = allClusters_[segId].edgeStars_.get(localEdgeId, localStarId);
             return 0;
         }
-        
+
         inline SimplexId getEdgeStarNumber(
             const SimplexId &edgeId) const override {
-            
+
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[edgeList_[edgeId][0]];
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::ETRelation;
@@ -697,17 +696,17 @@ class Gale final : public AbstractTriangulation {
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
             return allClusters_[segId].edgeStars_.size(localEdgeId);
         }
-        
+
         inline const std::vector<std::vector<SimplexId>> *
             getEdgeStars() override {
 
             computeRelation(RelationType::ETRelation, 1, true);
             return &edgeStarList_;
         }
-        
+
         inline int getEdgeTriangleInternal(const SimplexId &edgeId,
             const int &localTriangleId, SimplexId &triangleId) const override {
-        
+
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[edgeList_[edgeId][0]];
             boost::shared_lock<boost::shared_mutex> readLock(clusterMutexes_[segId]);
@@ -741,7 +740,7 @@ class Gale final : public AbstractTriangulation {
             triangleId = allClusters_[segId].edgeTriangles_.get(localEdgeId, localTriangleId);
             return 0;
         }
-        
+
         inline SimplexId getEdgeTriangleNumberInternal(
             const SimplexId &edgeId) const override {
 
@@ -777,27 +776,27 @@ class Gale final : public AbstractTriangulation {
             SimplexId localEdgeId = edgeId - hEdgeIntervals_[segId - 1];
             return allClusters_[segId].edgeTriangles_.size(localEdgeId);
         }
-        
+
         inline const std::vector<std::vector<SimplexId>> *
             getEdgeTrianglesInternal() override {
-            
+
             computeRelation(RelationType::EFRelation, 1, true);
             return &edgeTriangleList_;
         }
 
         inline int getEdgeVertexInternal(const SimplexId &edgeId,
             const int &localVertexId, SimplexId &vertexId) const override {
-            
+
             if (localVertexId < 2) {
                 vertexId = edgeList_[edgeId][localVertexId];
                 return 0;
             }
             return -1;
         }
-        
+
         inline int getTriangleEdgeInternal(const SimplexId &triangleId,
             const int &localEdgeId, SimplexId &edgeId) const override {
-            
+
             std::array<SimplexId, 2> edgeIds;
             switch(localEdgeId) {
                 case 0:     // (v0, v1)
@@ -826,17 +825,17 @@ class Gale final : public AbstractTriangulation {
             }
             return 0;
         }
-        
+
         inline SimplexId getTriangleEdgeNumberInternal(
             const SimplexId &triangleId) const override {
-            
+
             (void)triangleId;
             return 3;
         }
-        
+
         inline const std::vector<std::vector<SimplexId>> *
             getTriangleEdgesInternal() override {
-            
+
             if(triangleEdgeVector_.empty()) {
 
             }
@@ -918,7 +917,7 @@ class Gale final : public AbstractTriangulation {
 
         inline const std::vector<std::vector<SimplexId>> *
             getTriangleStars() override {
-            
+
             computeRelation(RelationType::FTRelation, 1, true);
             return &triangleStarList_;
         }
@@ -971,7 +970,7 @@ class Gale final : public AbstractTriangulation {
 
         inline SimplexId getVertexNeighborNumber(
             const SimplexId &vertexId) const override {
-            
+
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[vertexId];
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::VVRelation;
@@ -1049,7 +1048,7 @@ class Gale final : public AbstractTriangulation {
 
         inline SimplexId getVertexEdgeNumber(
             const SimplexId &vertexId) const override {
-            
+
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[vertexId];
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::VERelation;
@@ -1084,14 +1083,14 @@ class Gale final : public AbstractTriangulation {
 
         inline const std::vector<std::vector<SimplexId>> *
             getVertexEdges() override {
-            
+
             computeRelation(RelationType::VERelation, 1, true);
             return &vertexEdgeList_;
         }
 
         inline int getVertexStar(const SimplexId &vertexId,
             const int &localStarId, SimplexId &starId) const override {
-            
+
             SimplexId segId = hIndexArray_[vertexId];
             if (allClusters_[segId].vertexStars_.empty()) {
                 int tid = omp_get_thread_num();
@@ -1128,7 +1127,7 @@ class Gale final : public AbstractTriangulation {
 
         inline SimplexId getVertexStarNumber(
             const SimplexId &vertexId) const override {
-            
+
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[vertexId];
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::VTRelation;
@@ -1163,7 +1162,7 @@ class Gale final : public AbstractTriangulation {
 
         inline const std::vector<std::vector<SimplexId>> *
             getVertexStars() override {
-            
+
             computeRelation(RelationType::VTRelation, 1, true);
             return &vertexStarList_;
         }
@@ -1206,7 +1205,7 @@ class Gale final : public AbstractTriangulation {
 
         inline SimplexId getVertexTriangleNumber(
             const SimplexId &vertexId) const override {
-            
+
             int tid = omp_get_thread_num();
             SimplexId segId = hIndexArray_[vertexId];
             currClusters_[tid] = segId, currRelations_[tid] = RelationType::VFRelation;
@@ -1350,7 +1349,7 @@ class Gale final : public AbstractTriangulation {
         void computeVertexIntervals();
 
     private:
-    
+
         /* Build the internal edge list in the cluster. */
         int buildInternalEdgeList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 2>>> &clusterEdges);
 
@@ -1369,7 +1368,7 @@ class Gale final : public AbstractTriangulation {
         /* Change the vertex id in the cell array */
         int reorderCells(const std::vector<SimplexId> &vertexMap);
 
-        int getClusterVertexStarsVector(const SimplexId &clusterId, 
+        int getClusterVertexStarsVector(const SimplexId &clusterId,
                 std::vector<std::vector<SimplexId>> &vertexStarVec) const;
 
         /* Compute cell neighbors in a cluster */

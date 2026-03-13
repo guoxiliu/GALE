@@ -13,39 +13,85 @@ const int vfColumnNum = 80;
 /**
  * Check if a value exists in an array. If not found, insert it atomically.
  * Returns the position of the value in the array.
- * 
+ *
  * @param arr - pointer to the array
  * @param size - pointer to the current size of the array (will be atomically updated if insertion occurs)
  * @param value - the value to search for or insert
- * @return the position of the value in the array (either existing position or newly inserted position)
+ * @return the position of the value in the array (either existing position (negative) or newly inserted position (positive))
  */
-__device__ inline int findOrInsert(int *arr, int *size, int value) {
+__device__ inline int findOrInsert(int *arr, int *size, int value, char *info=nullptr) {
     // Linear search to check if value already exists
+    // Race condition of some sort if this is removed, even though the Atomics in below loop should be safe... they aren't
     int localSize = *size;
     for (int k = 0; k < localSize; ++k) {
         if (arr[k] == value) {
-            return k;  // Found at position k
+            //printf("Thread %d found existing value %d at index %d (info: %s)\n", threadIdx.x, value, k, (info == nullptr ? "" : info));
+            return -k;  // Found at position k
         }
     }
-    
+
     // Not found, need to insert the element
     int insertPos = localSize;
     int oldVal = -1;
-    
+
     // Handle the case where multiple threads work with the same location
     // One array index can only be updated by one thread
     do {
+        // arr[insertPos] == -1 ? value : -1, returns old value
+        // IF arr[insertPos] == -1, swaps to value and returns -1
+        // IF arr[insertPos] != -1, leaves old value and returns it
         oldVal = atomicCAS(&arr[insertPos], -1, value);
         if (oldVal == -1) {
             atomicAdd(size, 1);
+            //printf("Thread %d inserted new value %d at index %d (old value: %d, info: %s)\n", threadIdx.x, value, insertPos, oldVal, (info == nullptr ? "" : info));
             return insertPos;
         } else if (oldVal == value) {
-            return insertPos;
+            //printf("Thread %d found existing value %d at index %d (old value: %d, info: %s)\n", threadIdx.x, value, insertPos, oldVal, (info == nullptr ? "" : info));
+            return -1*insertPos;
         }
         insertPos++;
-    } while (oldVal != -1 && oldVal != value);
+    } while (oldVal != -1 && oldVal != value); // Unexpected values added between initial check and now
 
     return -1;
+}
+
+// int ival = findOrInsert(vertexNeighborMatrix + (sfcp_ColumnNum * localViId), &vertexNeighborSizes[localViId], vjId/);
+// int ival = findOrInsert(vertexNeighborMatrix, vertexNeighborSizes, localViId, sfcp_ColumnNum, vjId);
+__device__ inline int findOrInsert2(int *arr, int *index, int maxColCount, int localOffset, int globalOffset, int localValue, int globalValue, char *info=nullptr) {
+    // Index into arr's VV row for the offset
+    arr += (localOffset * maxColCount);
+    // Linear search to check if value already exists
+    // Race condition of some sort if this is removed, even though the Atomics in below loop should be safe... they aren't
+    int search = 0;
+
+    while (search < maxColCount) {
+        int old_value = atomicCAS(&arr[search], -1, localValue);
+        if (old_value == localValue) {
+            // Already known in array
+            if (globalValue == 2623 || globalValue == 2618 || globalOffset == 2623 || globalOffset == 2618) {
+                printf("Found %d (local: %d) in %d's array (local: %d) at position %d/%d\n", globalValue, localValue, globalOffset, localOffset, search, index[localOffset]);
+                for (int i = 0; i < index[localOffset] && i < maxColCount; i++) {
+                    printf("VV array for %d[%d] = %d\n", globalOffset, i, arr[i]);
+                }
+            }
+            return -1*search;
+        }
+        if (old_value == -1) {
+            // Need to update length of the array
+            atomicAdd(&index[localOffset], 1);
+            if (globalValue == 2623 || globalValue == 2618 || globalOffset == 2623 || globalOffset == 2618) {
+                printf("Inserted %d (local: %d) into %d's array (local: %d) at position %d/%d\n", globalValue, localValue, globalOffset, localOffset, search, index[localOffset]);
+                for (int i = 0; i < index[localOffset] && i < maxColCount; i++) {
+                    printf("VV array for %d[%d] = %d\n", globalOffset, i, arr[i]);
+                }
+            }
+            return search;
+        }
+        search++;
+    }
+    // Satisfy the compiler
+    printf("Exhausted maxColCount, you need to resize that parameter for correct execution\n");
+    return -2*(maxColCount); // Impossible value, sentinel
 }
 
 
@@ -806,7 +852,7 @@ __global__ void computeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int *ve
             }
         }
     }
-    
+
     // reuse the variables (cell refers to edge here)
     clusterStartCellId = edgeIntervals[tid-1];
     clusterEndCellId = edgeIntervals[tid];
@@ -840,20 +886,20 @@ __global__ void computeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int *ve
 
 /**
  * Compute the vertex neighbor relations for ONLY ONE CLUSTER including the vertices in the external cells.
- * The relation array will store the local vertex ids. 
+ * The relation array will store the local vertex ids.
  * vertexMap: map the local vertex id to the global vertex id (need to be initialized to -1)
  * totalVertexNum: the number of vertices in the vertex neighbor relations (need to be initialized to internal vertex number)
  *
 */
 __global__ void computeVertexNeighborsWithExternals(
-            int *vertexNeighborMatrix, int *vertexNeighborSizes, 
+            int *vertexNeighborMatrix, int *vertexNeighborSizes,
             int *vertexMap, int *totalVertexNum,
             const int baseCluster, const int clusterNumber,
-            const int *connectivity, const int *offsets, 
-            const int *vertexIntervals, const int *cellIntervals, 
+            const int *connectivity, const int *offsets,
+            const int *vertexIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int sfcp_ColumnNum) {
-    
+
     // redudant check if necessary to make sure only one cluster is processed
     // int clustersToCompute = (gridDim.x * blockDim.x) / numThreadsPerCluster;
     // multiple threads compute one cluster
@@ -867,11 +913,11 @@ __global__ void computeVertexNeighborsWithExternals(
     */
     const int startVertexId = vertexIntervals[baseCluster-1];
     const int endVertexId = vertexIntervals[baseCluster];
-    
-    // parallel writes to the vertex map for the internal vertices 
+
+    // parallel writes to the vertex map for the internal vertices
     // (might be optional as not too much speedup expected)
     int verticesPerThread = (endVertexId - startVertexId) / numThreadsPerCluster;
-    int startVid = startVertexId + threadId * verticesPerThread;
+    int startVid = startVertexId + (threadId * verticesPerThread);
     int endVid = (threadId == (numThreadsPerCluster - 1)) ? endVertexId : (startVid + verticesPerThread);
     for (int vid = startVid; vid < endVid; ++vid) {
         vertexMap[vid - startVertexId] = vid;
@@ -883,10 +929,18 @@ __global__ void computeVertexNeighborsWithExternals(
     int clusterStartCellId = cellIntervals[baseCluster - 1];
     int clusterEndCellId = cellIntervals[baseCluster];
     int cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
-    int startCellId = clusterStartCellId + threadId * cellsPerThread;
+    int startCellId = clusterStartCellId + (threadId * cellsPerThread);
     int endCellId = (threadId == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
-    
+
+    char In_VertexMap[] = "Internal VertexMap",
+         Ex_VertexMap[] = "External VertexMap",
+         In_I2J[] = "Internal i->j[]",
+         In_J2I[] = "Internal j->i[]",
+         Ex_I2J[] = "External i->j[]",
+         Ex_J2I[] = "External j->i[]";
+
     // loop through the internal cell list
+    printf("Begin internal cell list\n");
     for (int cid = startCellId; cid < endCellId; ++cid) {
         int cellId = offsets[cid];
         for (int vi = 0; vi < dimension; ++vi) {
@@ -895,41 +949,63 @@ __global__ void computeVertexNeighborsWithExternals(
                 int vjId = connectivity[cellId + vj];
                 if (viId >= startVertexId && viId < endVertexId) {
                     int localViId = viId - startVertexId;
-                    int localVjId = findOrInsert(vertexMap, totalVertexNum, vjId);
-                    
-                    int *arr = vertexNeighborMatrix + sfcp_ColumnNum * localViId;
-                    findOrInsert(arr, &vertexNeighborSizes[localViId], localVjId);
-                    arr = vertexNeighborMatrix + sfcp_ColumnNum * localVjId;
-                    findOrInsert(arr, &vertexNeighborSizes[localVjId], localViId);
+                    int localVjId = findOrInsert(vertexMap, totalVertexNum, vjId/*, In_VertexMap*/);
+                    if (localVjId < 0) localVjId *= -1;
+                    int ival = findOrInsert2(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localViId, viId, localVjId, vjId);
+                    int jval = findOrInsert2(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localVjId, vjId, localViId, viId);
                 }
             }
         }
     }
-    
+
     // loop through the external cell list
     // reuse previous variables
-    clusterStartCellId = externalCellOffsets[baseCluster - 1];
-    clusterEndCellId = externalCellOffsets[baseCluster];
+    clusterStartCellId = externalCellOffsets[baseCluster]; // Was -1
+    clusterEndCellId = externalCellOffsets[baseCluster+1]; // Was +0
     cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
-    startCellId = clusterStartCellId + threadId * cellsPerThread;
+    startCellId = clusterStartCellId + (threadId * cellsPerThread);
     endCellId = (threadId == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
 
     // printf("threadIdx.x: %d, tid: %d, startVertexId: %d, endVertexId: %d, startExCellIdx: %d, endExCellIdx: %d\n", threadIdx.x, tid, startVertexId, endVertexId, startCellId, endCellId);
 
+    printf("Begin external cell list\n");
     for (int cid = startCellId; cid < endCellId; ++cid) {
         int cellId = offsets[externalCells[cid]];
         for (int vi = 0; vi < dimension; ++vi) {
             int viId = connectivity[cellId + vi];
             for (int vj = vi + 1; vj <= dimension; ++vj) {
                 int vjId = connectivity[cellId + vj];
-                if (vjId >= startVertexId && vjId < endVertexId) {
+                //if (vjId >= startVertexId && vjId < endVertexId) {
                     int localVjId = vjId - startVertexId;
-                    int localViId = findOrInsert(vertexMap, totalVertexNum, viId);
-                    int *arr = vertexNeighborMatrix + sfcp_ColumnNum * localVjId;
-                    findOrInsert(arr, &vertexNeighborSizes[localVjId], localViId);
-                    arr = vertexNeighborMatrix + sfcp_ColumnNum * localViId;
-                    findOrInsert(arr, &vertexNeighborSizes[localViId], localVjId);
-                }
+                    int localViId = findOrInsert(vertexMap, totalVertexNum, viId, Ex_VertexMap);
+                    if (localViId < 0) localViId *= -1;
+                    int ival = findOrInsert2(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localVjId, vjId, localViId, viId, Ex_I2J);
+                    int jval = findOrInsert2(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localViId, viId, localVjId, vjId, Ex_J2I);
+                    /*
+                    printf("Block %d Thread %02d considers cell %5d [i=%5d, j=%5d] -- i->j[] insert returns %2d, j->i[] insert returns %2d\n",
+                            blockIdx.x, threadIdx.x, cellId, viId, vjId, ival, jval);
+                    */
+                //}
+            }
+        }
+    }
+
+    // Paranoia
+    __syncthreads();
+    if (threadId == 0) {
+        int target_2623 = -1;
+        for (int idx = 0; idx < *totalVertexNum; idx++) {
+            if (vertexMap[idx] == 2623) {
+                target_2623 = idx;
+                break;
+            }
+        }
+        if (target_2623 == -1) {
+            printf("Vertex 2623 is not in vertex map!\n");
+        }
+        else {
+            for (int idx = 0; idx < vertexNeighborSizes[target_2623]+1; idx++) {
+                printf("Vertex 2623 (local address: %d) neighbor %d = %d\n", target_2623, idx, vertexNeighborMatrix[(target_2623*sfcp_ColumnNum)+idx]);
             }
         }
     }
