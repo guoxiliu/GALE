@@ -144,6 +144,12 @@ int main(int argc, char *argv[])
        IVVI = dense array mapping mesh-global VID -> nth point for partition
             |IVVI| = #points in mesh
      */
+    // TODO: Ensure these are partition-local counts
+    int nCells = static_cast<int>(gale.getNumberOfCells()), // cellNumber_
+        nPoints = static_cast<int>(gale.getNumberOfVertices()); // vertexNumber_
+    std::cout << "Gale reports " << nCells << " cells and " << nPoints << " points"
+              << std::endl;
+
     std::cout << "[TIMER] Initialize VTK: " << compat_timer.getElapsedTime() << std::endl;
     compat_timer.reStart();
 
@@ -216,10 +222,28 @@ int main(int argc, char *argv[])
     cudaDeviceSynchronize();
 
     // DEBUG: Yank back to Host and check answer
+    /*
     if (FORCE_PARTITION == 2) {
         CHECK(cudaMemcpy(hDataArray, dDataArray, vv_data_size, cudaMemcpyDeviceToHost));
         CHECK(cudaMemcpy(hSizeArray, dSizeArray, vertices_size, cudaMemcpyDeviceToHost));
         CHECK(cudaMemcpy(hVertexMap, dVertexMap, vertices_size, cudaMemcpyDeviceToHost));
+
+        // Find double-listed vertexMaps?
+        std::vector<int> known_vertices(nPoints, 0);
+        int max_known_count = 0;
+        for (int i = 0; i < vertexCount; i++) {
+            if (hVertexMap[i] != -1) {
+                known_vertices[hVertexMap[i]]++;
+                if (known_vertices[hVertexMap[i]] > max_known_count) {
+                    max_known_count = known_vertices[hVertexMap[i]];
+                    std::cout << "New max known count set at vertex "
+                              << hVertexMap[i] << ": " << max_known_count
+                              << std::endl;
+                }
+            }
+        }
+
+
         // Checks for point 11 all pass -- we have those connections
         // Repurpose to check external-to-external for point 2623 (if we have that, we're virtually guaranteed to get correct classification)
         const int N_EXPECT = 12,
@@ -263,17 +287,12 @@ int main(int argc, char *argv[])
             std::cout << "Found " << found_count << " / " << N_EXPECT << " neighbors for " << TARGET << std::endl;
         }
     }
+    */
 
     std::cout << "[TIMER] GALE VV: " << compat_timer.getElapsedTime() << std::endl;
     compat_timer.reStart();
 
     /* BEYOND THIS POINT IS FOR CLARITY ON THE MEMORY LAYOUT AND KERNEL INVOCATION */
-    // TODO: Ensure these are partition-local counts
-    int nCells = static_cast<int>(gale.getNumberOfCells()), // cellNumber_
-        nPoints = static_cast<int>(gale.getNumberOfVertices()); // vertexNumber_
-    std::cout << "Gale reports " << nCells << " cells and " << nPoints << " points"
-              << std::endl;
-
     size_t classes_size = sizeof(unsigned int) * nPoints * 3, // #Upper, #Lower, Classification
            valences_size = sizeof(vtkIdType) * nPoints * SFCP_ColumnNum,
            scalars_size = sizeof(double) * nPoints;
@@ -333,7 +352,7 @@ int main(int argc, char *argv[])
     // Critical Points
     // Set kernel launch parameters here
     // Parallelized VV on second-dimension (number of adjacenies to each vertex)
-    dim3 grid_size = 1,//n_in_partition,
+    dim3 grid_size = 1, //n_in_partition,
          thread_block_size = SFCP_ColumnNum;
     // Need one entry per block (VV width) + 2 entries for tracking edits to # upper and #lower components
     const int shared_mem_size = (sizeof(unsigned int) * 2) + (sizeof(vtkIdType) * SFCP_ColumnNum);
@@ -371,11 +390,19 @@ int main(int argc, char *argv[])
             numMinimum++;
         } else if (host_CPC[idx] == MAXIMUM_CLASS) {
             numMaximum++;
-            std::cout << "Point " << i << " mistakenly labeled as maximum" << std::endl;
         } else if (host_CPC[idx] == SADDLE_CLASS) {
             numSaddles++;
+            if (i != 804 && i != 1956) {
+                std::cout << "Point " << i
+                          << " mistakenly labeled as a saddle" << std::endl;
+            }
         } else if (host_CPC[idx] == REGULAR_CLASS) {
             numRegular++;
+            if (i == 804 || i == 1956) {
+                std::cout << "Point " << i
+                          << " mistakenly labeled as regular (should be saddle)"
+                          << std::endl;
+            }
         }
         else {
             numVoid++; // You don't want this to ever trip!
