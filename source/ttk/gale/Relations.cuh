@@ -100,7 +100,7 @@ __device__ inline int findOrInsert2(int *arr, int *index, int maxColCount, int l
     // Race condition of some sort if this is removed, even though the Atomics in below loop should be safe... they aren't
     int search = 0;
     // Paranoia trigger for extra debug output
-    bool debug_condition = (globalValue == 6880 || globalValue == 6880 || globalOffset == 6880 || globalOffset == 6880);
+    bool debug_condition = false;//(globalValue == 6880 || globalValue == 6880 || globalOffset == 6880 || globalOffset == 6880);
 
     while (search < maxColCount) {
         int old_value = atomicCAS(&arr[search], -1, localValue);
@@ -961,7 +961,7 @@ __global__ void computeVertexNeighborsWithExternals(
         vertexMap[vid - startVertexId] = vid;
     }
 
-    // printf("threadIdx.x: %d, tid: %d, startVertexId: %d, endVertexId: %d\n", threadIdx.x, tid, startVertexId, endVertexId);
+    printf("threadIdx.x: %d, tid: %d, startVertexId: %d, endVertexId: %d\n", threadIdx.x, threadId, startVertexId, endVertexId);
 
     // determine the range of vertices
     int clusterStartCellId = cellIntervals[baseCluster - 1];
@@ -980,36 +980,69 @@ __global__ void computeVertexNeighborsWithExternals(
     // loop through the internal cell list
     //printf("Begin internal cell list\n");
     for (int cid = startCellId; cid < endCellId; ++cid) {
+        bool paranoia = false;
         int cellId = offsets[cid];
+        /*if (connectivity[cellId+0] == 7 &&
+            connectivity[cellId+1] == 1074 &&
+            connectivity[cellId+2] == 5708 &&
+            connectivity[cellId+3] == 6930) {
+            printf("thread %d works on internal cell %d\n", threadIdx.x, cellId);
+            paranoia = true;
+        }*/
         for (int vi = 0; vi < dimension; ++vi) {
             int viId = connectivity[cellId + vi];
             for (int vj = vi+1; vj <= dimension; ++vj) {
                 int vjId = connectivity[cellId + vj];
-                if (viId >= startVertexId && viId < endVertexId) {
+                if (paranoia) {
+                    printf("internal cell %d has pair i[%d]:%d j[%d]:%d -- ", cellId, vi, viId, vj, vjId);
+                }
+                /*if (viId >= startVertexId && viId < endVertexId) {*/
                     int localViId = findOrInsertParanoid(vertexMap, totalVertexNum, viId/*, In_VertexMap*/); //viId - startVertexId;
                     if (localViId < 0) localViId *= -1;
                     int localVjId = findOrInsertParanoid(vertexMap, totalVertexNum, vjId/*, In_VertexMap*/);
                     if (localVjId < 0) localVjId *= -1;
+                    if (paranoia) printf("Processed with locals i:%d j:%d\n", localViId, localVjId);
                     int ival = findOrInsert2(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localViId, viId, localVjId, vjId, In_I2J);
                     int jval = findOrInsert2(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localVjId, vjId, localViId, viId, In_J2I);
-                }
+                /*}
+                else {
+                    if (paranoia) printf("IGNORED\n");
+                }*/
             }
         }
     }
 
     // loop through the external cell list
     // reuse previous variables
-    clusterStartCellId = externalCellOffsets[baseCluster]; // Was -1
+    clusterStartCellId = externalCellOffsets[baseCluster+0]; // Was -1
     clusterEndCellId = externalCellOffsets[baseCluster+1]; // Was +0
     cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
     startCellId = clusterStartCellId + (threadId * cellsPerThread);
     endCellId = (threadId == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
 
-    // printf("threadIdx.x: %d, tid: %d, startVertexId: %d, endVertexId: %d, startExCellIdx: %d, endExCellIdx: %d\n", threadIdx.x, tid, startVertexId, endVertexId, startCellId, endCellId);
+    printf("threadIdx.x: %d, tid: %d, startVertexId: %d, endVertexId: %d, startExCellIdx: %d, endExCellIdx: %d\n", threadIdx.x, threadId, startVertexId, endVertexId, startCellId, endCellId);
+
+    // DEBUG FOR SPECIAL TURNS
+    int watched_ids_6880[3] = {176, 1843, 3531},
+        watched_ids_6928[3] = {502, 503, 3531};
 
     //printf("Begin external cell list\n");
     for (int cid = startCellId; cid < endCellId; ++cid) {
         int cellId = offsets[externalCells[cid]];
+        // DEBUG WATCHDOG
+        bool watched = false;
+        for (int i = 0; i < 3; i++) {
+            if (cellId == watched_ids_6880[i] || cellId == watched_ids_6928[i]) {
+                watched = true;
+                break;
+            }
+        }
+        if (watched) {
+            printf("Thread %d processing watched external cell %d\n", threadIdx.x, cellId);
+        }
+        else {
+            //printf("Thread %d processing external cell %d\n", threadIdx.x, cellId);
+        }
         for (int vi = 0; vi < dimension; ++vi) {
             int viId = connectivity[cellId + vi];
             for (int vj = vi + 1; vj <= dimension; ++vj) {

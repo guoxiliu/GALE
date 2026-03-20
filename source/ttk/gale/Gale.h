@@ -12,6 +12,7 @@
 #include <mutex>
 #include <omp.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <queue>
 #include <set>
 #include <thread>

@@ -2024,7 +2024,7 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
         hOffsets_ = static_cast<int *>(cells->GetOffsetsArray()->GetVoidPointer(0));
         cellDimension_ = hOffsets_[1] - hOffsets_[0] - 1;
     }
-    
+
     // index array
     hIndexArray_ = nullptr;
     int hasIndexArray = pointSet->GetPointData()->HasArray("_index");
@@ -2032,7 +2032,7 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
         std::cerr << "Cannot detect index array! Gale must run with a predefined clustering information!" << std::endl;
         exit(EXIT_FAILURE);
     }
-    
+
     for (int i = 0; i < threadNumber_; ++i) {
         sem_init(&relationSems_[i], 0, 0);
     }
@@ -2041,7 +2041,7 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
         blockSize_ = blockSize;
         if (blockSize % threadsPerCluster_ != 0) {
             std::cerr << "Block size " << blockSize << " is not divisible by threads per cluster " << threadsPerCluster_ << std::endl;
-            exit(EXIT_FAILURE); 
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -2055,12 +2055,13 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
             clusterNumber_ = std::max(hIndexArray_[i], clusterNumber_);
         }
         clusterNumber_ += 1;
-        
+
         std::cout << "[Gale] Reordering vertices and cells..." << std::endl;
-        
+
         std::vector<SimplexId> vertexMap;       // old vid : new vid
         reorderVertices(vertexMap);
         reorderCells(vertexMap);
+
         // change vertex orders of point data arrays
         int arrNum = pointSet->GetPointData()->GetNumberOfArrays();
         for (int i = 0; i < arrNum; ++i) {
@@ -2199,7 +2200,7 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
  * Compute the cell interval array.
 */
 void Gale::computeCellIntervals() {
-    std::vector<std::vector<int>> externalCells(clusterNumber_, std::vector<int>());
+    std::vector<std::unordered_set<int>> externalCells(clusterNumber_, std::unordered_set<int>());
     hExternalCellOffsets_ = new int[clusterNumber_];
     hExternalCellOffsets_[0] = 0;
     hCellIntervals_ = (int *) calloc(clusterNumber_, sizeof(int));
@@ -2207,14 +2208,21 @@ void Gale::computeCellIntervals() {
     CHECK(cudaMallocAsync(&dCellIntervals_, sizeof(int) * clusterNumber_, 0));
     CHECK(cudaMallocAsync(&dExternalCellOffsets_, sizeof(int) * clusterNumber_, 0));
 
+    std::cout << "[GALE] looking for external cells in range 0->" << cellNumber_ << std::endl;
     for (int cid = 0; cid < cellNumber_; ++cid) {
+        // Reminders:
+        // offsets = jump into connectivity (id*4, usually) to get to a cell
+        // connectivity = TV array
+        // indexArray = partition ID
         int clusterId = hIndexArray_[hConnectivity_[hOffsets_[cid]]];
+        // All other points connected to this one in the same cell
         for (int j = 1; j <= cellDimension_; ++j) {
             int tmpCluster = hIndexArray_[hConnectivity_[hOffsets_[cid] + j]];
-            if (tmpCluster > clusterId && tmpCluster < clusterNumber_) {
-                if (externalCells[tmpCluster].empty() || externalCells[tmpCluster].back() != cid) {
-                    externalCells[tmpCluster].push_back(cid);
-                }
+            if (cid == 176) {
+                std::cout << "[GALE] External cell 176 from cluster " << clusterId << " add to externals for cluster " << tmpCluster << std::endl;
+            }
+            if (tmpCluster != clusterId && tmpCluster < clusterNumber_) {
+                externalCells[tmpCluster].insert(cid);
             }
         }
         hCellIntervals_[clusterId]++;
@@ -2224,7 +2232,7 @@ void Gale::computeCellIntervals() {
         hCellIntervals_[i] += hCellIntervals_[i-1];
         hExternalCellOffsets_[i] = hExternalCellOffsets_[i-1] + externalCells[i].size();
     }
-    
+
     // Convert the 2D vector to 1D flat vector
     hExternalCells_ = new int[hExternalCellOffsets_[clusterNumber_-1]];
     int *tmp = hExternalCells_;
@@ -2258,6 +2266,7 @@ void Gale::computeVertexIntervals() {
 int Gale::reorderVertices(std::vector<SimplexId> &vertexMap) {
     CHECK(cudaMallocAsync(&dVertexIntervals_, sizeof(int) * clusterNumber_, 0));
     clusterVertices.resize(clusterNumber_);
+    // vertexNumber_ == number of points
     for(SimplexId vid = 0; vid < vertexNumber_; ++vid) {
         clusterVertices[hIndexArray_[vid]].push_back(vid);
     }
@@ -2297,6 +2306,7 @@ int Gale::reorderVertices(std::vector<SimplexId> &vertexMap) {
     }
 
     // change the vertex indices
+    // isn't this where the cluster Ids get off-by-one and it starts to be 2-based indexing
     for(SimplexId nid = 1; nid < clusterNumber_; nid++) {
         for(SimplexId vid = hVertexIntervals_[nid - 1];
             vid < hVertexIntervals_[nid]; ++vid) {
@@ -2312,7 +2322,8 @@ int Gale::reorderVertices(std::vector<SimplexId> &vertexMap) {
 */
 int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
     // change the indices in cell array
-    SimplexId cellCount = 0, verticesPerCell = hOffsets_[1] - hOffsets_[0];
+    SimplexId cellCount = 0,
+              verticesPerCell = hOffsets_[1] - hOffsets_[0];
     std::vector<std::vector<SimplexId>> clusterCells(clusterNumber_ + 1);
 
     for(SimplexId cid = 0; cid < cellNumber_; cid++) {
@@ -2326,16 +2337,36 @@ int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
 
     // rearange the cell std::array
     hCellIntervals_ = new int[clusterNumber_];
-    std::vector<std::vector<int>> externalCells(clusterNumber_);
+    std::vector<std::unordered_set<int>> externalCells(clusterNumber_);
     hCellIntervals_[0] = 0;
 
     int *newCellArray = new int[verticesPerCell * cellNumber_];
+    std::cout << "[GALE] looking for external cells in partitions range 1->" << clusterNumber_ << std::endl;
+    // foreach partition
     for(SimplexId clusterId = 1; clusterId < clusterNumber_; ++clusterId) {
+        // foreach cell in the partition
         for(SimplexId cid : clusterCells[clusterId]) {
+            // connectivity indexer to cell
             SimplexId cellId = verticesPerCell * cid;
+            // indexer into partition lookup
             SimplexId newCellId = verticesPerCell * cellCount;
             for(int j = 0; j < verticesPerCell; j++) {
                 newCellArray[newCellId + j] = hConnectivity_[cellId + j];
+                SimplexId nodeNum = hIndexArray_[newCellArray[newCellId + j]];
+                if (nodeNum != clusterId) {
+                    externalCells[nodeNum].insert(cid);
+                    if (cid == 502 || cid == 503) {
+                        // This matches
+                        std::cout << "[GALE] External cell " << cid << " (global vertices "
+                                  << vertexMap[hConnectivity_[cellId+0]] << ", "
+                                  << vertexMap[hConnectivity_[cellId+1]] << ", "
+                                  << vertexMap[hConnectivity_[cellId+2]] << ", "
+                                  << vertexMap[hConnectivity_[cellId+3]]
+                                  << ") from cluster " << clusterId
+                                  << " to cluster " << nodeNum << std::endl;
+                    }
+                }
+                /*
                 if(newCellArray[newCellId + j] >= hVertexIntervals_[clusterId]) {
                     SimplexId nodeNum = hIndexArray_[newCellArray[newCellId + j]];
                     if(externalCells[nodeNum].empty()
@@ -2343,6 +2374,7 @@ int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
                         externalCells[nodeNum].push_back(cid);
                     }
                 }
+                */
             }
             cellCount++;
         }
@@ -2354,7 +2386,7 @@ int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
     for (int i = 1; i < clusterNumber_; ++i) {
         hExternalCellOffsets_[i] = hExternalCellOffsets_[i-1] + externalCells[i].size();
     }
-    
+
 
     CHECK(cudaMallocAsync(&dCellIntervals_, sizeof(int) * clusterNumber_, 0));
     CHECK(cudaMemcpyAsync(dCellIntervals_, hCellIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));

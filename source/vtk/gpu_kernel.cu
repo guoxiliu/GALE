@@ -29,8 +29,8 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
            indirect_my*    have the LOCAL vertex IDs used to index in all
                             arrays except ivvi
     */
-    //const int tid = (blockDim.x * blockIdx.x) + threadIdx.x;
-    const int tid = (max_VV_guess * 11) + threadIdx.x;
+    const int tid = (blockDim.x * blockIdx.x) + threadIdx.x;
+    //const int tid = (max_VV_guess * 7) + threadIdx.x;
     const vtkIdType indirect_my_1d = tid / max_VV_guess,
                     my_1d = vvi[indirect_my_1d];
     vtkIdType my_2d = VV[tid], // NOTE: Requires deref via VV_to_global IFF VV[tid] != -1
@@ -162,13 +162,14 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
                     const vtkIdType start_2d = indirect_candidate_component_2d*max_VV_guess,
                                     stop_2d  = start_2d + VV_index[indirect_candidate_component_2d];
                     #ifdef PRINT_ON
-                    // Pure debug for this problem
+                    /* Pure debug for this problem
                     if (my_2d > 2000) {
                         printf("Block %d Thread %02d has matching candidate valence for point %ld, which was looked up indirectly as %ld with iteration range %ld->%ld\n",
                                 blockIdx.x, threadIdx.x, candidate_component_2d,
                                 indirect_candidate_component_2d,
                                 start_2d, stop_2d);
                     }
+                    */
                     #endif
                     if (start_2d > blockDim.x * gridDim.x) {
                         /*
@@ -186,6 +187,7 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
                     for(vtkIdType j = start_2d; j < stop_2d; j++) {
                         const vtkIdType theirNeighborhood = neighborhood[i-min_my_1d];
                         #ifdef PRINT_ON
+                        /*
                         if (my_2d > 2000) {
                             printf("Block %d Thread %02d (owner of %ld) checking %ld's %ld'th point in scan (VV[j]=%d, VV2G[VV[j]]=%d) neighborhood=%ld vs my neighborhood=%ld\n",
                                     blockIdx.x,
@@ -198,6 +200,7 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
                                     theirNeighborhood,
                                     neighborhood[threadIdx.x]);
                         }
+                        */
                         #endif
                         // Within bounds, VV[j] >= 0
                         if (VV_to_global[VV[j]] == my_2d && neighborhood[threadIdx.x] > theirNeighborhood) {
@@ -223,6 +226,7 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
         lower_converge = (*lower_edits == 0);
         if (execution_mask) {
             #ifdef PRINT_ON
+            /*
             printf("Block %d Thread %02d ends UF loop %02d with upper_edits %u "
                     "lower_edits %u (loop condition: %d = [%d[!%d && %d] && %d])\n",
                     blockIdx.x, threadIdx.x, to_converge, *upper_edits, *lower_edits,
@@ -231,6 +235,7 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
                     upper_converge, lower_converge,
                     to_converge < max_VV_guess
                     );
+            */
             #endif
         }
     }

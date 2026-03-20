@@ -196,7 +196,7 @@ int main(int argc, char *argv[])
     /* PROBLEM WITH PREVIOUS KERNEL WAS: block size too big! Have to limit
        thread_block_size ( -b * -s ) / (-p) = #clusters to compute in one
                                               kernel */
-    computeVertexNeighborsWithExternals<<<1, 1/*32*/>>>(
+    computeVertexNeighborsWithExternals<<<1, 32>>>(
             dDataArray,                     /* int* vertexNeighborMatrix = {-1}, to be filled with VV */
             dSizeArray,                     /* int* vertexNeighborSizes = {0}, to be filled with VV lengths */
             dVertexMap,                     /* int* vertexMap = {-1}, map local->global vertex ID (local implicit by index) */
@@ -222,7 +222,6 @@ int main(int argc, char *argv[])
     cudaDeviceSynchronize();
 
     // DEBUG: Yank back to Host and check answer
-    /*
     if (FORCE_PARTITION == 2) {
         CHECK(cudaMemcpy(hDataArray, dDataArray, vv_data_size, cudaMemcpyDeviceToHost));
         CHECK(cudaMemcpy(hSizeArray, dSizeArray, vertices_size, cudaMemcpyDeviceToHost));
@@ -242,12 +241,14 @@ int main(int argc, char *argv[])
                 }
             }
         }
+        std::map<int,int> unVertexMap;
+        for (int i = 0; i < vertexCount; i++) {
+            if (hVertexMap[i] == -1) continue;
+            unVertexMap[hVertexMap[i]] = i;
+        }
 
-
-        // Checks for point 11 all pass -- we have those connections
-        // Repurpose to check external-to-external for point 2623 (if we have that, we're virtually guaranteed to get correct classification)
-        const int N_EXPECT = 12,
-                  TARGET = 2623;
+        const int N_EXPECT = 24,
+                  TARGET = 7;
         // Find target in vertexMap
         int INDIRECT_TARGET = -1;
         for (int i = 0; i < vertexCount; i++) {
@@ -256,7 +257,7 @@ int main(int argc, char *argv[])
             }
         }
         // Points in the dataArray have to be remapped in order to get the proper global values I know back
-        int expect[N_EXPECT] = {11,14,20,1156,1161,2618,2633,2684,2660,3285,3882,3905},
+        int expect[N_EXPECT] = {0, 26, 48, 486, 1073, 1074, 1088, 1126, 1187, 1199, 1204, 1283, 1296, 1428, 5708, 5710, 6781, 6790, 6880, 6921, 6928, 6930, 6947, 7203},
             found[N_EXPECT]  = {0};
         for (int i = 0 ; i < hSizeArray[INDIRECT_TARGET]; i++) {
             std::cout << "All neighbors of " << TARGET << " ith entry: " << hDataArray[(INDIRECT_TARGET * SFCP_ColumnNum) + i] << std::endl;
@@ -265,7 +266,7 @@ int main(int argc, char *argv[])
             // Note neighbor AS GLOBAL VALUE
             int neighbor = hDataArray[(INDIRECT_TARGET * SFCP_ColumnNum) + i];
             for (int j = 0; j < N_EXPECT; j++) {
-                if (neighbor == expect[j]) {
+                if (neighbor == unVertexMap[expect[j]]) {
                     found[j] = 1;
                 }
             }
@@ -282,12 +283,46 @@ int main(int argc, char *argv[])
         }
         if (found_count == N_EXPECT) {
             std::cout << "Found all expected neighbors for " << TARGET << std::endl;
+            // Check for roots of components
+            const int N_ROOTS = 2;
+            int roots[N_ROOTS] = {0,26};
+            std::cout << "Considering global root IDs: ";
+            for (int i = 0; i < N_ROOTS; i++) {
+                if (i > 0) std::cout << ", ";
+                std::cout << roots[i];
+            }
+            std::cout << std::endl;
+            for (int i = 0; i < N_EXPECT; i++) {
+                bool non_root = true;
+                for (int &root : roots) {
+                    if (expect[i] == root) {
+                        non_root = false;
+                        break;
+                    }
+                }
+                if (!non_root) continue;
+                // See if this connects TO a root
+                bool connect_to_root = false;
+                for (int &root : roots) {
+                    if (connect_to_root) break;
+                    int indirect_root = unVertexMap[root];
+                    for (int j = 0; j < hSizeArray[indirect_root]; j++) {
+                        if (hDataArray[(indirect_root * SFCP_ColumnNum) + j] == unVertexMap[expect[i]]) {
+                            std::cout << "Expected neighbor " << expect[i] << " has a connection to root " << root << std::endl;
+                            connect_to_root = true;
+                            break;
+                        }
+                    }
+                }
+                if (!connect_to_root) {
+                    std::cout << "Expected neighbor " << expect[i] << " has NO CONNECTIONS to any roots" << std::endl;
+                }
+            }
         }
         else {
             std::cout << "Found " << found_count << " / " << N_EXPECT << " neighbors for " << TARGET << std::endl;
         }
     }
-    */
 
     std::cout << "[TIMER] GALE VV: " << compat_timer.getElapsedTime() << std::endl;
     compat_timer.reStart();
@@ -334,6 +369,7 @@ int main(int argc, char *argv[])
     CUDA_ASSERT(cudaMalloc((void**)&devi_partition, partition_size));
     int nth_point = 0, gale_n_in_partition = 0;
     std::cout << "Gale has " << gale.clusterVertices[FORCE_PARTITION].size() << " points in the partition" << std::endl;
+    // Have to maintain this for SFCP, but may be able to steal from GALE internals to save processing
     for (SimplexId &vid : gale.clusterVertices[FORCE_PARTITION]) {
         host_vvi[nth_point] = vid;
         host_ivvi[vid] = nth_point;
@@ -352,7 +388,7 @@ int main(int argc, char *argv[])
     // Critical Points
     // Set kernel launch parameters here
     // Parallelized VV on second-dimension (number of adjacenies to each vertex)
-    dim3 grid_size = 1, //n_in_partition,
+    dim3 grid_size = vertexCount,
          thread_block_size = SFCP_ColumnNum;
     // Need one entry per block (VV width) + 2 entries for tracking edits to # upper and #lower components
     const int shared_mem_size = (sizeof(unsigned int) * 2) + (sizeof(vtkIdType) * SFCP_ColumnNum);
@@ -392,17 +428,8 @@ int main(int argc, char *argv[])
             numMaximum++;
         } else if (host_CPC[idx] == SADDLE_CLASS) {
             numSaddles++;
-            if (i != 804 && i != 1956) {
-                std::cout << "Point " << i
-                          << " mistakenly labeled as a saddle" << std::endl;
-            }
         } else if (host_CPC[idx] == REGULAR_CLASS) {
             numRegular++;
-            if (i == 804 || i == 1956) {
-                std::cout << "Point " << i
-                          << " mistakenly labeled as regular (should be saddle)"
-                          << std::endl;
-            }
         }
         else {
             numVoid++; // You don't want this to ever trip!
