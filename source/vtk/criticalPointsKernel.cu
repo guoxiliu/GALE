@@ -35,10 +35,11 @@
 
 // Class definitions as enums, basically
 #include "class_enum.h"
+char *class_strmap[5] = {"VOID", "MAXIMUM", "MINIMUM", "REGULAR", "SADDLE"};
+
 // Kernel separated to reduce burden of recompiling
 #include "gpu_kernel.h"
 int SFCP_ColumnNum = 80;
-//#define FORCE_BLOCK_IDX 13
 
 using namespace ttk;
 
@@ -368,6 +369,7 @@ int main(int argc, char *argv[])
     host_partition = new int[vertexCount]();
     CUDA_ASSERT(cudaMalloc((void**)&devi_partition, partition_size));
     int nth_point = 0, gale_n_in_partition = 0;
+    int search_point = 2665, force_point = -1;
     std::cout << "Gale has " << gale.clusterVertices[FORCE_PARTITION].size() << " points in the partition" << std::endl;
     // Have to maintain this for SFCP, but may be able to steal from GALE internals to save processing
     for (SimplexId &vid : gale.clusterVertices[FORCE_PARTITION]) {
@@ -375,6 +377,12 @@ int main(int argc, char *argv[])
         host_ivvi[vid] = nth_point;
         host_partition[nth_point] = (gale.hIndexArray_[vid] == FORCE_PARTITION);
         gale_n_in_partition += (gale.hIndexArray_[vid] == FORCE_PARTITION);
+        #if CONSTRAIN_BLOCK
+        if (vid == search_point) {
+            force_point = nth_point;
+            std::cout << "Targeting global id " << search_point << " as block " << nth_point << std::endl;
+        }
+        #endif
         nth_point++;
     }
     std::cout << "Gale found " << gale_n_in_partition << " of its points to be in partition " << FORCE_PARTITION << std::endl;
@@ -390,6 +398,9 @@ int main(int argc, char *argv[])
     // Parallelized VV on second-dimension (number of adjacenies to each vertex)
     dim3 grid_size = vertexCount,
          thread_block_size = SFCP_ColumnNum;
+    #if CONSTRAIN_BLOCK
+    grid_size.x = 1;
+    #endif
     // Need one entry per block (VV width) + 2 entries for tracking edits to # upper and #lower components
     const int shared_mem_size = (sizeof(unsigned int) * 2) + (sizeof(vtkIdType) * SFCP_ColumnNum);
 
@@ -407,6 +418,9 @@ int main(int argc, char *argv[])
             devi_partition,
             devi_vvi, // vvi for me, should be 0-init with nth entry == global_id
             devi_ivvi, // 0 by default, global_id'th entry == nth point
+            #if CONSTRAIN_BLOCK
+            force_point,
+            #endif
             device_CPC);
     CUDA_WARN(cudaDeviceSynchronize()); // Make algorithm timing accurate
     // Results are retrieved from GPU
@@ -419,11 +433,13 @@ int main(int argc, char *argv[])
 
     // TODO: Make output comparable to standalone
     int numMinimum = 0, numMaximum = 0, numSaddles = 0, numRegular = 0, numVoid = 0;
-    for (SimplexId &i : gale.clusterVertices[FORCE_PARTITION]) {
-    //for (int i = 0; i < nPoints; i++) {
-        int idx = (i*3)+2;
+
+    for (int i = 0; i < gale.clusterVertices[FORCE_PARTITION].size(); i++) {
+        int global_idx = gale.clusterVertices[FORCE_PARTITION][i],
+            idx = (i*3)+2;
         if (host_CPC[idx] == MINIMUM_CLASS) {
             numMinimum++;
+            std::cout << "Minimum noted at i=" << i << ", global_idx=" << global_idx << std::endl;
         } else if (host_CPC[idx] == MAXIMUM_CLASS) {
             numMaximum++;
         } else if (host_CPC[idx] == SADDLE_CLASS) {

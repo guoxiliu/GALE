@@ -2218,10 +2218,7 @@ void Gale::computeCellIntervals() {
         // All other points connected to this one in the same cell
         for (int j = 1; j <= cellDimension_; ++j) {
             int tmpCluster = hIndexArray_[hConnectivity_[hOffsets_[cid] + j]];
-            if (cid == 176) {
-                std::cout << "[GALE] External cell 176 from cluster " << clusterId << " add to externals for cluster " << tmpCluster << std::endl;
-            }
-            if (tmpCluster != clusterId && tmpCluster < clusterNumber_) {
+            if (tmpCluster != clusterId) { //&& tmpCluster < clusterNumber_) {
                 externalCells[tmpCluster].insert(cid);
             }
         }
@@ -2321,11 +2318,11 @@ int Gale::reorderVertices(std::vector<SimplexId> &vertexMap) {
  * Reindex the cells to make the GALE work with the input segment.
 */
 int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
-    // change the indices in cell array
     SimplexId cellCount = 0,
               verticesPerCell = hOffsets_[1] - hOffsets_[0];
     std::vector<std::vector<SimplexId>> clusterCells(clusterNumber_ + 1);
 
+    // change the indices in cell array
     for(SimplexId cid = 0; cid < cellNumber_; cid++) {
         SimplexId cellId = hOffsets_[cid];
         for(int j = 0; j < verticesPerCell; j++) {
@@ -2340,7 +2337,7 @@ int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
     std::vector<std::unordered_set<int>> externalCells(clusterNumber_);
     hCellIntervals_[0] = 0;
 
-    int *newCellArray = new int[verticesPerCell * cellNumber_];
+    int *newCellArray = new int[verticesPerCell * cellNumber_]; // Re-indexed TV
     std::cout << "[GALE] looking for external cells in partitions range 1->" << clusterNumber_ << std::endl;
     // foreach partition
     for(SimplexId clusterId = 1; clusterId < clusterNumber_; ++clusterId) {
@@ -2355,26 +2352,7 @@ int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
                 SimplexId nodeNum = hIndexArray_[newCellArray[newCellId + j]];
                 if (nodeNum != clusterId) {
                     externalCells[nodeNum].insert(cid);
-                    if (cid == 502 || cid == 503) {
-                        // This matches
-                        std::cout << "[GALE] External cell " << cid << " (global vertices "
-                                  << vertexMap[hConnectivity_[cellId+0]] << ", "
-                                  << vertexMap[hConnectivity_[cellId+1]] << ", "
-                                  << vertexMap[hConnectivity_[cellId+2]] << ", "
-                                  << vertexMap[hConnectivity_[cellId+3]]
-                                  << ") from cluster " << clusterId
-                                  << " to cluster " << nodeNum << std::endl;
-                    }
                 }
-                /*
-                if(newCellArray[newCellId + j] >= hVertexIntervals_[clusterId]) {
-                    SimplexId nodeNum = hIndexArray_[newCellArray[newCellId + j]];
-                    if(externalCells[nodeNum].empty()
-                        || externalCells[nodeNum].back() != cid) {
-                        externalCells[nodeNum].push_back(cid);
-                    }
-                }
-                */
             }
             cellCount++;
         }
@@ -2403,7 +2381,7 @@ int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
         tmp += externalCells[i].size();
     }
     CHECK(cudaMemcpyAsync(dExternalCells_, hExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], cudaMemcpyHostToDevice));
-    
+
     // copy the new cell array back to original one
     memcpy(hConnectivity_, newCellArray, sizeof(int) * cellNumber_ * verticesPerCell);
     delete[] newCellArray;

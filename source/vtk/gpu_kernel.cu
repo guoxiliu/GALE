@@ -1,6 +1,6 @@
 #include "gpu_kernel.h"
 
-//#define PRINT_ON 1
+#define PRINT_ON 1
 
 __global__ void critPoints(const int * __restrict__ VV, // formerly int
                            const int * __restrict__ VV_index, // formerly int
@@ -12,6 +12,9 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
                            const int * __restrict__ partition, // NEW
                            const vtkIdType * __restrict__ vvi, // nth -> global
                            const vtkIdType * __restrict__ ivvi, // dense global -> nth
+                           #if CONSTRAIN_BLOCK
+                           const int force_block_idx,
+                           #endif
                            unsigned int * __restrict__ classes) {
     extern __shared__ unsigned int block_shared[];
 
@@ -29,8 +32,11 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
            indirect_my*    have the LOCAL vertex IDs used to index in all
                             arrays except ivvi
     */
+    #if CONSTRAIN_BLOCK
+    const int tid = (max_VV_guess * force_block_idx) + threadIdx.x;
+    #else
     const int tid = (blockDim.x * blockIdx.x) + threadIdx.x;
-    //const int tid = (max_VV_guess * 7) + threadIdx.x;
+    #endif
     const vtkIdType indirect_my_1d = tid / max_VV_guess,
                     my_1d = vvi[indirect_my_1d];
     vtkIdType my_2d = VV[tid], // NOTE: Requires deref via VV_to_global IFF VV[tid] != -1
@@ -96,7 +102,7 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
     }
     __syncthreads();
     if (execution_mask) {
-        #ifdef PRINT_ON
+        #if PRINT_ON
         printf("Block %d Thread %02d init on my_1d %ld and my_2d %ld with "
                "valence %d based on %lf (block) vs %lf (thread)\n",
                blockIdx.x, threadIdx.x, my_1d, my_2d, my_class,
@@ -161,7 +167,7 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
                 if (i != tid && valences[i] == my_class) {
                     const vtkIdType start_2d = indirect_candidate_component_2d*max_VV_guess,
                                     stop_2d  = start_2d + VV_index[indirect_candidate_component_2d];
-                    #ifdef PRINT_ON
+                    #if PRINT_ON
                     /* Pure debug for this problem
                     if (my_2d > 2000) {
                         printf("Block %d Thread %02d has matching candidate valence for point %ld, which was looked up indirectly as %ld with iteration range %ld->%ld\n",
@@ -186,7 +192,7 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
                     */
                     for(vtkIdType j = start_2d; j < stop_2d; j++) {
                         const vtkIdType theirNeighborhood = neighborhood[i-min_my_1d];
-                        #ifdef PRINT_ON
+                        #if PRINT_ON
                         /*
                         if (my_2d > 2000) {
                             printf("Block %d Thread %02d (owner of %ld) checking %ld's %ld'th point in scan (VV[j]=%d, VV2G[VV[j]]=%d) neighborhood=%ld vs my neighborhood=%ld\n",
@@ -204,7 +210,7 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
                         #endif
                         // Within bounds, VV[j] >= 0
                         if (VV_to_global[VV[j]] == my_2d && neighborhood[threadIdx.x] > theirNeighborhood) {
-                            #ifdef PRINT_ON
+                            #if PRINT_ON
                             printf("Block %d Thread %02d neighborhood update "
                                     "iteration %0d moves %ld --> %ld\n",
                                     blockIdx.x, threadIdx.x, to_converge,
@@ -225,7 +231,7 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
         upper_converge = (*upper_edits == 0);
         lower_converge = (*lower_edits == 0);
         if (execution_mask) {
-            #ifdef PRINT_ON
+            #if PRINT_ON
             /*
             printf("Block %d Thread %02d ends UF loop %02d with upper_edits %u "
                     "lower_edits %u (loop condition: %d = [%d[!%d && %d] && %d])\n",
@@ -248,7 +254,7 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
     if (execution_mask && neighborhood[threadIdx.x] == my_2d) {
         const vtkIdType memoffset = ((indirect_my_1d*3)+((my_class+1)/2));
         const unsigned int old = atomicAdd(classes+memoffset,1);
-        #ifdef PRINT_ON
+        #if PRINT_ON
         printf("Block %d Thread %02d Writes %s component @ mem offset %ld "
                 "(old: %u) after %02d iterations\n",
                 blockIdx.x, threadIdx.x,
@@ -267,7 +273,7 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
         const unsigned int upper = classes[my_classes],
                            lower = classes[my_classes+1];
         if (execution_mask) {
-            #ifdef PRINT_ON
+            #if PRINT_ON
             printf("Block %d Thread %02d Verdict: my_1d (%ld) has %u upper and %u "
                     "lower after %02d iterations\n",
                     blockIdx.x, threadIdx.x, my_1d, upper, lower, to_converge);
