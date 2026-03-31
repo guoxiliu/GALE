@@ -1,6 +1,16 @@
 #include "gpu_kernel.h"
 
-#define PRINT_ON 1
+#define PRINT_ON 0
+
+__global__ void dsv_check(const double * __restrict__ scalar_values) {
+    int ids_to_check[10] = {13467, 13470, 14333,
+                            13935, 4265, 2691,
+                            4746, 4360, 2734,
+                            2686};
+    for (int i = 0; i < 10; i++) {
+        printf("Check scalar value %d (global id: %d): %lf\n", i, ids_to_check[i], scalar_values[ids_to_check[i]]);
+    }
+}
 
 __global__ void critPoints(const int * __restrict__ VV, // formerly int
                            const int * __restrict__ VV_index, // formerly int
@@ -48,6 +58,9 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
         my_2d = VV_to_global[my_2d];
         indirect_my_2d = ivvi[my_2d];
     }
+    #if PRINT_ON
+    bool print_mask = blockIdx.x == 80; //(my_1d == 2692);
+    #endif
 
     if (VV_index[indirect_my_1d] <= 0 || partition[indirect_my_1d] == 0) {
         /*
@@ -101,14 +114,14 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
         neighborhood[threadIdx.x] = my_2d;
     }
     __syncthreads();
-    if (execution_mask) {
-        #if PRINT_ON
+    #if PRINT_ON
+    if (execution_mask && print_mask) {
         printf("Block %d Thread %02d init on my_1d %ld and my_2d %ld with "
                "valence %d based on %lf (block) vs %lf (thread)\n",
                blockIdx.x, threadIdx.x, my_1d, my_2d, my_class,
                scalar_values[my_1d], scalar_values[my_2d]);
-        #endif
     }
+    #endif
     /*
         3) Union-Find: All threads with a common classification attempt to
             union such that the lowest-connected point with the same class
@@ -125,8 +138,8 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
     while (!(upper_converge && lower_converge) && to_converge < max_VV_guess) {
         // Reset convergence indicators for the iteration
         if (threadIdx.x == 0) {
+            /*
             if (execution_mask) {
-                /*
                 printf("Block %d Iteration %d: upper_edits %u lower_edits %u "
                        "Neighborhood %ld %ld %ld %ld %ld %ld %ld %ld "
                                     "%ld %ld %ld %ld %ld %ld %ld %ld "
@@ -141,8 +154,8 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
                         neighborhood[20],neighborhood[21],neighborhood[22],neighborhood[23],
                         neighborhood[24],neighborhood[25],neighborhood[26],neighborhood[27],
                         neighborhood[28],neighborhood[29],neighborhood[30],neighborhood[31]);
-                */
             }
+            */
             *upper_edits = 0;
             *lower_edits = 0;
         }
@@ -160,62 +173,34 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
                 // Find a matching valence
                 const vtkIdType indirect_candidate_component_2d = VV[i],
                                 candidate_component_2d = VV_to_global[indirect_candidate_component_2d];
-                /*
-                    candidate_component_2d = VV[i], // Within bounds, should be >= 0
-                                indirect_candidate_component_2d = VV_to_global[candidate_component_2d];
-                */
                 if (i != tid && valences[i] == my_class) {
                     const vtkIdType start_2d = indirect_candidate_component_2d*max_VV_guess,
                                     stop_2d  = start_2d + VV_index[indirect_candidate_component_2d];
-                    #if PRINT_ON
-                    /* Pure debug for this problem
-                    if (my_2d > 2000) {
-                        printf("Block %d Thread %02d has matching candidate valence for point %ld, which was looked up indirectly as %ld with iteration range %ld->%ld\n",
-                                blockIdx.x, threadIdx.x, candidate_component_2d,
-                                indirect_candidate_component_2d,
-                                start_2d, stop_2d);
-                    }
-                    */
-                    #endif
+                    /*
                     if (start_2d > blockDim.x * gridDim.x) {
-                        /*
                         printf("Block %d Thread %02d has bad iterator from %ld "
                                 "to %ld based on direct %ld and indirect %ld "
                                 "at iteration %ld\n",
                                 blockIdx.x, threadIdx.x, start_2d, stop_2d,
                                 candidate_component_2d,
                                 indirect_candidate_component_2d, i);
-                        */
                     }
+                    */
                     /* Do you see your 2d in their 2d? If so, update your
                        neighborhood with the minimum of your two points
                     */
                     for(vtkIdType j = start_2d; j < stop_2d; j++) {
                         const vtkIdType theirNeighborhood = neighborhood[i-min_my_1d];
-                        #if PRINT_ON
-                        /*
-                        if (my_2d > 2000) {
-                            printf("Block %d Thread %02d (owner of %ld) checking %ld's %ld'th point in scan (VV[j]=%d, VV2G[VV[j]]=%d) neighborhood=%ld vs my neighborhood=%ld\n",
-                                    blockIdx.x,
-                                    threadIdx.x,
-                                    my_2d,
-                                    candidate_component_2d,
-                                    j-start_2d,
-                                    VV[j],
-                                    VV_to_global[VV[j]],
-                                    theirNeighborhood,
-                                    neighborhood[threadIdx.x]);
-                        }
-                        */
-                        #endif
                         // Within bounds, VV[j] >= 0
                         if (VV_to_global[VV[j]] == my_2d && neighborhood[threadIdx.x] > theirNeighborhood) {
                             #if PRINT_ON
-                            printf("Block %d Thread %02d neighborhood update "
-                                    "iteration %0d moves %ld --> %ld\n",
-                                    blockIdx.x, threadIdx.x, to_converge,
-                                    neighborhood[threadIdx.x],
-                                    theirNeighborhood);
+                            if (print_mask) {
+                                printf("Block %d Thread %02d neighborhood update "
+                                        "iteration %0d moves %ld --> %ld\n",
+                                        blockIdx.x, threadIdx.x, to_converge,
+                                        neighborhood[threadIdx.x],
+                                        theirNeighborhood);
+                            }
                             #endif
                             neighborhood[threadIdx.x] = theirNeighborhood;
                             // Denote LACK of convergence this iteration
@@ -230,8 +215,8 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
         __syncthreads();
         upper_converge = (*upper_edits == 0);
         lower_converge = (*lower_edits == 0);
-        if (execution_mask) {
-            #if PRINT_ON
+        #if PRINT_ON
+        if (execution_mask && print_mask) {
             /*
             printf("Block %d Thread %02d ends UF loop %02d with upper_edits %u "
                     "lower_edits %u (loop condition: %d = [%d[!%d && %d] && %d])\n",
@@ -242,8 +227,8 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
                     to_converge < max_VV_guess
                     );
             */
-            #endif
         }
+        #endif
     }
     // End all Union-Finds
 
@@ -255,10 +240,12 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
         const vtkIdType memoffset = ((indirect_my_1d*3)+((my_class+1)/2));
         const unsigned int old = atomicAdd(classes+memoffset,1);
         #if PRINT_ON
-        printf("Block %d Thread %02d Writes %s component @ mem offset %ld "
-                "(old: %u) after %02d iterations\n",
-                blockIdx.x, threadIdx.x,
-                (my_class == -1 ? "Upper" : "Lower"), memoffset, old, to_converge);
+        if (print_mask) {
+            printf("Block %d Thread %02d Writes %s component @ mem offset %ld "
+                    "(old: %u) after %02d iterations\n",
+                    blockIdx.x, threadIdx.x,
+                    (my_class == -1 ? "Upper" : "Lower"), memoffset, old, to_converge);
+        }
         #endif
     }
     __syncthreads();
@@ -274,37 +261,47 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
                            lower = classes[my_classes+1];
         if (execution_mask) {
             #if PRINT_ON
-            printf("Block %d Thread %02d Verdict: my_1d (%ld) has %u upper and %u "
-                    "lower after %02d iterations\n",
-                    blockIdx.x, threadIdx.x, my_1d, upper, lower, to_converge);
+            if (print_mask) {
+                printf("Block %d Thread %02d Verdict: my_1d (%ld) has %u upper and %u "
+                        "lower after %02d iterations\n",
+                        blockIdx.x, threadIdx.x, my_1d, upper, lower, to_converge);
+            }
             #endif
         }
         // Set classification
         if (upper >= 1 && lower == 0) {
             #if PRINT_ON
-            printf("Block %d Thread %02d set classification as %s\n",
-                    blockIdx.x, threadIdx.x, "MINIMUM");
+            if (print_mask) {
+                printf("Block %d Thread %02d set classification as %s\n",
+                        blockIdx.x, threadIdx.x, "MINIMUM");
+            }
             #endif
             classes[my_classes+2] = MINIMUM_CLASS;
         }
         else if (upper == 0 && lower >= 1) {
             #if PRINT_ON
-            printf("Block %d Thread %02d set classification as %s\n",
-                    blockIdx.x, threadIdx.x, "MAXIMUM");
+            if (print_mask) {
+                printf("Block %d Thread %02d set classification as %s\n",
+                        blockIdx.x, threadIdx.x, "MAXIMUM");
+            }
             #endif
             classes[my_classes+2] = MAXIMUM_CLASS;
         }
         else if (upper == 1 && lower == 1) {
             #if PRINT_ON
-            printf("Block %d Thread %02d set classification as %s\n",
-                    blockIdx.x, threadIdx.x, "REGULAR");
+            if (print_mask) {
+                printf("Block %d Thread %02d set classification as %s\n",
+                       blockIdx.x, threadIdx.x, "REGULAR");
+            }
             #endif
             classes[my_classes+2] = REGULAR_CLASS;
         }
         else {
             #if PRINT_ON
-            printf("Block %d Thread %02d set classification as %s\n",
-                    blockIdx.x, threadIdx.x, "SADDLE");
+            if (print_mask) {
+                printf("Block %d Thread %02d set classification as %s\n",
+                        blockIdx.x, threadIdx.x, "SADDLE");
+            }
             #endif
             classes[my_classes+2] = SADDLE_CLASS;
         }
@@ -316,5 +313,4 @@ __global__ void critPoints(const int * __restrict__ VV, // formerly int
             blockIdx.x, threadIdx.x, to_converge);
     */
 }
-
 

@@ -1,13 +1,14 @@
 #ifndef SFCP_KERNELS
 #define SFCP_KERNELS
 
-// probably some missing #includes here
 #include <cuda_runtime.h> // Device management stuff
 #include <vtkType.h> // vtkIdType
 #include <cstdio>
 #include "class_enum.h"
 
-#define CONSTRAIN_BLOCK 1
+#define CONSTRAIN_BLOCK 0
+
+__global__ void dsv_check(const double * __restrict__ scalar_values);
 
 __global__ void critPoints(const int * __restrict__ VV, // formerly int
                            const int * __restrict__ VV_index, // formerly int

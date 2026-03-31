@@ -19,13 +19,12 @@ const int vfColumnNum = 80;
  * @param value - the value to search for or insert
  * @return the position of the value in the array (either existing position (negative) or newly inserted position (positive))
  */
-__device__ inline int findOrInsert(int *arr, int *size, int value, char *info=nullptr) {
+__device__ inline int findOrInsert(int *arr, int *size, int value) {
     // Linear search to check if value already exists
     // Race condition of some sort if this is removed, even though the Atomics in below loop should be safe... they aren't
     int localSize = *size;
     for (int k = 0; k < localSize; ++k) {
         if (arr[k] == value) {
-            //printf("Thread %d found existing value %d at index %d (info: %s)\n", threadIdx.x, value, k, (info == nullptr ? "" : info));
             return -k;  // Found at position k
         }
     }
@@ -37,16 +36,11 @@ __device__ inline int findOrInsert(int *arr, int *size, int value, char *info=nu
     // Handle the case where multiple threads work with the same location
     // One array index can only be updated by one thread
     do {
-        // arr[insertPos] == -1 ? value : -1, returns old value
-        // IF arr[insertPos] == -1, swaps to value and returns -1
-        // IF arr[insertPos] != -1, leaves old value and returns it
         oldVal = atomicCAS(&arr[insertPos], -1, value);
         if (oldVal == -1) {
             atomicAdd(size, 1);
-            //printf("Thread %d inserted new value %d at index %d (old value: %d, info: %s)\n", threadIdx.x, value, insertPos, oldVal, (info == nullptr ? "" : info));
             return insertPos;
         } else if (oldVal == value) {
-            //printf("Thread %d found existing value %d at index %d (old value: %d, info: %s)\n", threadIdx.x, value, insertPos, oldVal, (info == nullptr ? "" : info));
             return -1*insertPos;
         }
         insertPos++;
@@ -54,6 +48,7 @@ __device__ inline int findOrInsert(int *arr, int *size, int value, char *info=nu
 
     return -1;
 }
+/*
 __device__ inline int findOrInsertParanoid(int *arr, int *size, int value, char *info=nullptr) {
 
     // Linear search to check if value already exists
@@ -90,48 +85,31 @@ __device__ inline int findOrInsertParanoid(int *arr, int *size, int value, char 
 
     return -1;
 }
+*/
 
-// int ival = findOrInsert(vertexNeighborMatrix + (sfcp_ColumnNum * localViId), &vertexNeighborSizes[localViId], vjId/);
-// int ival = findOrInsert(vertexNeighborMatrix, vertexNeighborSizes, localViId, sfcp_ColumnNum, vjId);
-__device__ inline int findOrInsert2(int *arr, int *index, int maxColCount, int localOffset, int globalOffset, int localValue, int globalValue, char *info=nullptr) {
+__device__ inline int findOrInsertIndirected(int *arr, int *index, int maxColCount, int localOffset, int globalOffset, int localValue, int globalValue) {
     // Index into arr's VV row for the offset
     arr += (localOffset * maxColCount);
     // Linear search to check if value already exists
     // Race condition of some sort if this is removed, even though the Atomics in below loop should be safe... they aren't
     int search = 0;
-    // Paranoia trigger for extra debug output
-    bool debug_condition = false;//(globalValue == 6880 || globalValue == 6880 || globalOffset == 6880 || globalOffset == 6880);
 
     while (search < maxColCount) {
         int old_value = atomicCAS(&arr[search], -1, localValue);
         if (old_value == localValue) {
             // Already known in array
-            if (debug_condition) {
-                printf("Found %d (local: %d) in %d's array (local: %d) at position %d/%d\n", globalValue, localValue, globalOffset, localOffset, search, index[localOffset]);
-                for (int i = 0; i < index[localOffset] && i < maxColCount; i++) {
-                    printf("VV array for %d[%d] = %d\n", globalOffset, i, arr[i]);
-                }
-            }
             return -1*search;
         }
         if (old_value == -1) {
             // Need to update length of the array
             atomicAdd(&index[localOffset], 1);
-            if (debug_condition) {
-                printf("Inserted %d (local: %d) into %d's array (local: %d) at position %d/%d\n", globalValue, localValue, globalOffset, localOffset, search, index[localOffset]);
-                for (int i = 0; i < index[localOffset] && i < maxColCount; i++) {
-                    printf("VV array for %d[%d] = %d\n", globalOffset, i, arr[i]);
-                }
-            }
             return search;
         }
         search++;
     }
-    // Satisfy the compiler
-    printf("Exhausted maxColCount, you need to resize that parameter for correct execution\n");
-    return -2*(maxColCount); // Impossible value, sentinel
+    // Satisfy the compiler that the function returns with impossible sentinel value in case it actually isn't impossible
+    return -2*(maxColCount);
 }
-
 
 __global__ void countCells(int *localCellCounts, const int *connectivity, const int *offset, const int *vertexMap, const int cellNumber, const int dimension) {
     /* Divide the job by cells */
@@ -149,7 +127,7 @@ __global__ void countCells(int *localCellCounts, const int *connectivity, const 
 
     /* Divide the job by clusters */
     // int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    
+
     // for (int cid = 0; cid < cellNumber; ++cid) {
     //     int cellId = offset[cid];
     //     int clusterId = vertexMap[connectivity[cellId]];
@@ -202,14 +180,14 @@ __global__ void countExternalCells(int *externalCellOffsets, const int *connecti
 
 
 /**
- * Build the edge list. 
+ * Build the edge list.
  * NOTE: NOT USED due to poor performance.
 */
 __global__ void buildEdges(int *edgeList, int *edgeCounts,
-                            const int *vertexMap, const int *cellIntervals, 
-                            const int *vertexIntervals, const int *edgeIntervals, 
-                            const int *externalCells, const int *externalCellOffsets, 
-                            const int *connectivity, const int *offsets, 
+                            const int *vertexMap, const int *cellIntervals,
+                            const int *vertexIntervals, const int *edgeIntervals,
+                            const int *externalCells, const int *externalCellOffsets,
+                            const int *connectivity, const int *offsets,
                             const int clusterNumber, const int cellNumber, const int dimension) {
 
     int tid = blockIdx.x * blockDim.x + threadIdx.x + 1;
@@ -288,11 +266,11 @@ __global__ void computeVertexCells(int *vertexCellSize, const int *connectivity,
  * Compute the boundary edge list
 */
 __global__ void computeBoundaryEdges(int *edgeList, int *triangleList,
-            bool *boundaryEdges, bool *boundaryTriangles, 
+            bool *boundaryEdges, bool *boundaryTriangles,
             const int baseCluster, const int clusterNumber,
             const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *edgeIntervals, const int *triangleIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple threads compute one cluster
@@ -370,12 +348,12 @@ __global__ void computeBoundaryEdges(int *edgeList, int *triangleList,
 /**
  * Compute the boundary triangle list.
 */
-__global__ void computeBoundaryTriangles(int *triangleList, int *triangleStarMatrix, 
+__global__ void computeBoundaryTriangles(int *triangleList, int *triangleStarMatrix,
             int *triangleStarSizes, bool *boundaryTriangles,
             const int baseCluster, const int clusterNumber,
-            const int *connectivity, const int *offsets, 
+            const int *connectivity, const int *offsets,
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple threads compute one cluster
@@ -475,18 +453,18 @@ __global__ void computeBoundaryVertices(int *triangleList, bool *boundaryTriangl
             const int baseCluster, const int clusterNumber,
             const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple block threads compute one cluster
     int tid = (blockIdx.x * blockDim.x + threadIdx.x) / numThreadsPerCluster + baseCluster;
     if (tid >= clusterNumber) return;
-    
+
     // determine the range of vertices
     int baseVertexId = vertexIntervals[baseCluster - 1];
     int startVertexId = vertexIntervals[tid-1];
     int endVertexId = vertexIntervals[tid];
-    
+
     int clusterStartCellId = externalCellOffsets[tid-1];
     int clusterEndCellId = externalCellOffsets[tid];
     int cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
@@ -546,11 +524,11 @@ __global__ void computeBoundaryVertices(int *triangleList, bool *boundaryTriangl
  * Compute the edge triangle relation.
 */
 __global__ void computeEdgeTriangles(int *edgeList, int *triangleList,
-            int *edgeTriangleMatrix, int *edgeTriangleSizes, 
+            int *edgeTriangleMatrix, int *edgeTriangleSizes,
             const int baseCluster, const int clusterNumber,
             const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *edgeIntervals, const int *triangleIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple threads compute one cluster
@@ -648,11 +626,11 @@ __global__ void computeEdgeTriangles(int *edgeList, int *triangleList,
 /**
  * Compute the edge tetrahedron relation.
 */
-__global__ void computeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeStarSizes, 
+__global__ void computeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeStarSizes,
             const int baseCluster, const int clusterNumber,
-            const int *connectivity, const int *offsets, 
+            const int *connectivity, const int *offsets,
             const int *vertexIntervals, const int *edgeIntervals, const int *cellIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple threads compute one cluster
@@ -730,11 +708,11 @@ __global__ void computeEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeSt
 /**
  * Compute the triangle tetrahedron relation.
 */
-__global__ void computeTriangleStars(int *triangleList, int *triangleStarMatrix, int *triangleStarSizes, 
+__global__ void computeTriangleStars(int *triangleList, int *triangleStarMatrix, int *triangleStarSizes,
             const int baseCluster, const int clusterNumber,
-            const int *connectivity, const int *offsets, 
+            const int *connectivity, const int *offsets,
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple threads compute one cluster
@@ -818,11 +796,11 @@ __global__ void computeTriangleStars(int *triangleList, int *triangleStarMatrix,
 /**
  * Compute the vertex edge relation.
 */
-__global__ void computeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int *vertexEdgeSizes, 
+__global__ void computeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int *vertexEdgeSizes,
             const int baseCluster, const int clusterNumber,
             const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *edgeIntervals, const int *cellIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // each block thread computes one cluster
@@ -831,7 +809,7 @@ __global__ void computeVertexEdges(int *edgeList, int *vertexEdgeMatrix, int *ve
     // multiple block threads compute one cluster
     int tid = (blockIdx.x * blockDim.x + threadIdx.x) / numThreadsPerCluster + baseCluster;
     if (tid >= clusterNumber) return;
-    
+
     // determine the range of vertices
     int baseVertexId = vertexIntervals[baseCluster - 1];
     int startVertexId = vertexIntervals[tid-1];
@@ -961,7 +939,7 @@ __global__ void computeVertexNeighborsWithExternals(
         vertexMap[vid - startVertexId] = vid;
     }
 
-    printf("threadIdx.x: %d, tid: %d, startVertexId: %d, endVertexId: %d\n", threadIdx.x, threadId, startVertexId, endVertexId);
+    //printf("threadIdx.x: %d, tid: %d, startVertexId: %d, endVertexId: %d\n", threadIdx.x, threadId, startVertexId, endVertexId);
 
     // determine the range of vertices
     int clusterStartCellId = cellIntervals[baseCluster - 1];
@@ -970,96 +948,50 @@ __global__ void computeVertexNeighborsWithExternals(
     int startCellId = clusterStartCellId + (threadId * cellsPerThread);
     int endCellId = (threadId == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
 
-    char In_VertexMap[] = "Internal VertexMap",
-         Ex_VertexMap[] = "External VertexMap",
-         In_I2J[] = "Internal i->j[]",
-         In_J2I[] = "Internal j->i[]",
-         Ex_I2J[] = "External i->j[]",
-         Ex_J2I[] = "External j->i[]";
-
     // loop through the internal cell list
-    //printf("Begin internal cell list\n");
     for (int cid = startCellId; cid < endCellId; ++cid) {
-        bool paranoia = false;
         int cellId = offsets[cid];
-        /*if (connectivity[cellId+0] == 7 &&
-            connectivity[cellId+1] == 1074 &&
-            connectivity[cellId+2] == 5708 &&
-            connectivity[cellId+3] == 6930) {
-            printf("thread %d works on internal cell %d\n", threadIdx.x, cellId);
-            paranoia = true;
-        }*/
         for (int vi = 0; vi < dimension; ++vi) {
-            int viId = connectivity[cellId + vi];
+            int viId = connectivity[cellId + vi],
+                localViId = findOrInsert(vertexMap, totalVertexNum, viId);
+            // Negative values can be deprecated down the road, for now they are useful for debugging and seem to carry low overhead
+            if (localViId < 0) localViId *= -1;
             for (int vj = vi+1; vj <= dimension; ++vj) {
-                int vjId = connectivity[cellId + vj];
-                if (paranoia) {
-                    printf("internal cell %d has pair i[%d]:%d j[%d]:%d -- ", cellId, vi, viId, vj, vjId);
-                }
-                /*if (viId >= startVertexId && viId < endVertexId) {*/
-                    int localViId = findOrInsertParanoid(vertexMap, totalVertexNum, viId/*, In_VertexMap*/); //viId - startVertexId;
-                    if (localViId < 0) localViId *= -1;
-                    int localVjId = findOrInsertParanoid(vertexMap, totalVertexNum, vjId/*, In_VertexMap*/);
-                    if (localVjId < 0) localVjId *= -1;
-                    if (paranoia) printf("Processed with locals i:%d j:%d\n", localViId, localVjId);
-                    int ival = findOrInsert2(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localViId, viId, localVjId, vjId, In_I2J);
-                    int jval = findOrInsert2(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localVjId, vjId, localViId, viId, In_J2I);
-                /*}
-                else {
-                    if (paranoia) printf("IGNORED\n");
-                }*/
+                int vjId = connectivity[cellId + vj],
+                    localVjId = findOrInsert(vertexMap, totalVertexNum, vjId);
+                if (localVjId < 0) localVjId *= -1;
+                // Make neighbors in vertexNeighborMatrix (reflexive)
+                int ival = findOrInsertIndirected(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localViId, viId, localVjId, vjId);
+                int jval = findOrInsertIndirected(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localVjId, vjId, localViId, viId);
             }
         }
     }
 
     // loop through the external cell list
     // reuse previous variables
-    clusterStartCellId = externalCellOffsets[baseCluster+0]; // Was -1
-    clusterEndCellId = externalCellOffsets[baseCluster+1]; // Was +0
+    clusterStartCellId = externalCellOffsets[baseCluster-1]; // Was -1, reorder=True needs +0
+    clusterEndCellId = externalCellOffsets[baseCluster+0]; // Was +0, reorder=True needs +1
     cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
     startCellId = clusterStartCellId + (threadId * cellsPerThread);
     endCellId = (threadId == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
 
-    printf("threadIdx.x: %d, tid: %d, startVertexId: %d, endVertexId: %d, startExCellIdx: %d, endExCellIdx: %d\n", threadIdx.x, threadId, startVertexId, endVertexId, startCellId, endCellId);
+    //printf("threadIdx.x: %d, tid: %d, startVertexId: %d, endVertexId: %d, startExCellIdx: %d, endExCellIdx: %d\n", threadIdx.x, threadId, startVertexId, endVertexId, startCellId, endCellId);
 
-    // DEBUG FOR SPECIAL TURNS
-    int watched_ids_6880[3] = {176, 1843, 3531},
-        watched_ids_6928[3] = {502, 503, 3531};
-
-    //printf("Begin external cell list\n");
     for (int cid = startCellId; cid < endCellId; ++cid) {
-        int cellId = offsets[externalCells[cid]];
-        // DEBUG WATCHDOG
-        bool watched = false;
-        for (int i = 0; i < 3; i++) {
-            if (cellId == watched_ids_6880[i] || cellId == watched_ids_6928[i]) {
-                watched = true;
-                break;
-            }
-        }
-        if (watched) {
-            printf("Thread %d processing watched external cell %d\n", threadIdx.x, cellId);
-        }
-        else {
-            //printf("Thread %d processing external cell %d\n", threadIdx.x, cellId);
-        }
+        int global_cellId = externalCells[cid],
+            cellId = offsets[global_cellId];
         for (int vi = 0; vi < dimension; ++vi) {
-            int viId = connectivity[cellId + vi];
+            int viId = connectivity[cellId + vi],
+                localViId = findOrInsert(vertexMap, totalVertexNum, viId);
+            // Negative values can be deprecated as denoted above for internal list
+            if (localViId < 0) localViId *= -1;
             for (int vj = vi + 1; vj <= dimension; ++vj) {
-                int vjId = connectivity[cellId + vj];
-                //if (vjId >= startVertexId && vjId < endVertexId) {
-                    int localViId = findOrInsertParanoid(vertexMap, totalVertexNum, viId, Ex_VertexMap);
-                    if (localViId < 0) localViId *= -1;
-                    //int localVjId = vjId - startVertexId; OLD
-                    int localVjId = findOrInsertParanoid(vertexMap, totalVertexNum, vjId, Ex_VertexMap);
-                    if (localVjId < 0) localVjId *= -1;
-                    int ival = findOrInsert2(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localVjId, vjId, localViId, viId, Ex_I2J);
-                    int jval = findOrInsert2(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localViId, viId, localVjId, vjId, Ex_J2I);
-                    /*
-                    printf("Block %d Thread %02d considers cell %5d [i=%5d, j=%5d] -- i->j[] insert returns %2d, j->i[] insert returns %2d\n",
-                            blockIdx.x, threadIdx.x, cellId, viId, vjId, ival, jval);
-                    */
-                //}
+                int vjId = connectivity[cellId + vj],
+                    localVjId = findOrInsert(vertexMap, totalVertexNum, vjId);
+                if (localVjId < 0) localVjId *= -1;
+                // Make neighbors in vertexNeighborMatrix (reflexive)
+                int ival = findOrInsertIndirected(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localVjId, vjId, localViId, viId);
+                int jval = findOrInsertIndirected(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localViId, viId, localVjId, vjId);
             }
         }
     }
@@ -1068,14 +1000,14 @@ __global__ void computeVertexNeighborsWithExternals(
 /**
  * Compute the vertex neighbor relation.
 */
-__global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNeighborSizes, 
+__global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNeighborSizes,
             const int baseCluster, const int clusterNumber,
-            const int *connectivity, const int *offsets, 
-            const int *vertexIntervals, const int *cellIntervals, 
+            const int *connectivity, const int *offsets,
+            const int *vertexIntervals, const int *cellIntervals,
             const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster,
             const int sfcp_ColumnNum) {
-    
+
     // multiple threads compute one cluster
     int tid = (blockIdx.x * blockDim.x + threadIdx.x) / numThreadsPerCluster + baseCluster;
     // printf("Thread %d, Block %d: tid=%d, clusterNumber=%d\n", threadIdx.x, blockIdx.x, tid, clusterNumber);
@@ -1097,7 +1029,7 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
     int cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
     int startCellId = clusterStartCellId + (threadIdx.x % numThreadsPerCluster) * cellsPerThread;
     int endCellId = (threadIdx.x % numThreadsPerCluster == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
-    
+
     // loop through the internal cell list
     for (int cid = startCellId; cid < endCellId; ++cid) {
         int cellId = offsets[cid];
@@ -1154,9 +1086,9 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
             }
         }
     }
-    
+
     // loop through the external cell list
-    // reuse previous variables 
+    // reuse previous variables
     clusterStartCellId = externalCellOffsets[tid - 1];
     clusterEndCellId = externalCellOffsets[tid];
     cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
@@ -1225,9 +1157,9 @@ __global__ void computeVertexNeighbors(int *vertexNeighborMatrix, int *vertexNei
 */
 __global__ void computeVertexStars(int *vertexStarMatrix, int *vertexStarSizes, 
             const int baseCluster, const int clusterNumber,
-            const int *connectivity, const int *offsets, 
-            const int *vertexIntervals, const int *cellIntervals, 
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *connectivity, const int *offsets,
+            const int *vertexIntervals, const int *cellIntervals,
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple threads compute one cluster
@@ -1300,11 +1232,11 @@ __global__ void computeVertexStars(int *vertexStarMatrix, int *vertexStarSizes,
 /**
  * Compute the vertex triangle relation.
 */
-__global__ void computeVertexTriangles(int *triangleList, int *vertexTriangleMatrix, int *vertexTriangleSizes, 
+__global__ void computeVertexTriangles(int *triangleList, int *vertexTriangleMatrix, int *vertexTriangleSizes,
             const int baseCluster, const int clusterNumber,
             const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // each block thread computes one cluster
@@ -1313,12 +1245,12 @@ __global__ void computeVertexTriangles(int *triangleList, int *vertexTriangleMat
     // multiple block threads compute one cluster
     int tid = (blockIdx.x * blockDim.x + threadIdx.x) / numThreadsPerCluster + baseCluster;
     if (tid >= clusterNumber) return;
-    
+
     // determine the range of vertices
     int baseVertexId = vertexIntervals[baseCluster - 1];
     int startVertexId = vertexIntervals[tid-1];
     int endVertexId = vertexIntervals[tid];
-    
+
     int clusterStartCellId = externalCellOffsets[tid-1];
     int clusterEndCellId = externalCellOffsets[tid];
     int cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
@@ -1445,11 +1377,11 @@ __global__ void computeVertexTriangles(int *triangleList, int *vertexTriangleMat
  * Compute boundary edge list.
 */
 __global__ void computeMultiBoundaryEdges(int *edgeList, int *triangleList,
-            bool *boundaryTriangles, int *boundaryEdges, 
+            bool *boundaryTriangles, int *boundaryEdges,
             const int clusterNumber, const int *baseClusters, const int *edgeOffsets,
             const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *edgeIntervals, const int *triangleIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple threads compute one cluster
@@ -1533,7 +1465,7 @@ __global__ void computeMultiBoundaryVertices(int *triangleList, bool *boundaryTr
             const int clusterNumber, const int *baseClusters, const int *vertexOffsets,
             const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple block threads compute one cluster
@@ -1541,12 +1473,12 @@ __global__ void computeMultiBoundaryVertices(int *triangleList, bool *boundaryTr
     int vertexOffset = vertexOffsets[blockIdx.x];
     int tid = (blockIdx.y * blockDim.x + threadIdx.x) / numThreadsPerCluster + baseCluster;
     if (tid >= clusterNumber) return;
-    
+
     // determine the range of vertices
     int baseVertexId = vertexIntervals[baseCluster - 1];
     int startVertexId = vertexIntervals[tid-1];
     int endVertexId = vertexIntervals[tid];
-    
+
     int clusterStartCellId = externalCellOffsets[tid-1];
     int clusterEndCellId = externalCellOffsets[tid];
     int cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
@@ -1605,11 +1537,11 @@ __global__ void computeMultiBoundaryVertices(int *triangleList, bool *boundaryTr
 /**
  * Compute the edge tetrahedron relation.
 */
-__global__ void computeMultiEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeStarSizes, 
+__global__ void computeMultiEdgeStars(int *edgeList, int *edgeStarMatrix, int *edgeStarSizes,
             const int clusterNumber, const int *baseClusters, const int *edgeOffsets,
-            const int *connectivity, const int *offsets, 
+            const int *connectivity, const int *offsets,
             const int *vertexIntervals, const int *edgeIntervals, const int *cellIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple threads compute one cluster
@@ -1690,11 +1622,11 @@ __global__ void computeMultiEdgeStars(int *edgeList, int *edgeStarMatrix, int *e
  * Compute the edge triangle relation.
 */
 __global__ void computeMultiEdgeTriangles(int *edgeList, int *triangleList,
-            int *edgeTriangleMatrix, int *edgeTriangleSizes, 
+            int *edgeTriangleMatrix, int *edgeTriangleSizes,
             const int clusterNumber, const int *baseClusters, const int *edgeOffsets,
             const int *connectivity, const int *offsets, const int *indexArray, 
             const int *vertexIntervals, const int *edgeIntervals, const int *triangleIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple threads compute one cluster
@@ -1794,11 +1726,11 @@ __global__ void computeMultiEdgeTriangles(int *edgeList, int *triangleList,
 /**
  * Compute the triangle tetrahedron relation.
 */
-__global__ void computeMultiTriangleStars(int *triangleList, int *triangleStarMatrix, int *triangleStarSizes, 
+__global__ void computeMultiTriangleStars(int *triangleList, int *triangleStarMatrix, int *triangleStarSizes,
             const int clusterNumber, const int *baseClusters, const int *triangleOffsets,
-            const int *connectivity, const int *offsets, 
+            const int *connectivity, const int *offsets,
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple threads compute one cluster
@@ -1884,12 +1816,12 @@ __global__ void computeMultiTriangleStars(int *triangleList, int *triangleStarMa
 /**
  * Compute the vertex edge relation.
 */
-__global__ void computeMultiVertexEdges(int *edgeList, int *vertexEdgeMatrix, 
-            int *vertexEdgeSizes, const int clusterNumber, 
+__global__ void computeMultiVertexEdges(int *edgeList, int *vertexEdgeMatrix,
+            int *vertexEdgeSizes, const int clusterNumber,
             const int *baseClusters, const int *vertexOffsets,
-            const int *connectivity, const int *offsets, const int *indexArray, 
+            const int *connectivity, const int *offsets, const int *indexArray,
             const int *vertexIntervals, const int *edgeIntervals, const int *cellIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple block threads compute one cluster
@@ -1897,7 +1829,7 @@ __global__ void computeMultiVertexEdges(int *edgeList, int *vertexEdgeMatrix,
     int vertexOffset = vertexOffsets[blockIdx.x];
     int tid = (blockIdx.y * blockDim.x + threadIdx.x) / numThreadsPerCluster + baseCluster;
     if (tid >= clusterNumber) return;
-    
+
     // determine the range of vertices
     int baseVertexId = vertexIntervals[baseCluster - 1];
     int startVertexId = vertexIntervals[tid-1];
@@ -1947,7 +1879,7 @@ __global__ void computeMultiVertexEdges(int *edgeList, int *vertexEdgeMatrix,
             }
         }
     }
-    
+
     // reuse the variables (cell refers to edge here)
     clusterStartCellId = edgeIntervals[tid-1];
     clusterEndCellId = edgeIntervals[tid];
@@ -1982,12 +1914,12 @@ __global__ void computeMultiVertexEdges(int *edgeList, int *vertexEdgeMatrix,
 /**
  * Compute the vertex triangle relation.
 */
-__global__ void computeMultiVertexTriangles(int *triangleList, int *vertexTriangleMatrix, 
-            int *vertexTriangleSizes, const int clusterNumber, 
+__global__ void computeMultiVertexTriangles(int *triangleList, int *vertexTriangleMatrix,
+            int *vertexTriangleSizes, const int clusterNumber,
             const int *baseClusters, const int *vertexOffsets,
-            const int *connectivity, const int *offsets, const int *indexArray, 
+            const int *connectivity, const int *offsets, const int *indexArray,
             const int *vertexIntervals, const int *triangleIntervals, const int *cellIntervals,
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
 
     // multiple block threads compute one cluster
@@ -1995,12 +1927,12 @@ __global__ void computeMultiVertexTriangles(int *triangleList, int *vertexTriang
     int vertexOffset = vertexOffsets[blockIdx.x];
     int tid = (blockIdx.y * blockDim.x + threadIdx.x) / numThreadsPerCluster + baseCluster;
     if (tid >= clusterNumber) return;
-    
+
     // determine the range of vertices
     int baseVertexId = vertexIntervals[baseCluster - 1];
     int startVertexId = vertexIntervals[tid-1];
     int endVertexId = vertexIntervals[tid];
-    
+
     int clusterStartCellId = externalCellOffsets[tid-1];
     int clusterEndCellId = externalCellOffsets[tid];
     int cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
@@ -2109,11 +2041,11 @@ __global__ void computeMultiVertexTriangles(int *triangleList, int *vertexTriang
 /**
  * Compute the vertex neighbor relation.
 */
-__global__ void computeMultiVertexNeighbors(int *vertexNeighborMatrix, int *vertexNeighborSizes, 
+__global__ void computeMultiVertexNeighbors(int *vertexNeighborMatrix, int *vertexNeighborSizes,
             const int clusterNumber, const int *baseClusters, const int *vertexOffsets,
-            const int *connectivity, const int *offsets, 
-            const int *vertexIntervals, const int *cellIntervals, 
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *connectivity, const int *offsets,
+            const int *vertexIntervals, const int *cellIntervals,
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
     // multiple threads compute one cluster
     int baseCluster = baseClusters[blockIdx.x];
@@ -2256,11 +2188,11 @@ __global__ void computeMultiVertexNeighbors(int *vertexNeighborMatrix, int *vert
 /**
  * Compute the vertex tetrahedron relation.
 */
-__global__ void computeMultiVertexStars(int *vertexStarMatrix, int *vertexStarSizes, 
+__global__ void computeMultiVertexStars(int *vertexStarMatrix, int *vertexStarSizes,
             const int clusterNumber, const int *baseClusters, const int *vertexOffsets,
-            const int *connectivity, const int *offsets, 
-            const int *vertexIntervals, const int *cellIntervals, 
-            const int *externalCells, const int *externalCellOffsets, 
+            const int *connectivity, const int *offsets,
+            const int *vertexIntervals, const int *cellIntervals,
+            const int *externalCells, const int *externalCellOffsets,
             const int dimension, const int numThreadsPerCluster) {
     // each block thread computes one cluster
     int baseCluster = baseClusters[blockIdx.x];

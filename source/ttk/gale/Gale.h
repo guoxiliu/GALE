@@ -392,6 +392,9 @@ class Gale final : public AbstractTriangulation {
         inline int * getHExternalCells() {
                 return hExternalCells_;
         }
+        inline int * getHExternalCellOffsets() {
+                return hExternalCellOffsets_;
+        }
         // End publicized internals
         // Additional functions
         void setPartitionAttributes(vtkDataArray *dataArray, vtkIdType nPoints);
@@ -1345,10 +1348,6 @@ class Gale final : public AbstractTriangulation {
             return allClusters_[segId].boundaryVertices_.at(localVertexId);
         }
 
-        /* Compute the interval array for vertices */
-        // THIS WAS PRIVATE, I'M MAKING IT PUBLIC
-        void computeVertexIntervals();
-
     private:
 
         /* Build the internal edge list in the cluster. */
@@ -1356,6 +1355,9 @@ class Gale final : public AbstractTriangulation {
 
         /* Build the internal triangle list in the cluster. */
         int buildInternalTriangleList(const SimplexId &clusterId, std::vector<std::vector<std::array<SimplexId, 3>>> &clusterTriangles);
+
+        /* Compute the interval array for vertices */
+        void computeVertexIntervals();
 
         /* Compute the interval array for cells */
         void computeCellIntervals();
