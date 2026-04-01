@@ -15,6 +15,7 @@
 #include <vector>
 #include <vtkPointData.h>
 //#include <MemoryUsage.h>
+#include <pthread.h>
 
 #include "ttkUtils.h"
 
@@ -46,6 +47,8 @@ typedef struct {
     int blockNumber = 1,
         blockSize = 128,
         threadNumber = 1,
+        SFCP_threads = -1,
+        SFCP_GPUs = -1,
         numThreadsPerCluster = 32,
         specific_partition = -1,
         SFCP_ColumnNum = 80;
@@ -63,7 +66,7 @@ int parse(cli_args *args, int argc, char **argv) {
 
     int c;
 
-    while ((c = getopt(argc, argv, "i:a:p:b:c:s:t:v:f:")) != -1) {
+    while ((c = getopt(argc, argv, "i:a:p:b:c:s:t:v:f:u:g:")) != -1) {
         switch (c) {
             case 'i':
                 args->fileName = optarg;
@@ -92,7 +95,19 @@ int parse(cli_args *args, int argc, char **argv) {
             case 'f':
                 args->specific_partition = atoi(optarg);
                 break;
+            case 'u':
+                args->SFCP_threads = atoi(optarg);
+                break;
+            case 'g':
+                args->SFCP_GPUs = atoi(optarg);
+                break;
         }
+    }
+    if (args->SFCP_threads < 1) {
+        args->SFCP_threads = std::thread::hardware_concurrency();
+    }
+    if (args->SFCP_GPUs < 1) {
+        CUDA_WARN(cudaGetDeviceCount(&args->SFCP_GPUs));
     }
     std::cout << "CMDLINE ARGS:" << std::endl
               << "Parsing vtu file (-i): " << args->fileName << std::endl
@@ -103,7 +118,9 @@ int parse(cli_args *args, int argc, char **argv) {
               << "Block Size (-s): " << args->blockSize << std::endl
               << "CPU threads (-t): " << args->threadNumber << std::endl
               << "SFCP Column Num (-v): " << args->SFCP_ColumnNum << std::endl
-              << "Target Partition (-f): " << args->specific_partition << std::endl;
+              << "Target Partition (-f): " << args->specific_partition << std::endl
+              << "SFCP CPU threads (-u): " << args->SFCP_threads << std::endl
+              << "SFCP GPUs (-g): " << args->SFCP_GPUs << std::endl;
     return 0;
 }
 
@@ -114,31 +131,47 @@ typedef struct {
         numRegular = 0,
         numVoid    = 0;
 } sfcp_classification_counter;
+/* Global memory for threads to utilize */
+ttk::Gale                   * global_gale = NULL;
+vtkDataArray                * global_inputArray = NULL;
+cli_args                    * global_args = NULL;
+sfcp_classification_counter * global_classifications = NULL;
 
 // Parallelizable worker function
-void classify_partition(int initial_partition_id, int n_parallel,
-                        sfcp_classification_counter *partitionCount,
-                        ttk::Gale *gale, vtkDataArray *inputArray, cli_args *args) {
+void * classify_partition(void * fn_args) {
+    // Argument retrieval
+    const int thread_id = *((int *)fn_args);
+    vtkDataArray *inputArray = global_inputArray;
+    cli_args *args = global_args;
+    sfcp_classification_counter * partitionCount = &global_classifications[thread_id-1];
+    ttk::Gale *gale = global_gale;
+    const int nCells = static_cast<int>(gale->getNumberOfCells()),
+              nPoints = static_cast<int>(gale->getNumberOfVertices()),
+              nPartitions = gale->getNumberOfClusters();
+    const int partition_burden = (nPartitions / args->SFCP_threads),
+              previous_burden = 1 + (thread_id-1 < nPartitions % args->SFCP_threads ? thread_id-1 : nPartitions % args->SFCP_threads),
+              bonus_burden = (thread_id-1 < nPartitions % args->SFCP_threads),
+              initial_partition_id = previous_burden + ((thread_id-1) * partition_burden),
+              final_partition_id = (initial_partition_id + partition_burden + bonus_burden > nPartitions) ? nPartitions : initial_partition_id + partition_burden + bonus_burden;
 
     ttk::Timer compat_timer;
     // GPU Identity and Stream setup
-    int actual_gpus, gpu_id;
-    CUDA_WARN(cudaGetDeviceCount(&actual_gpus));
-    gpu_id = (initial_partition_id % actual_gpus); // Stub for multi-GPU capability
+    int gpu_id = (thread_id % args->SFCP_GPUs);
+    std::cout << "[CPU " << thread_id << "] Classify partitions "
+              << initial_partition_id << " - " << final_partition_id
+              << " on GPU " << gpu_id << std::endl;
     cudaSetDevice(gpu_id);
     // TODO: Allow use of different GPUs (requires GALE structures to be copied x-GPU if not resident on same GPU as GALE)
     cudaStream_t thread_stream;
     CUDA_WARN(cudaStreamCreate(&thread_stream));
 
     // One-time allocations and pointers for global mesh use
-    const int nCells = static_cast<int>(gale->getNumberOfCells()),
-              nPoints = static_cast<int>(gale->getNumberOfVertices()),
-              nPartitions = gale->getNumberOfClusters();
     int * HVertexIntervals     = gale->getHVertexIntervals(),
         * HCellIntervals       = gale->getHCellIntervals(),
         * HExternalCells       = gale->getHExternalCells(),
         * HExternalCellOffsets = gale->getHExternalCellOffsets(),
         clusterNum             = gale->getNumberOfClusters(),
+        // THESE GALE STRUCTURES HAVE TO SUPPORT MULTI-GPU
         * dConnectivity        = gale->getDConnectivity(),
         * dOffsets             = gale->getDOffsets(),
         * dVertexIntervals     = gale->getDVertexIntervals(),
@@ -186,24 +219,25 @@ void classify_partition(int initial_partition_id, int n_parallel,
 
 
 
-    for (int FORCE_PARTITION = initial_partition_id; FORCE_PARTITION < nPartitions; FORCE_PARTITION += n_parallel)
-    //for (int FORCE_PARTITION = 1; FORCE_PARTITION < 3; FORCE_PARTITION++)
+    for (int FORCE_PARTITION = initial_partition_id;
+             FORCE_PARTITION < nPartitions && FORCE_PARTITION < final_partition_id;
+             FORCE_PARTITION += 1) // TODO: Convert increment to args->SFCP_threads when ready for bulk VV
     {
         if (args->specific_partition >= 0) FORCE_PARTITION = args->specific_partition;
-        //std::cout << "Set partition to " << FORCE_PARTITION << std::endl;
 
         int n_in_partition = HVertexIntervals[FORCE_PARTITION] - HVertexIntervals[FORCE_PARTITION-1],
             internal_partition_cells = HCellIntervals[FORCE_PARTITION] - HCellIntervals[FORCE_PARTITION-1],
             external_partition_cells = HExternalCellOffsets[FORCE_PARTITION] - HExternalCellOffsets[FORCE_PARTITION-1],
             vertexCount = n_in_partition + 3 * (internal_partition_cells + external_partition_cells);
+        if (n_in_partition == 0) continue;
         /*
-        std::cout << "Found " << n_in_partition << " points in partition "
-                  << FORCE_PARTITION << " with at most " << vertexCount
+        std::cout << "[CPU " << thread_id << "] Found " << n_in_partition
+                  << " points in partition " << FORCE_PARTITION
+                  << " with at most " << vertexCount
                   << " vertices (" << internal_partition_cells
                   << " internal and " << external_partition_cells
                   << " external)" << std::endl;
         */
-
         // Per-partition allocations can persist between loops unless they need to grow
 
         size_t vertices_size = vertexCount * sizeof(int),
@@ -237,20 +271,23 @@ void classify_partition(int initial_partition_id, int n_parallel,
         //std::cout << "Start cVNWE() kernel" << std::endl;
         computeVertexNeighborsWithExternals<<<args->blockNumber, args->blockSize, 0, thread_stream>>>(
                 dDataArray, dSizeArray, dVertexMap, dTotalVertexNum,
-                FORCE_PARTITION,
-                clusterNum, dConnectivity, dOffsets, dVertexIntervals,
+                FORCE_PARTITION, // target partition
+                /* n_partitions_to_compute, */
+                clusterNum, // total number of partitions
+                dConnectivity, dOffsets, dVertexIntervals,
                 dCellIntervals, dExternalCells, dExternalCellOffsets, 3,
                 args->SFCP_ColumnNum
                 );
         cudaError_t code = cudaGetLastError();
         if (code != cudaSuccess) {
-            std::cerr << "VV kernel launch failed (" << code << ") "
+            std::cerr << "[CPU " << thread_id
+                      << "] VV kernel launch failed (" << code << ") "
                       << cudaGetErrorString(code) << std::endl;
         }
 
         // No need to pull back to CPU, just synchronize with the device for timing purposes
         CUDA_WARN(cudaStreamSynchronize(thread_stream));
-        std::cout << "[TIMER] GALE VV: " << compat_timer.getElapsedTime()
+        std::cout << "[TIMER] GALE VV: [CPU " << thread_id << "] " << compat_timer.getElapsedTime()
                   << std::endl;
         compat_timer.reStart();
 
@@ -258,8 +295,11 @@ void classify_partition(int initial_partition_id, int n_parallel,
         size_t vvi_size = sizeof(vtkIdType) * vertexCount,
                partition_size = sizeof(int) * vertexCount;
         if (vertexCount > used_vertexCount) {
-            std::cout << "(Re)alloc vvi, partitions for " << vertexCount
+            /*
+            std::cout << "[CPU " << thread_id
+                      << " ] (Re)alloc vvi, partitions for " << vertexCount
                       << " vertices" << std::endl;
+            */
             if (host_vvi != nullptr) {
                 delete host_vvi;
                 CHECK(cudaFree(devi_vvi));
@@ -301,7 +341,8 @@ void classify_partition(int initial_partition_id, int n_parallel,
             #if CONSTRAIN_BLOCK
             if (vid == search_point) {
                 force_point = nth_point;
-                std::cout << "Targeting global id " << search_point
+                std::cout << "[CPU " << thread_id
+                          << "] Targeting global id " << search_point
                           << " as block " << nth_point << std::endl;
             }
             #endif
@@ -309,7 +350,8 @@ void classify_partition(int initial_partition_id, int n_parallel,
         }
         #if CONSTRAIN_BLOCK
         if (force_point < 0) {
-            std::cout << "Requested global id " << search_point
+            std::cout << "[CPU " << thread_id
+                      << "] Requested global id " << search_point
                       << " not found in partition, using point 0 for safety"
                       << std::endl;
             force_point = 0;
@@ -322,12 +364,12 @@ void classify_partition(int initial_partition_id, int n_parallel,
         CUDA_WARN(cudaMemcpyAsync(device_scalar_values, vertexAttributes, scalars_size, cudaMemcpyHostToDevice, thread_stream));
 
 
-        std::cout << "[TIMER] GALE SFCP preparation: " << compat_timer.getElapsedTime() << std::endl;
+        std::cout << "[TIMER] GALE SFCP preparation [CPU "
+                  << thread_id << "]: "
+                  << compat_timer.getElapsedTime() << std::endl;
         compat_timer.reStart();
 
-        // Critical Points
-        // Set kernel launch parameters here
-        // Parallelized VV on second-dimension (number of adjacenies to each vertex)
+        // SFCP kernel
         dim3 grid_size = vertexCount,
              thread_block_size = args->SFCP_ColumnNum;
         #if CONSTRAIN_BLOCK
@@ -348,7 +390,8 @@ void classify_partition(int initial_partition_id, int n_parallel,
         //dsv_check<<<1,1>>>(device_scalar_values);
         CUDA_WARN(cudaStreamSynchronize(thread_stream)); // Make algorithm timing accurate
         // Results are retrieved from GPU
-        std::cout << "[ScalarFieldCriticalPoints] Time usage for computation: "
+        std::cout << "[ScalarFieldCriticalPoints] Time usage for computation [CPU "
+                  << thread_id << "]: "
                   << compat_timer.getElapsedTime() << " s." << std::endl;
         /*
         MemoryUsage m;
@@ -357,7 +400,8 @@ void classify_partition(int initial_partition_id, int n_parallel,
         */
         compat_timer.reStart();
         CUDA_WARN(cudaMemcpyAsync(host_CPC, device_CPC, classes_size, cudaMemcpyDeviceToHost, thread_stream));
-        std::cout << "[TIMER] Retrieve results from GPU: "
+        std::cout << "[TIMER] Retrieve results from GPU [CPU "
+                  << thread_id << "]: "
                   << compat_timer.getElapsedTime() << std::endl;
         compat_timer.reStart();
 
@@ -377,12 +421,28 @@ void classify_partition(int initial_partition_id, int n_parallel,
                 partitionCount->numVoid++; // You don't want this to ever trip!
             }
         }
-        std::cout << "[ScalarFieldCriticalPoints] Partition " << FORCE_PARTITION << " Number of minimum points: " << partitionCount->numMinimum << std::endl;
-        std::cout << "[ScalarFieldCriticalPoints] Partition " << FORCE_PARTITION << " Number of maximum points: " << partitionCount->numMaximum << std::endl;
-        std::cout << "[ScalarFieldCriticalPoints] Partition " << FORCE_PARTITION << " Number of saddle points: " << partitionCount->numSaddles << std::endl;
-        std::cout << "[ScalarFieldCriticalPoints] Partition " << FORCE_PARTITION << " Number of regular points: " << partitionCount->numRegular << std::endl;
-        std::cout << "[ScalarFieldCriticalPoints] Partition " << FORCE_PARTITION << " Number of void points: " << partitionCount->numVoid << std::endl;
-        std::cout << "[TIMER] Tabulate partition results: "
+        std::cout << "[ScalarFieldCriticalPoints] [CPU " << thread_id
+                  << "] Partition " << FORCE_PARTITION
+                  << " Number of minimum points: "
+                  << partitionCount->numMinimum << std::endl
+                  << "[ScalarFieldCriticalPoints] [CPU " << thread_id
+                  << "] Partition " << FORCE_PARTITION
+                  << " Number of maximum points: "
+                  << partitionCount->numMaximum << std::endl
+                  << "[ScalarFieldCriticalPoints] [CPU " << thread_id
+                  << "] Partition " << FORCE_PARTITION
+                  << " Number of saddle points: "
+                  << partitionCount->numSaddles << std::endl
+                  << "[ScalarFieldCriticalPoints] [CPU " << thread_id
+                  << "] Partition " << FORCE_PARTITION
+                  << " Number of regular points: "
+                  << partitionCount->numRegular << std::endl
+                  << "[ScalarFieldCriticalPoints] [CPU " << thread_id
+                  << "] Partition " << FORCE_PARTITION
+                  << " Number of void points: "
+                  << partitionCount->numVoid << std::endl
+                  << "[TIMER] Tabulate partition results [CPU "
+                  << thread_id << "]: "
                   << compat_timer.getElapsedTime() << std::endl;
         compat_timer.reStart();
 
@@ -442,16 +502,27 @@ int main(int argc, char *argv[])
 
     sfcp_classification_counter MeshClassifications;
     int clusterNum = gale.getNumberOfClusters(),
-        n_parallel = 1;
-    // TODO: Perform CPU-level parallelization here
+        n_parallel = args.SFCP_threads,
+        pids[args.SFCP_threads];
+    // Set up global memory for threads to utilize
+    global_gale = &gale;
+    global_inputArray = inputArray;
+    global_args = &args;
+    global_classifications = new sfcp_classification_counter[args.SFCP_threads]();
+
+    pthread_t threads[args.SFCP_threads];
     for (int i = 1; i < n_parallel+1; i++) {
-        sfcp_classification_counter partitionCount;
-        classify_partition(i, n_parallel, &partitionCount, &gale, inputArray, &args);
-        MeshClassifications.numMinimum += partitionCount.numMinimum;
-        MeshClassifications.numMaximum += partitionCount.numMaximum;
-        MeshClassifications.numSaddles += partitionCount.numSaddles;
-        MeshClassifications.numRegular += partitionCount.numRegular;
-        MeshClassifications.numVoid += partitionCount.numVoid;
+        pids[i-1] = i;
+        pthread_create(&threads[i-1], NULL, classify_partition, (void*)&pids[i-1]);
+    }
+    for (int i = 1; i < n_parallel+1; i++) {
+        pthread_join(threads[i-1], NULL);
+        sfcp_classification_counter *pc_pointer = &global_classifications[i-1];
+        MeshClassifications.numMinimum += pc_pointer->numMinimum;
+        MeshClassifications.numMaximum += pc_pointer->numMaximum;
+        MeshClassifications.numSaddles += pc_pointer->numSaddles;
+        MeshClassifications.numRegular += pc_pointer->numRegular;
+        MeshClassifications.numVoid    += pc_pointer->numVoid;
     }
 
     std::cout << "[ScalarFieldCriticalPoints] Number of minimum points: " << MeshClassifications.numMinimum << std::endl;
