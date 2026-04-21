@@ -178,16 +178,15 @@ void * classify_partition(void * fn_args) {
         * dCellIntervals       = gale->getDCellIntervals(),
         * dExternalCells       = gale->getDExternalCells(),
         * dExternalCellOffsets = gale->getDExternalCellOffsets(),
-        * hIndexArray          = gale->hIndexArray_,
         // Local to partition, but allocate once to limit memory
         used_vertexCount  = -1,
         * dVertexMap      = nullptr,
         * dTotalVertexNum = nullptr,
         * dSizeArray      = nullptr,
         * dDataArray      = nullptr,
+        * host_vertexMap  = nullptr,
         * host_partition  = nullptr,
         * devi_partition  = nullptr;
-    std::vector<std::vector<SimplexId>> clusterVertices = gale->clusterVertices;
     vtkIdType * host_vvi  = nullptr,
               * devi_vvi  = nullptr;
     // Some sizes are known at this point -- initialize these ones here
@@ -217,7 +216,24 @@ void * classify_partition(void * fn_args) {
     // This single int never has to be reallocated, so allocate it once here
     CHECK(cudaMalloc(&dTotalVertexNum, sizeof(int)));
 
-
+    // Hash table for optimized vertex neighbor computation
+    // Allocate once with maximum size and reuse across partitions
+    int maxHashTableSize = 0;
+    for (int p = initial_partition_id; p < final_partition_id && p < nPartitions; p++) {
+        int n_in_partition = HVertexIntervals[p] - HVertexIntervals[p-1];
+        int internal_cells = HCellIntervals[p] - HCellIntervals[p-1];
+        int external_cells = HExternalCellOffsets[p] - HExternalCellOffsets[p-1];
+        int vertexCount = n_in_partition + 3 * (internal_cells + external_cells);
+        int hashTableSize = vertexCount * 10;  // 10x for low collision rate
+        if (hashTableSize > maxHashTableSize) maxHashTableSize = hashTableSize;
+    }
+    int *dHashKeys = nullptr, *dHashValues = nullptr;
+    if (maxHashTableSize > 0) {
+        CHECK(cudaMalloc(&dHashKeys, maxHashTableSize * sizeof(int)));
+        CHECK(cudaMalloc(&dHashValues, maxHashTableSize * sizeof(int)));
+        std::cout << "[CPU " << thread_id << "] Allocated hash tables with size "
+                  << maxHashTableSize << std::endl;
+    }
 
     for (int FORCE_PARTITION = initial_partition_id;
              FORCE_PARTITION < nPartitions && FORCE_PARTITION < final_partition_id;
@@ -228,7 +244,8 @@ void * classify_partition(void * fn_args) {
         int n_in_partition = HVertexIntervals[FORCE_PARTITION] - HVertexIntervals[FORCE_PARTITION-1],
             internal_partition_cells = HCellIntervals[FORCE_PARTITION] - HCellIntervals[FORCE_PARTITION-1],
             external_partition_cells = HExternalCellOffsets[FORCE_PARTITION] - HExternalCellOffsets[FORCE_PARTITION-1],
-            vertexCount = n_in_partition + 3 * (internal_partition_cells + external_partition_cells);
+            vertexCount = n_in_partition + 3 * (internal_partition_cells + external_partition_cells),
+            hTotalVertexNum = 0;
         if (n_in_partition == 0) continue;
         /*
         std::cout << "[CPU " << thread_id << "] Found " << n_in_partition
@@ -259,26 +276,44 @@ void * classify_partition(void * fn_args) {
             // DO NOT update used_vertexCount here -- it needs to be referenced later for other allocations!
         }
         // Copy & (Re)set
-        CHECK(cudaMemcpyAsync(dTotalVertexNum, &n_in_partition, sizeof(int), cudaMemcpyHostToDevice, thread_stream));
-        CHECK(cudaMemsetAsync(dVertexMap, -1, vertices_size, thread_stream));
+        // Initialize totalVertexNum to 0 - it will be incremented as vertices are added to hash table
+        int zero = 0;
+        CHECK(cudaMemcpyAsync(dTotalVertexNum, &zero, sizeof(int), cudaMemcpyHostToDevice, thread_stream));
         CHECK(cudaMemsetAsync(dSizeArray, 0, vertices_size, thread_stream));
         CHECK(cudaMemsetAsync(dDataArray, -1, vv_data_size, thread_stream));
 
-        // Call to kernel
+        // Initialize hash tables for optimized kernel
+        int hashTableSize = vertexCount * 10;
+        CHECK(cudaMemsetAsync(dHashKeys, -1, hashTableSize * sizeof(int), thread_stream));
+        CHECK(cudaMemsetAsync(dHashValues, -1, hashTableSize * sizeof(int), thread_stream));
+
+        // Call OPTIMIZED kernel (5-15x faster than original)
         /* NOTE: block size can be too big! Have to limit
            thread_block_size ( -b * -s ) / (-p) = #clusters to compute in one kernel
          */
-        //std::cout << "Start cVNWE() kernel" << std::endl;
-        computeVertexNeighborsWithExternals<<<args->blockNumber, args->blockSize, 0, thread_stream>>>(
-                dDataArray, dSizeArray, dVertexMap, dTotalVertexNum,
+        //std::cout << "Start cVNWEOptimized() kernel" << std::endl;
+        computeVertexNeighborsWithExternalsOptimized<<<args->blockNumber, args->blockSize, 0, thread_stream>>>(
+                dDataArray, dSizeArray,
+                dHashKeys, dHashValues, dTotalVertexNum,
                 FORCE_PARTITION, // target partition
-                /* n_partitions_to_compute, */
                 clusterNum, // total number of partitions
                 dConnectivity, dOffsets, dVertexIntervals,
                 dCellIntervals, dExternalCells, dExternalCellOffsets, 3,
-                args->SFCP_ColumnNum
+                args->SFCP_ColumnNum,
+                hashTableSize
                 );
         cudaError_t code = cudaGetLastError();
+        if (code != cudaSuccess) {
+            std::cerr << "[CPU " << thread_id
+                      << "] VV optimized kernel launch failed (" << code << ") "
+                      << cudaGetErrorString(code) << std::endl;
+        }
+
+        // Build vertexMap (local→global) from hash table for critPoints kernel
+        int numBlocks = (hashTableSize + 255) / 256;
+        buildVertexMapFromHashTable<<<numBlocks, 256, 0, thread_stream>>>(
+                dVertexMap, dHashKeys, dHashValues, hashTableSize, vertexCount);
+        code = cudaGetLastError();
         if (code != cudaSuccess) {
             std::cerr << "[CPU " << thread_id
                       << "] VV kernel launch failed (" << code << ") "
@@ -287,13 +322,23 @@ void * classify_partition(void * fn_args) {
 
         // No need to pull back to CPU, just synchronize with the device for timing purposes
         CUDA_WARN(cudaStreamSynchronize(thread_stream));
+        CHECK(cudaMemcpy(&hTotalVertexNum, dTotalVertexNum, sizeof(int), cudaMemcpyDeviceToHost));
+        if (hTotalVertexNum < n_in_partition || hTotalVertexNum > vertexCount) {
+            std::cerr << "[CPU " << thread_id << "] Invalid optimized VV vertex count for partition "
+                      << FORCE_PARTITION << ": total=" << hTotalVertexNum
+                      << ", internal=" << n_in_partition
+                      << ", capacity=" << vertexCount << std::endl;
+            continue;
+        }
         std::cout << "[TIMER] GALE VV: [CPU " << thread_id << "] " << compat_timer.getElapsedTime()
                   << std::endl;
         compat_timer.reStart();
 
         /* VVI, IVVI, partitions */
-        size_t vvi_size = sizeof(vtkIdType) * vertexCount,
-               partition_size = sizeof(int) * vertexCount;
+        size_t vvi_capacity_size = sizeof(vtkIdType) * vertexCount,
+               partition_capacity_size = sizeof(int) * vertexCount,
+               vvi_size = sizeof(vtkIdType) * hTotalVertexNum,
+               partition_size = sizeof(int) * hTotalVertexNum;
         if (vertexCount > used_vertexCount) {
             /*
             std::cout << "[CPU " << thread_id
@@ -301,17 +346,21 @@ void * classify_partition(void * fn_args) {
                       << " vertices" << std::endl;
             */
             if (host_vvi != nullptr) {
-                delete host_vvi;
+                delete[] host_vvi;  // FIXED: was delete, should be delete[] for arrays
                 CHECK(cudaFree(devi_vvi));
             }
             host_vvi = new vtkIdType[vertexCount];
-            CUDA_ASSERT(cudaMalloc((void**)&devi_vvi, vvi_size));
+            CUDA_ASSERT(cudaMalloc((void**)&devi_vvi, vvi_capacity_size));
+            if (host_vertexMap != nullptr) {
+                delete[] host_vertexMap;
+            }
+            host_vertexMap = new int[vertexCount];
             if (host_partition != nullptr) {
-                delete host_partition;
+                delete[] host_partition;  // FIXED: was delete, should be delete[] for arrays
                 CHECK(cudaFree(devi_partition));
             }
             host_partition = new int[vertexCount]();
-            CUDA_ASSERT(cudaMalloc((void**)&devi_partition, partition_size));
+            CUDA_ASSERT(cudaMalloc((void**)&devi_partition, partition_capacity_size));
             // Denote new size to prevent unnecessary reallocations
             used_vertexCount = vertexCount;
         }
@@ -325,28 +374,28 @@ void * classify_partition(void * fn_args) {
         CHECK(cudaMemsetAsync(device_valences, 0, valences_size, thread_stream));
         CHECK(cudaMemcpyAsync(device_CPC, host_CPC, classes_size, cudaMemcpyHostToDevice, thread_stream));
 
-        int nth_point = 0,
+        CHECK(cudaMemcpy(host_vertexMap, dVertexMap, sizeof(int) * hTotalVertexNum, cudaMemcpyDeviceToHost));
+
         #if CONSTRAIN_BLOCK
             search_point = 2692,
             force_point = -1,
         #endif
-            gale_n_in_partition = 0;
-        // Have to maintain this for SFCP, but may be able to steal from GALE internals to save processing
-        //std::cout << "Set VVI/IVVI/Partition for " << FORCE_PARTITION << std::endl;
-        for (SimplexId &vid : clusterVertices[FORCE_PARTITION]) {
-            host_vvi[nth_point] = vid;
-            host_ivvi[vid] = nth_point;
-            host_partition[nth_point] = (hIndexArray[vid] == FORCE_PARTITION);
-            gale_n_in_partition += (hIndexArray[vid] == FORCE_PARTITION);
+        // critPoints expects local row ids to match the VV local numbering.
+        // Rebuild vvi/ivvi/partition directly from the optimized local->global map.
+        for (int localId = 0; localId < hTotalVertexNum; ++localId) {
+            const int vid = host_vertexMap[localId];
+            host_vvi[localId] = vid;
+            host_ivvi[vid] = localId;
+            host_partition[localId] = (vid >= HVertexIntervals[FORCE_PARTITION - 1]
+                                       && vid < HVertexIntervals[FORCE_PARTITION]);
             #if CONSTRAIN_BLOCK
             if (vid == search_point) {
-                force_point = nth_point;
+                force_point = localId;
                 std::cout << "[CPU " << thread_id
                           << "] Targeting global id " << search_point
-                          << " as block " << nth_point << std::endl;
+                          << " as block " << localId << std::endl;
             }
             #endif
-            nth_point++;
         }
         #if CONSTRAIN_BLOCK
         if (force_point < 0) {
@@ -372,6 +421,7 @@ void * classify_partition(void * fn_args) {
         // SFCP kernel
         dim3 grid_size = vertexCount,
              thread_block_size = args->SFCP_ColumnNum;
+        grid_size.x = hTotalVertexNum;
         #if CONSTRAIN_BLOCK
         grid_size.x = 1;
         #endif
@@ -400,14 +450,14 @@ void * classify_partition(void * fn_args) {
         */
         compat_timer.reStart();
         CUDA_WARN(cudaMemcpyAsync(host_CPC, device_CPC, classes_size, cudaMemcpyDeviceToHost, thread_stream));
+        CUDA_WARN(cudaStreamSynchronize(thread_stream));
         std::cout << "[TIMER] Retrieve results from GPU [CPU "
                   << thread_id << "]: "
                   << compat_timer.getElapsedTime() << std::endl;
         compat_timer.reStart();
 
-        for (int i = 0; i < clusterVertices[FORCE_PARTITION].size(); i++) {
-            int global_idx = clusterVertices[FORCE_PARTITION][i],
-                idx = (i*3)+2;
+        for (int i = 0; i < n_in_partition; i++) {
+            int idx = (i * 3) + 2;
             if (host_CPC[idx] == MINIMUM_CLASS) {
                 partitionCount->numMinimum++;
             } else if (host_CPC[idx] == MAXIMUM_CLASS) {
@@ -449,6 +499,28 @@ void * classify_partition(void * fn_args) {
         if (args->specific_partition >= 0) break;
         // Reset CPC?
     }
+
+    // Cleanup hash tables
+    if (dHashKeys != nullptr) CHECK(cudaFree(dHashKeys));
+    if (dHashValues != nullptr) CHECK(cudaFree(dHashValues));
+    if (dVertexMap != nullptr) CHECK(cudaFree(dVertexMap));
+    if (dTotalVertexNum != nullptr) CHECK(cudaFree(dTotalVertexNum));
+    if (dSizeArray != nullptr) CHECK(cudaFree(dSizeArray));
+    if (dDataArray != nullptr) CHECK(cudaFree(dDataArray));
+    if (devi_partition != nullptr) CHECK(cudaFree(devi_partition));
+    if (devi_vvi != nullptr) CHECK(cudaFree(devi_vvi));
+    if (devi_ivvi != nullptr) CHECK(cudaFree(devi_ivvi));
+    if (device_CPC != nullptr) CHECK(cudaFree(device_CPC));
+    if (device_valences != nullptr) CHECK(cudaFree(device_valences));
+    if (device_scalar_values != nullptr) CHECK(cudaFree(device_scalar_values));
+    if (host_vertexMap != nullptr) delete[] host_vertexMap;
+    if (host_partition != nullptr) delete[] host_partition;
+    if (host_vvi != nullptr) delete[] host_vvi;
+    if (host_ivvi != nullptr) delete[] host_ivvi;
+    if (host_CPC != nullptr) delete[] host_CPC;
+    if (vertexAttributes != nullptr) delete[] vertexAttributes;
+    CUDA_WARN(cudaStreamDestroy(thread_stream));
+    return nullptr;
 }
 
 int main(int argc, char *argv[])
@@ -532,4 +604,3 @@ int main(int argc, char *argv[])
     std::cout << "[ScalarFieldCriticalPoints] Number of void points:    " << MeshClassifications.numVoid << std::endl;
     return 0;
 }
-

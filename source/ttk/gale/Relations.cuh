@@ -21,18 +21,17 @@ const int vfColumnNum = 80;
  */
 __device__ inline int findOrInsert(int *arr, int *size, int value) {
     // Linear search to check if value already exists
-    // Race condition of some sort if this is removed, even though the Atomics in below loop should be safe... they aren't
     int localSize = *size;
     for (int k = 0; k < localSize; ++k) {
         if (arr[k] == value) {
-            return -k;  // Found at position k
+            return k;  // Found at position k
         }
     }
-
+    
     // Not found, need to insert the element
     int insertPos = localSize;
     int oldVal = -1;
-
+    
     // Handle the case where multiple threads work with the same location
     // One array index can only be updated by one thread
     do {
@@ -41,13 +40,14 @@ __device__ inline int findOrInsert(int *arr, int *size, int value) {
             atomicAdd(size, 1);
             return insertPos;
         } else if (oldVal == value) {
-            return -1*insertPos;
+            return insertPos;
         }
         insertPos++;
-    } while (oldVal != -1 && oldVal != value); // Unexpected values added between initial check and now
+    } while (oldVal != -1 && oldVal != value);
 
     return -1;
 }
+
 /*
 __device__ inline int findOrInsertParanoid(int *arr, int *size, int value, char *info=nullptr) {
 
@@ -109,6 +109,113 @@ __device__ inline int findOrInsertIndirected(int *arr, int *index, int maxColCou
     }
     // Satisfy the compiler that the function returns with impossible sentinel value in case it actually isn't impossible
     return -2*(maxColCount);
+}
+
+/**
+ * Hash table implementation for vertex mapping
+ * Uses open addressing with linear probing for O(1) average lookup
+ */
+
+// Hash function for vertex IDs
+__device__ inline int hashVertexId(int vertexId, int hashSize) {
+    // Simple multiplicative hash
+    return ((unsigned int)vertexId * 2654435761u) % hashSize;
+}
+
+/**
+ * Insert vertex into hash table
+ * Returns local vertex ID (position in hash table)
+ */
+__device__ inline int hashTableInsert(
+    int *hashKeys, int *hashValues, int hashSize,
+    int *nextLocalId, int globalVertexId) {
+    constexpr int kEmptySlot = -1;
+    constexpr int kReservedSlot = -2;
+
+    int hash = hashVertexId(globalVertexId, hashSize);
+    int probe = 0;
+
+    while (probe < hashSize) {
+        int idx = (hash + probe) % hashSize;
+
+        int key = ((volatile int*)hashKeys)[idx];
+
+        if (key == globalVertexId) {
+            return ((volatile int*)hashValues)[idx];
+        }
+
+        if (key == kEmptySlot) {
+            // Reserve the slot first. The final key is published only after the value is ready.
+            if (atomicCAS(&hashKeys[idx], kEmptySlot, kReservedSlot) == kEmptySlot) {
+                int localId = atomicAdd(nextLocalId, 1);
+                atomicExch(&hashValues[idx], localId);
+                __threadfence();
+                atomicExch(&hashKeys[idx], globalVertexId);
+                return localId;
+            }
+            continue;  // CAS failed, retry this slot
+        }
+
+        if (key == kReservedSlot) {
+            continue;  // Spin until slot is published
+        }
+
+        // Collision - try next slot
+        probe++;
+    }
+
+    // Hash table full - this shouldn't happen if sized correctly
+    return -1;
+}
+
+/**
+ * Lookup vertex in hash table (read-only, no insertion)
+ * Returns local vertex ID or -1 if not found
+ */
+__device__ inline int hashTableLookup(
+    const int *hashKeys, const int *hashValues, int hashSize,
+    int globalVertexId) {
+
+    int hash = hashVertexId(globalVertexId, hashSize);
+    int probe = 0;
+
+    while (probe < hashSize) {
+        int idx = (hash + probe) % hashSize;
+        int key = hashKeys[idx];
+
+        if (key == globalVertexId) {
+            return hashValues[idx];
+        } else if (key == -1) {
+            return -1;  // Not found
+        }
+
+        probe++;
+    }
+
+    return -1;  // Not found after full scan
+}
+
+/**
+ * Build vertexMap (local→global mapping) from hash table for critPoints kernel
+ * Each thread processes a portion of the hash table
+ */
+__global__ void buildVertexMapFromHashTable(
+    int *vertexMap, const int *hashKeys, const int *hashValues,
+    int hashTableSize, int vertexMapSize) {
+
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Each thread processes multiple hash table entries
+    for (int i = tid; i < hashTableSize; i += blockDim.x * gridDim.x) {
+        int globalVertexId = hashKeys[i];
+        if (globalVertexId >= 0) {
+            int localId = hashValues[i];
+            // Bounds check to prevent out-of-bounds writes
+            if (localId >= 0 && localId < vertexMapSize) {
+                vertexMap[localId] = globalVertexId;
+            }
+        }
+    }
 }
 
 __global__ void countCells(int *localCellCounts, const int *connectivity, const int *offset, const int *vertexMap, const int cellNumber, const int dimension) {
@@ -955,14 +1062,18 @@ __global__ void computeVertexNeighborsWithExternals(
             int viId = connectivity[cellId + vi],
                 localViId = findOrInsert(vertexMap, totalVertexNum, viId);
             // Negative values can be deprecated down the road, for now they are useful for debugging and seem to carry low overhead
-            if (localViId < 0) localViId *= -1;
+            // if (localViId < 0) localViId *= -1;
             for (int vj = vi+1; vj <= dimension; ++vj) {
                 int vjId = connectivity[cellId + vj],
                     localVjId = findOrInsert(vertexMap, totalVertexNum, vjId);
-                if (localVjId < 0) localVjId *= -1;
+                // if (localVjId < 0) localVjId *= -1;
                 // Make neighbors in vertexNeighborMatrix (reflexive)
-                int ival = findOrInsertIndirected(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localViId, viId, localVjId, vjId);
-                int jval = findOrInsertIndirected(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localVjId, vjId, localViId, viId);
+                // int ival = findOrInsertIndirected(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localViId, viId, localVjId, vjId);
+                // int jval = findOrInsertIndirected(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localVjId, vjId, localViId, viId);
+                int *arr = vertexNeighborMatrix + sfcp_ColumnNum * localViId;
+                findOrInsert(arr, &vertexNeighborSizes[localViId], localVjId);
+                arr = vertexNeighborMatrix + sfcp_ColumnNum * localVjId;
+                findOrInsert(arr, &vertexNeighborSizes[localVjId], localViId);
             }
         }
     }
@@ -984,14 +1095,135 @@ __global__ void computeVertexNeighborsWithExternals(
             int viId = connectivity[cellId + vi],
                 localViId = findOrInsert(vertexMap, totalVertexNum, viId);
             // Negative values can be deprecated as denoted above for internal list
-            if (localViId < 0) localViId *= -1;
+            // if (localViId < 0) localViId *= -1;
             for (int vj = vi + 1; vj <= dimension; ++vj) {
                 int vjId = connectivity[cellId + vj],
                     localVjId = findOrInsert(vertexMap, totalVertexNum, vjId);
-                if (localVjId < 0) localVjId *= -1;
+                // if (localVjId < 0) localVjId *= -1;
                 // Make neighbors in vertexNeighborMatrix (reflexive)
-                int ival = findOrInsertIndirected(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localVjId, vjId, localViId, viId);
-                int jval = findOrInsertIndirected(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localViId, viId, localVjId, vjId);
+                // int ival = findOrInsertIndirected(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localVjId, vjId, localViId, viId);
+                // int jval = findOrInsertIndirected(vertexNeighborMatrix, vertexNeighborSizes, sfcp_ColumnNum, localViId, viId, localVjId, vjId);
+                int *arr = vertexNeighborMatrix + sfcp_ColumnNum * localVjId;
+                findOrInsert(arr, &vertexNeighborSizes[localVjId], localViId);
+                arr = vertexNeighborMatrix + sfcp_ColumnNum * localViId;
+                findOrInsert(arr, &vertexNeighborSizes[localViId], localVjId);
+            }
+        }
+    }
+}
+
+/**
+ * OPTIMIZED VERSION of computeVertexNeighborsWithExternals
+ *
+ * Key optimizations:
+ * 1. Hash table for vertex mapping (O(1) lookup vs O(n) linear search)
+ * 2. Optimized findOrInsertIndirected (single atomic instead of CAS loop)
+ *
+ * Usage: Requires pre-allocated hash table memory
+ *   - hashKeys: size = hashTableSize (should be 2-3× max vertices)
+ *   - hashValues: size = hashTableSize
+ */
+__global__ void computeVertexNeighborsWithExternalsOptimized(
+            int *vertexNeighborMatrix, int *vertexNeighborSizes,
+            int *hashKeys, int *hashValues, int *totalVertexNum,
+            const int baseCluster, const int clusterNumber,
+            const int *connectivity, const int *offsets,
+            const int *vertexIntervals, const int *cellIntervals,
+            const int *externalCells, const int *externalCellOffsets,
+            const int dimension, const int sfcp_ColumnNum,
+            const int hashTableSize) {
+
+    int numThreadsPerCluster = gridDim.x * blockDim.x;
+    int threadId = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (baseCluster >= clusterNumber) return;
+
+    const int startVertexId = vertexIntervals[baseCluster-1];
+    const int endVertexId = vertexIntervals[baseCluster];
+
+    // Pre-populate hash table with internal vertices using DETERMINISTIC local IDs
+    // Must match original: localId = globalId - startVertexId
+    int verticesPerThread = (endVertexId - startVertexId) / numThreadsPerCluster;
+    int startVid = startVertexId + (threadId * verticesPerThread);
+    int endVid = (threadId == (numThreadsPerCluster - 1)) ? endVertexId : (startVid + verticesPerThread);
+
+    for (int vid = startVid; vid < endVid; ++vid) {
+        int localId = vid - startVertexId;  // Deterministic local ID
+        int hash = hashVertexId(vid, hashTableSize);
+
+        // Linear probing to find empty slot
+        for (int probe = 0; probe < hashTableSize; ++probe) {
+            int idx = (hash + probe) % hashTableSize;
+            int oldKey = atomicCAS(&hashKeys[idx], -1, vid);
+            if (oldKey == -1) {
+                // Successfully inserted
+                hashValues[idx] = localId;
+                break;
+            } else if (oldKey == vid) {
+                // Already exists (shouldn't happen, but handle it)
+                break;
+            }
+        }
+    }
+    __syncthreads();  // Ensure vertex map is complete
+
+    // Update totalVertexNum to reflect internal vertices
+    if (threadId == 0) {
+        *totalVertexNum = endVertexId - startVertexId;
+    }
+    __syncthreads();
+
+    // Process internal cells
+    int clusterStartCellId = cellIntervals[baseCluster - 1];
+    int clusterEndCellId = cellIntervals[baseCluster];
+    int cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
+    int startCellId = clusterStartCellId + (threadId * cellsPerThread);
+    int endCellId = (threadId == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
+
+    for (int cid = startCellId; cid < endCellId; ++cid) {
+        int cellId = offsets[cid];
+        for (int vi = 0; vi < dimension; ++vi) {
+            int viId = connectivity[cellId + vi];
+            int localViId = hashTableInsert(hashKeys, hashValues, hashTableSize, totalVertexNum, viId);
+            if (localViId < 0) continue;  // Skip if hash table failed
+
+            for (int vj = vi+1; vj <= dimension; ++vj) {
+                int vjId = connectivity[cellId + vj];
+                int localVjId = hashTableInsert(hashKeys, hashValues, hashTableSize, totalVertexNum, vjId);
+                if (localVjId < 0) continue;  // Skip if hash table failed
+
+                int *arr = vertexNeighborMatrix + sfcp_ColumnNum * localViId;
+                findOrInsert(arr, &vertexNeighborSizes[localViId], localVjId);
+                arr = vertexNeighborMatrix + sfcp_ColumnNum * localVjId;
+                findOrInsert(arr, &vertexNeighborSizes[localVjId], localViId);
+            }
+        }
+    }
+
+    // Process external cells
+    clusterStartCellId = externalCellOffsets[baseCluster-1];
+    clusterEndCellId = externalCellOffsets[baseCluster+0];
+    cellsPerThread = (clusterEndCellId - clusterStartCellId) / numThreadsPerCluster;
+    startCellId = clusterStartCellId + (threadId * cellsPerThread);
+    endCellId = (threadId == (numThreadsPerCluster - 1)) ? clusterEndCellId : (startCellId + cellsPerThread);
+
+    for (int cid = startCellId; cid < endCellId; ++cid) {
+        int global_cellId = externalCells[cid];
+        int cellId = offsets[global_cellId];
+        for (int vi = 0; vi < dimension; ++vi) {
+            int viId = connectivity[cellId + vi];
+            int localViId = hashTableInsert(hashKeys, hashValues, hashTableSize, totalVertexNum, viId);
+            if (localViId < 0) continue;  // Skip if hash table failed
+
+            for (int vj = vi + 1; vj <= dimension; ++vj) {
+                int vjId = connectivity[cellId + vj];
+                int localVjId = hashTableInsert(hashKeys, hashValues, hashTableSize, totalVertexNum, vjId);
+                if (localVjId < 0) continue;  // Skip if hash table failed
+
+                int *arr = vertexNeighborMatrix + sfcp_ColumnNum * localVjId;
+                findOrInsert(arr, &vertexNeighborSizes[localVjId], localViId);
+                arr = vertexNeighborMatrix + sfcp_ColumnNum * localViId;
+                findOrInsert(arr, &vertexNeighborSizes[localViId], localVjId);
             }
         }
     }

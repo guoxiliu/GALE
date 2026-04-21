@@ -129,6 +129,18 @@ class Gale final : public AbstractTriangulation {
         void enableTracking() { startTracking_ = true; }
         // Extensions
         void computeVertexNeighborWithExternals(const SimplexId clusterId);
+        void computeVertexNeighborWithExternalsOptimized(const SimplexId clusterId);
+        void testComputeVertexNeighbors(const SimplexId clusterId);
+
+        // Get last computed vertex neighbor results (for verification)
+        std::vector<std::vector<SimplexId>> getLastVertexNeighborResults() const {
+            return lastVertexNeighborResults_;
+        }
+
+        // Get last computed vertex map (local ID -> global ID mapping)
+        std::vector<SimplexId> getLastVertexMap() const {
+            return lastVertexMap_;
+        }
 
         /**
          * Preconditioning relation functions.
@@ -1447,5 +1459,9 @@ class Gale final : public AbstractTriangulation {
         // std::vector<std::vector<float>> returnTimes_;
         // std::vector<std::vector<double>> qTimes_;
         #endif
+
+        // For verification: store last computed vertex neighbor results
+        mutable std::vector<std::vector<SimplexId>> lastVertexNeighborResults_;
+        mutable std::vector<SimplexId> lastVertexMap_;  // local ID -> global ID
     };
 }

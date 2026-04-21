@@ -5,6 +5,10 @@
 #include <MemoryUsage.h>
 #include <Timer.h>
 #include <iostream>
+#include <set>
+#include <unordered_map>
+#include <vector>
+#include <algorithm>
 
 namespace ttk {
     class TestTopoRelations : virtual public Debug {
@@ -74,8 +78,175 @@ namespace ttk {
       Gale *gale = dynamic_cast<Gale *>(triangulation);
       // // const SimplexId testVertexNumber = 100000;
       if (gale != nullptr) {
-        for (int i = 1; i < 20; ++i)
+        int testClsuterNum = 100;
+        t.reStart();
+        for (int i = 1; i < testClsuterNum; ++i)
           gale->computeVertexNeighborWithExternals(i);
+        std::cout << "[TestTopoRelations] Time usage for computing vertex neighbors with externals: " << t.getElapsedTime() << " s.\n";
+
+        t.reStart();
+        for (int i = 1; i < testClsuterNum; ++i)
+          gale->computeVertexNeighborWithExternalsOptimized(i);
+        std::cout << "[TestTopoRelations] Time usage for computing vertex neighbors with externals (optimized): " << t.getElapsedTime() << " s.\n";
+
+        t.reStart();
+        for (int i = 1; i < testClsuterNum; ++i)
+          gale->testComputeVertexNeighbors(i);
+        std::cout << "[TestTopoRelations] Time usage for computing vertex neighbors without externals: " << t.getElapsedTime() << " s.\n";
+
+        // Verification: Compare optimized kernel results with previous implementations
+        std::cout << "\n[TestTopoRelations] Verifying optimized kernel correctness...\n";
+        // int verifyClusterCount = std::min(5, testClsuterNum - 1);
+        int verifyClusterCount = testClsuterNum - 1;
+        bool verifyExternalVertices = true;
+
+        for (int clusterId = 1; clusterId <= verifyClusterCount; ++clusterId) {
+          std::cout << "[VERIFY] Testing cluster " << clusterId << "...\n";
+
+          // Get vertex range for this cluster
+          int startVertexId = gale->hVertexIntervals_[clusterId - 1];
+          int endVertexId = gale->hVertexIntervals_[clusterId];
+          int localVertexNum = endVertexId - startVertexId;
+
+          if (localVertexNum == 0) {
+            std::cout << "[VERIFY] Cluster " << clusterId << " is empty, skipping\n";
+            continue;
+          }
+          
+          // Run original kernel (without externals) - stores neighbors as GLOBAL IDs
+          // gale->testComputeVertexNeighbors(clusterId);
+          // auto originalNeighbors = gale->getLastVertexNeighborResults();
+
+          // Run original kernel (with externals)
+          gale->computeVertexNeighborWithExternals(clusterId);
+          auto originalNeighbors = gale->getLastVertexNeighborResults();
+          auto originalVertexMap = gale->getLastVertexMap();
+
+          // Run optimized kernel (with externals)
+          gale->computeVertexNeighborWithExternalsOptimized(clusterId);
+          auto optimizedNeighbors = gale->getLastVertexNeighborResults();
+          auto optimizedVertexMap = gale->getLastVertexMap();
+
+          // Helper: Convert local neighbor IDs to global IDs
+          auto toGlobalNeighbors = [](const std::vector<SimplexId> &localNeighbors,
+                                       const std::vector<SimplexId> &vertexMap) {
+            std::set<SimplexId> globalNeighbors;
+            for (const auto localNeighbor : localNeighbors) {
+              if (localNeighbor >= 0 && localNeighbor < static_cast<int>(vertexMap.size())
+                  && vertexMap[localNeighbor] >= 0) {
+                globalNeighbors.insert(vertexMap[localNeighbor]);
+              }
+            }
+            return globalNeighbors;
+          };
+
+          bool clusterMatch = true;
+          int errorCount = 0;
+          int internalErrorCount = 0;
+          int externalErrorCount = 0;
+          int verifiedCount = 0;
+
+          // Compare internal vertices (deterministic local IDs: 0 to localVertexNum-1)
+          for (int localVid = 0; localVid < localVertexNum; ++localVid) {
+            SimplexId globalVid = startVertexId + localVid;
+
+            auto origGlobalNeighbors = toGlobalNeighbors(originalNeighbors[localVid], originalVertexMap);
+            auto optGlobalNeighbors = toGlobalNeighbors(optimizedNeighbors[localVid], optimizedVertexMap);
+
+            if (origGlobalNeighbors != optGlobalNeighbors) {
+              if (errorCount < 3) {
+                std::cerr << "[VERIFY ERROR] Vertex " << globalVid << " (INTERNAL): neighbors mismatch\n";
+                std::cerr << "  Original (global IDs): ";
+                for (auto n : origGlobalNeighbors) std::cerr << n << " ";
+                std::cerr << "\n  Optimized (global IDs): ";
+                for (auto n : optGlobalNeighbors) std::cerr << n << " ";
+                std::cerr << "\n";
+              }
+              clusterMatch = false;
+              errorCount++;
+              internalErrorCount++;
+            }
+            verifiedCount++;
+          }
+
+          // Optionally compare external vertices (non-deterministic local IDs)
+          if (verifyExternalVertices) {
+            // Build map: global vertex ID → neighbors for external vertices only
+            std::unordered_map<SimplexId, std::set<SimplexId>> origExternalMap, optExternalMap;
+
+            // Collect external vertices from original kernel
+            for (size_t localVid = localVertexNum; localVid < originalNeighbors.size(); ++localVid) {
+              if (localVid < originalVertexMap.size()) {
+                SimplexId globalVid = originalVertexMap[localVid];
+                if (globalVid >= 0) {
+                  origExternalMap[globalVid] = toGlobalNeighbors(originalNeighbors[localVid], originalVertexMap);
+                }
+              }
+            }
+
+            // Collect external vertices from optimized kernel and compare
+            for (size_t localVid = localVertexNum; localVid < optimizedNeighbors.size(); ++localVid) {
+              if (localVid < optimizedVertexMap.size()) {
+                SimplexId globalVid = optimizedVertexMap[localVid];
+                if (globalVid >= 0) {
+                  auto optNeighbors = toGlobalNeighbors(optimizedNeighbors[localVid], optimizedVertexMap);
+                  auto origIt = origExternalMap.find(globalVid);
+
+                  if (origIt != origExternalMap.end()) {
+                    if (origIt->second != optNeighbors) {
+                      if (errorCount < 3) {
+                        std::cerr << "[VERIFY ERROR] Vertex " << globalVid << " (EXTERNAL): neighbors mismatch\n";
+                        std::cerr << "  Original (global IDs): ";
+                        for (auto n : origIt->second) std::cerr << n << " ";
+                        std::cerr << "\n  Optimized (global IDs): ";
+                        for (auto n : optNeighbors) std::cerr << n << " ";
+                        std::cerr << "\n";
+                      }
+                      clusterMatch = false;
+                      errorCount++;
+                      externalErrorCount++;
+                    }
+                    origExternalMap.erase(origIt);  // Mark as processed
+                    verifiedCount++;
+                  }
+                }
+              }
+            }
+
+            // Check for vertices only present in original
+            for (const auto &entry : origExternalMap) {
+              SimplexId globalVid = entry.first;
+              if (errorCount < 3) {
+                std::cerr << "[VERIFY ERROR] Vertex " << globalVid
+                          << " (EXTERNAL) present in original but missing in optimized\n";
+              }
+              clusterMatch = false;
+              errorCount++;
+              externalErrorCount++;
+            }
+          }
+
+          if (clusterMatch) {
+            std::cout << "[VERIFY] Cluster " << clusterId << ": PASS - "
+                      << verifiedCount << " vertices verified";
+            if (verifyExternalVertices) {
+              std::cout << " (" << localVertexNum << " internal + "
+                        << (verifiedCount - localVertexNum) << " external)";
+            }
+            std::cout << "\n";
+          } else {
+            std::cerr << "[VERIFY] Cluster " << clusterId << ": FAIL - "
+                      << errorCount << " vertices with errors";
+            if (verifyExternalVertices && externalErrorCount > 0) {
+              std::cerr << " (" << internalErrorCount << " internal, "
+                        << externalErrorCount << " external)";
+            }
+            std::cerr << "\n";
+          }
+        }
+
+        std::cout << "[TestTopoRelations] Verification complete.\n\n";
+
         // gale->computeVertexNeighborWithExternals(2);
       //   // int clusterId = gale->hIndexArray_[testVertexNumber];
       //   // gale->numBlocks_ = clusterId / gale->blockSize_ + 1;
