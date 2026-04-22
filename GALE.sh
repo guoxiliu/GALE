@@ -10,41 +10,63 @@
 # Configuration
 override=0; # Set to 1 for override
 n_repeats=3; # Times to repeat each dataset
-SFCP="_sfcp"; # Set "_sfcp" to use integrated kernel, set "" to use GALE kernels
 
-cd /home/tlranda/TetraTopo_GPU/GALE_Partition;
+cd /home/tlranda/TetraTopo_GPU/GALE_SFCP;
 source /home/tlranda/TetraTopo_GPU/env.sh; # Modulefiles and list
 
 # Set number of CPUs once
 ncpus=$( lscpu | grep -e "^CPU(s):" | awk '{print $NF}' );
 # GALE should use #(logical cores minus 2) as threads for best performance
-full_subscribe=$((${ncpus}-2));
+full_subscribe=$((${ncpus}));
 echo "Execute on host ${HOSTNAME}";
 nvidia-smi;
+ngpus=0;
 echo "NCPUS: ${ncpus}";
 echo "Full subscribe: ${full_subscribe}";
 
-outputdir="${HOSTNAME}${SFCP}_outputs";
+outputdir="${HOSTNAME}_outputs";
 mkdir -p ${outputdir};
 
-if [[ "${SFCP}" == "" ]]; then
-    binary="ttkScalarFieldCriticalPoints";
-else
-    binary="criticalPointsKernel";
-fi;
+binary="./build_2026/bin/criticalPointsKernel";
 
-datasets=$( ls -d datasets/*.vtu );
-declare -A target_array=( #[datasets/Bucket_100.vtu]=Result
-                          #[datasets/viscousFingering_100.vtu]=concentration
-                          #[datasets/ctBones_100.vtu]=Scalars_
-                          #[datasets/Engine_100.vtu]=Scalars_
-                          #[datasets/Foot_100.vtu]=Scalars_
-                          #[datasets/Fish_100.vtu]=Elevation
-                          #[datasets/Asteroid_100.vtu]=scalar
-                          #[datasets/Hole_100.vtu]=Result   # -b 32
-                          [datasets/Stent_100.vtu]=Scalars_
+datasets=$( ls -d datasets/*_1000b.vtu );
+declare -A target_array=( [datasets/Bucket_1000b.vtu]=Result
+                          [datasets/viscousFingering_1000b.vtu]=concentration
+                          [datasets/ctBones_1000b.vtu]=Scalars_
+                          [datasets/Engine_1000b.vtu]=Scalars_
+                          [datasets/Foot_1000b.vtu]=Scalars_
+                          [datasets/Fish_1000b.vtu]=Elevation
+                          [datasets/Asteroid_1000b.vtu]=scalar
+                          [datasets/Hole_1000b.vtu]=Result   # -b 32
+                          [datasets/Stent_1000b.vtu]=Scalars_
                          );
+declare -A known_subscribe=( [datasets/Bucket_1000b.vtu]=0
+                             [datasets/viscousFingering_1000b.vtu]=16
+                             [datasets/Engine_1000b.vtu]=0
+                             [datasets/Foot_1000b.vtu]=9
+                             [datasets/Fish_1000b.vtu]=7
+                             [datasets/Asteroid_1000b.vtu]=3 # Too long to compute
+                             [datasets/ctBones_1000b.vtu]=1 # Too long to compute
+                             [datasets/Hole_1000b.vtu]=3 # Too long to compute
+                             [datasets/Stent_1000b.vtu]=1 # Too long to compute
+                            );
+skips=(
+        # Too long to execute list
+        "datasets/Asteroid_1000b.vtu"
+        "datasets/Hole_1000b.vtu"
+        "datasets/Stent_1000b.vtu"
+        "datasets/ctBones_1000b.vtu"
+        # Not in final dataset list
+        "datasets/Lobster_1000b.vtu"
+        "datasets/Redsea_1000b.vtu"
+        "datasets/Shapes_1000b.vtu"
+    );
 for ds in ${datasets[@]}; do
+    skip_check=$( printf '%s\n' "${skips[@]}" | grep -Fx -- "${ds}" );
+    if [[ "${skip_check}" == "${ds}" ]]; then
+        echo "Skipping dataset ${ds} in skip array";
+        continue;
+    fi
     echo "${ds}";
     shortname=$( basename ${ds} | tr "." "\n" | head -n 1 );
     # Determine the dataset's proper array to target
@@ -62,16 +84,35 @@ for ds in ${datasets[@]}; do
     fi;
     # Array selected; proceed
     echo -e "\tUsing array: ${used_array}";
-    cmd="./build_${HOSTNAME}/bin/${binary} -i ${ds} -a ${used_array} -t ${full_subscribe}";
-    for iteration in `seq 1 ${n_repeats}`; do
-        to_make="${outputdir}/${shortname}_${full_subscribe}CPUS_iter_${iteration}.output";
-	if [[ ! -e "${to_make}" || ${override} == 1 ]]; then
-	    full_command="${cmd} > ${to_make}";
-	    echo "${full_command}";
-            eval "${full_command}";
-	else
-	    echo "${to_make} exists, skipping...";
-	fi;
+    cmd="${binary} -i ${ds} -a ${used_array} -t ${full_subscribe} -p _index";
+    # Max threads reset PER dataset unless known
+    max_threads="${known_subscribe[$ds]}";
+    if [[ ${max_threads} -eq 0 ]]; then
+        max_threads="${full_subscribe}";
+    fi;
+    echo "Set max threads == ${max_threads}";
+    for gpu_count in `seq 0 $ngpus`; do
+        gpu_count=$(( 2 ** ${gpu_count} ));
+        base_cmd="${cmd} -g ${gpu_count}";
+        for iteration in `seq 1 ${n_repeats}`; do
+            to_make="${outputdir}/${shortname}_${gpu_count}_GPUS_${full_subscribe}CPUS_iter_${iteration}.output";
+            if [[ ! -e "${to_make}" || ${override} == 1 ]]; then
+                # Determine max threads
+                while [[ ${max_threads} -gt 0 ]]; do
+                    full_command="${base_cmd} -u ${max_threads} > ${to_make}";
+                    echo "${full_command}";
+                    eval "${full_command}";
+                    if [[ $? -eq 0 ]]; then
+                        break;
+                    else
+                        echo "Unable to run at ${max_threads}, reducing thread count by 1";
+                        max_threads=$(( ${max_threads}-1 ));
+                    fi;
+                done;
+            else
+                echo "${to_make} exists, skipping...";
+            fi;
+        done;
     done;
 done;
 # Analyze all captured traces

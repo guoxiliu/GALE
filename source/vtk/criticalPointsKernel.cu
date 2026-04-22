@@ -583,6 +583,8 @@ int main(int argc, char *argv[])
     global_classifications = new sfcp_classification_counter[args.SFCP_threads]();
 
     pthread_t threads[args.SFCP_threads];
+    ttk::Timer e2e_timer;
+    // Maybe a per-thread within-thread timer to exclude memory allocation time?
     for (int i = 1; i < n_parallel+1; i++) {
         pids[i-1] = i;
         pthread_create(&threads[i-1], NULL, classify_partition, (void*)&pids[i-1]);
@@ -596,6 +598,7 @@ int main(int argc, char *argv[])
         MeshClassifications.numRegular += pc_pointer->numRegular;
         MeshClassifications.numVoid    += pc_pointer->numVoid;
     }
+    std::cout << "[TIMER] Main: " << e2e_timer.getElapsedTime() << std::endl;
 
     std::cout << "[ScalarFieldCriticalPoints] Number of minimum points: " << MeshClassifications.numMinimum << std::endl;
     std::cout << "[ScalarFieldCriticalPoints] Number of maximum points: " << MeshClassifications.numMaximum << std::endl;
