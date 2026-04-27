@@ -563,7 +563,11 @@ int main(int argc, char *argv[])
     int ScalarFieldIndex = 0;
     vtkDataArray *inputArray = GetInputArray(args.inputArrayName, inputDataSet, ScalarFieldIndex);
 
-    // GALE
+
+    // Start E2E timer here, it should be non-args & non-IO preprocessing + algorithm
+    ttk::Timer e2e_timer,
+               preprocessing_timer;
+    // GALE has the preprocessing time
     ttk::Gale gale(args.threadNumber, args.numThreadsPerCluster, args.SFCP_ColumnNum, args.SFCP_GPUs);
     // reorder=True is BUGGED; use FALSE (our dataset preprocessing should be compatible with this always)
     gale.initialize(inputDataSet, args.blockNumber, args.blockSize, false);
@@ -575,9 +579,10 @@ int main(int argc, char *argv[])
               << std::endl;
     std::cout << "[TIMER] Initialize VTK: " << compat_timer.getElapsedTime() << std::endl;
     compat_timer.reStart();
+    std::cout << "[TIMER] Preprocessing: " << preprocessing_timer.getElapsedTime() << std::endl;
 
 
-
+    ttk::Timer algorithm_timer;
     sfcp_classification_counter MeshClassifications;
     int clusterNum = gale.getNumberOfClusters(),
         n_parallel = args.SFCP_threads * args.SFCP_GPUs,
@@ -589,7 +594,6 @@ int main(int argc, char *argv[])
     global_classifications = new sfcp_classification_counter[n_parallel]();
 
     pthread_t threads[n_parallel];
-    ttk::Timer e2e_timer;
     // Maybe a per-thread within-thread timer to exclude memory allocation time?
     for (int i = 1; i < n_parallel+1; i++) {
         pids[i-1] = i;
@@ -604,6 +608,7 @@ int main(int argc, char *argv[])
         MeshClassifications.numRegular += pc_pointer->numRegular;
         MeshClassifications.numVoid    += pc_pointer->numVoid;
     }
+    std::cout << "[TIMER] Algorithm: " << algorithm_timer.getElapsedTime() << std::endl;
     std::cout << "[TIMER] Main: " << e2e_timer.getElapsedTime() << std::endl;
 
     std::cout << "[ScalarFieldCriticalPoints] Number of minimum points: " << MeshClassifications.numMinimum << std::endl;

@@ -32,7 +32,8 @@ if len(dropped) > 0:
 """
 
 search_strs = ["[TIMER] Main:",
-               #"[TIMER]",
+               "[TIMER] Preprocessing:",
+               "[TIMER] Algorithm:",
                #"[ScalarFieldCriticalPoints] Time usage for computation",
                ]
 

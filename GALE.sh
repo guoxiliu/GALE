@@ -42,7 +42,7 @@ declare -A target_array=( [datasets/Bucket_1000b.vtu]=Result
                          );
 declare -A known_subscribe=( [datasets/Bucket_1000b.vtu]=0
                              [datasets/viscousFingering_1000b.vtu]=16
-                             [datasets/Engine_1000b.vtu]=24 # 0 on TitanXP
+                             [datasets/Engine_1000b.vtu]=24 # 0 on TitanXP, which ==24
                              [datasets/Foot_1000b.vtu]=9
                              [datasets/Fish_1000b.vtu]=7
                              [datasets/Asteroid_1000b.vtu]=3 # Too long to compute
@@ -52,10 +52,11 @@ declare -A known_subscribe=( [datasets/Bucket_1000b.vtu]=0
                             );
 skips=(
         # Too long to execute list
+        # "datasets/Fish_1000b.vtu" # -- only too long on TitanXP
         #"datasets/Asteroid_1000b.vtu"
-        #"datasets/Hole_1000b.vtu"
-        #"datasets/Stent_1000b.vtu"
-        #"datasets/ctBones_1000b.vtu"
+        "datasets/Hole_1000b.vtu"
+        "datasets/Stent_1000b.vtu"
+        "datasets/ctBones_1000b.vtu"
         # Not in final dataset list
         "datasets/Lobster_1000b.vtu"
         "datasets/Redsea_1000b.vtu"
@@ -91,28 +92,45 @@ for ds in ${datasets[@]}; do
         max_threads="${full_subscribe}";
     fi;
     echo "Set max threads == ${max_threads}";
+    timed_out_gpu="";
     for gpu_count in `seq 0 $ngpus`; do
         gpu_count=$(( 2 ** ${gpu_count} ));
         base_cmd="${cmd} -g ${gpu_count}";
         for iteration in `seq 1 ${n_repeats}`; do
             to_make="${outputdir}/${shortname}_${gpu_count}_GPUS_${full_subscribe}CPUS_iter_${iteration}.output";
+            timed_out_iteration="";
             if [[ ! -e "${to_make}" || ${override} == 1 ]]; then
                 # Determine max threads
                 while [[ ${max_threads} -gt 0 ]]; do
                     full_command="${base_cmd} -u ${max_threads} > ${to_make}";
                     echo "${full_command}";
                     eval "${full_command}";
-                    if [[ $? -eq 0 ]]; then
+                    rcode=$?;
+                    if [[ ${rcode} -eq 0 ]]; then
                         break;
                     else
-                        echo "Unable to run at ${max_threads}, reducing thread count by 1";
-                        max_threads=$(( ${max_threads}-1 ));
+                        if [[ ${rcode} -eq 124 ]]; then
+                            timed_out_iteration="Yes";
+                            break;
+                        else
+                            echo "Unable to run at ${max_threads}, reducing thread count by 1";
+                            max_threads=$(( ${max_threads}-1 ));
+                        fi;
                     fi;
                 done;
+                if [[ "${timed_out_iteration}" == "Yes" ]]; then
+                    echo "Time expired; skipping subsequent iterations";
+                    timed_out_gpu="Yes";
+                    break;
+                fi;
             else
                 echo "${to_make} exists, skipping...";
             fi;
         done;
+        #if [[ "${timed_out_gpu}" == "Yes" ]]; then
+        #    echo "Time expired; skipping subsequent GPU counts";
+        #    break;
+        #fi;
     done;
 done;
 # Analyze all captured traces
