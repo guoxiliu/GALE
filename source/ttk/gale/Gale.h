@@ -122,14 +122,15 @@ class Gale final : public AbstractTriangulation {
         int *hIndexArray_{};
         int *dVVDataArray_;
         int *dVVIndexArray_;
+        int nGPUs;
         std::vector<std::vector<SimplexId>> clusterVertices;
-        Gale(int tnum = 1, int tnumPerCluster = 1, int SFCP_ColumnNum_=30);
+        Gale(int tnum = 1, int tnumPerCluster = 1, int SFCP_ColumnNum_=30, int gpus=1);
         ~Gale();
         void initialize(vtkDataSet *dataSet, int numBlocks = 100, int blockSize = 32, bool reorder = false);
         void enableTracking() { startTracking_ = true; }
         // Extensions
-        void computeVertexNeighborWithExternals(const SimplexId clusterId);
-        void computeVertexNeighborWithExternalsOptimized(const SimplexId clusterId);
+        void computeVertexNeighborWithExternals(const SimplexId clusterId, const int GPU);
+        void computeVertexNeighborWithExternalsOptimized(const SimplexId clusterId, const int GPU);
         void testComputeVertexNeighbors(const SimplexId clusterId);
 
         // Get last computed vertex neighbor results (for verification)
@@ -377,23 +378,23 @@ class Gale final : public AbstractTriangulation {
         inline int getNumberOfClusters() {
                 return clusterNumber_;
         }
-        inline int * getDConnectivity() {
-                return dConnectivity_;
+        inline int * getDConnectivity(int GPU=0) {
+                return dConnectivity_[GPU];
         }
-        inline int * getDOffsets() {
-                return dOffsets_;
+        inline int * getDOffsets(int GPU=0) {
+                return dOffsets_[GPU];
         }
-        inline int * getDVertexIntervals() {
-                return dVertexIntervals_;
+        inline int * getDVertexIntervals(int GPU=0) {
+                return dVertexIntervals_[GPU];
         }
-        inline int * getDCellIntervals() {
-                return dCellIntervals_;
+        inline int * getDCellIntervals(int GPU=0) {
+                return dCellIntervals_[GPU];
         }
-        inline int * getDExternalCells() {
-                return dExternalCells_;
+        inline int * getDExternalCells(int GPU=0) {
+                return dExternalCells_[GPU];
         }
-        inline int * getDExternalCellOffsets() {
-                return dExternalCellOffsets_;
+        inline int * getDExternalCellOffsets(int GPU=0) {
+                return dExternalCellOffsets_[GPU];
         }
         inline int * getHVertexIntervals() {
                 return hVertexIntervals_;
@@ -1419,14 +1420,15 @@ class Gale final : public AbstractTriangulation {
         int *hCellIntervals_{}, *hTriangleIntervals_{}, *hEdgeIntervals_{}, *hVertexIntervals_{};
 
         /* Data allocated on the device memory */
-        int *dConnectivity_{}, *dOffsets_{};
-        int *dIndexArray_{};
-        int *dCellIntervals_{}, *dTriangleIntervals_{}, *dEdgeIntervals_{}, *dVertexIntervals_{};
-        int *dExternalCells_{}, *dExternalCellOffsets_{};
+        int **dConnectivity_{}, **dOffsets_{};
+        int **dIndexArray_{};
+        int **dCellIntervals_{}, **dVertexIntervals_{};
+        int **dExternalCells_{}, **dExternalCellOffsets_{};
+        int *dTriangleIntervals_{}, *dEdgeIntervals_{};
         int *dEdgeList_{}, *dTriangleList_{};
 
         /* Relation matrices on the host and device */
-        bool *dBoundaryTriangles_;
+        bool *dBoundaryTriangles_ = nullptr;
 
         struct RelationComputation {
             int *hSizeArray, *hDataArray;

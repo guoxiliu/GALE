@@ -172,12 +172,12 @@ void * classify_partition(void * fn_args) {
         * HExternalCellOffsets = gale->getHExternalCellOffsets(),
         clusterNum             = gale->getNumberOfClusters(),
         // THESE GALE STRUCTURES HAVE TO SUPPORT MULTI-GPU
-        * dConnectivity        = gale->getDConnectivity(),
-        * dOffsets             = gale->getDOffsets(),
-        * dVertexIntervals     = gale->getDVertexIntervals(),
-        * dCellIntervals       = gale->getDCellIntervals(),
-        * dExternalCells       = gale->getDExternalCells(),
-        * dExternalCellOffsets = gale->getDExternalCellOffsets(),
+        * dConnectivity        = gale->getDConnectivity(gpu_id),
+        * dOffsets             = gale->getDOffsets(gpu_id),
+        * dVertexIntervals     = gale->getDVertexIntervals(gpu_id),
+        * dCellIntervals       = gale->getDCellIntervals(gpu_id),
+        * dExternalCells       = gale->getDExternalCells(gpu_id),
+        * dExternalCellOffsets = gale->getDExternalCellOffsets(gpu_id),
         // Local to partition, but allocate once to limit memory
         used_vertexCount  = -1,
         * dVertexMap      = nullptr,
@@ -231,7 +231,7 @@ void * classify_partition(void * fn_args) {
     if (maxHashTableSize > 0) {
         CHECK(cudaMalloc(&dHashKeys, maxHashTableSize * sizeof(int)));
         CHECK(cudaMalloc(&dHashValues, maxHashTableSize * sizeof(int)));
-        std::cout << "[CPU " << thread_id << "] Allocated hash tables with size "
+        std::cout << "[CPU " << thread_id << ", GPU " << gpu_id << "] Allocated hash tables with size "
                   << maxHashTableSize << std::endl;
     }
 
@@ -248,7 +248,8 @@ void * classify_partition(void * fn_args) {
             hTotalVertexNum = 0;
         if (n_in_partition == 0) continue;
         /*
-        std::cout << "[CPU " << thread_id << "] Found " << n_in_partition
+        std::cout << "[CPU " << thread_id << ", GPU " << gpu_id
+                  << "] Found " << n_in_partition
                   << " points in partition " << FORCE_PARTITION
                   << " with at most " << vertexCount
                   << " vertices (" << internal_partition_cells
@@ -304,7 +305,7 @@ void * classify_partition(void * fn_args) {
                 );
         cudaError_t code = cudaGetLastError();
         if (code != cudaSuccess) {
-            std::cerr << "[CPU " << thread_id
+            std::cerr << "[CPU " << thread_id << ", GPU " << gpu_id
                       << "] VV optimized kernel launch failed (" << code << ") "
                       << cudaGetErrorString(code) << std::endl;
         }
@@ -315,7 +316,7 @@ void * classify_partition(void * fn_args) {
                 dVertexMap, dHashKeys, dHashValues, hashTableSize, vertexCount);
         code = cudaGetLastError();
         if (code != cudaSuccess) {
-            std::cerr << "[CPU " << thread_id
+            std::cerr << "[CPU " << thread_id << ", GPU " << gpu_id
                       << "] VV kernel launch failed (" << code << ") "
                       << cudaGetErrorString(code) << std::endl;
         }
@@ -324,13 +325,15 @@ void * classify_partition(void * fn_args) {
         CUDA_WARN(cudaStreamSynchronize(thread_stream));
         CHECK(cudaMemcpy(&hTotalVertexNum, dTotalVertexNum, sizeof(int), cudaMemcpyDeviceToHost));
         if (hTotalVertexNum < n_in_partition || hTotalVertexNum > vertexCount) {
-            std::cerr << "[CPU " << thread_id << "] Invalid optimized VV vertex count for partition "
+            std::cerr << "[CPU " << thread_id << ", GPU " << gpu_id
+                      << "] Invalid optimized VV vertex count for partition "
                       << FORCE_PARTITION << ": total=" << hTotalVertexNum
                       << ", internal=" << n_in_partition
                       << ", capacity=" << vertexCount << std::endl;
             continue;
         }
-        std::cout << "[TIMER] GALE VV: [CPU " << thread_id << "] " << compat_timer.getElapsedTime()
+        std::cout << "[TIMER] GALE VV: [CPU " << thread_id << ", GPU " << gpu_id
+                  << "] " << compat_timer.getElapsedTime()
                   << std::endl;
         compat_timer.reStart();
 
@@ -341,7 +344,7 @@ void * classify_partition(void * fn_args) {
                partition_size = sizeof(int) * hTotalVertexNum;
         if (vertexCount > used_vertexCount) {
             /*
-            std::cout << "[CPU " << thread_id
+            std::cout << "[CPU " << thread_id << ", GPU " << gpu_id
                       << " ] (Re)alloc vvi, partitions for " << vertexCount
                       << " vertices" << std::endl;
             */
@@ -391,7 +394,7 @@ void * classify_partition(void * fn_args) {
             #if CONSTRAIN_BLOCK
             if (vid == search_point) {
                 force_point = localId;
-                std::cout << "[CPU " << thread_id
+                std::cout << "[CPU " << thread_id << ", GPU " << gpu_id
                           << "] Targeting global id " << search_point
                           << " as block " << localId << std::endl;
             }
@@ -399,7 +402,7 @@ void * classify_partition(void * fn_args) {
         }
         #if CONSTRAIN_BLOCK
         if (force_point < 0) {
-            std::cout << "[CPU " << thread_id
+            std::cout << "[CPU " << thread_id << ", GPU " << gpu_id
                       << "] Requested global id " << search_point
                       << " not found in partition, using point 0 for safety"
                       << std::endl;
@@ -414,7 +417,7 @@ void * classify_partition(void * fn_args) {
 
 
         std::cout << "[TIMER] GALE SFCP preparation [CPU "
-                  << thread_id << "]: "
+                  << thread_id << ", GPU " << gpu_id << "]: "
                   << compat_timer.getElapsedTime() << std::endl;
         compat_timer.reStart();
 
@@ -441,7 +444,7 @@ void * classify_partition(void * fn_args) {
         CUDA_WARN(cudaStreamSynchronize(thread_stream)); // Make algorithm timing accurate
         // Results are retrieved from GPU
         std::cout << "[ScalarFieldCriticalPoints] Time usage for computation [CPU "
-                  << thread_id << "]: "
+                  << thread_id << ", GPU " << gpu_id << "]: "
                   << compat_timer.getElapsedTime() << " s." << std::endl;
         /*
         MemoryUsage m;
@@ -452,7 +455,7 @@ void * classify_partition(void * fn_args) {
         CUDA_WARN(cudaMemcpyAsync(host_CPC, device_CPC, classes_size, cudaMemcpyDeviceToHost, thread_stream));
         CUDA_WARN(cudaStreamSynchronize(thread_stream));
         std::cout << "[TIMER] Retrieve results from GPU [CPU "
-                  << thread_id << "]: "
+                  << thread_id << ", GPU " << gpu_id << "]: "
                   << compat_timer.getElapsedTime() << std::endl;
         compat_timer.reStart();
 
@@ -471,27 +474,27 @@ void * classify_partition(void * fn_args) {
                 partitionCount->numVoid++; // You don't want this to ever trip!
             }
         }
-        std::cout << "[ScalarFieldCriticalPoints] [CPU " << thread_id
+        std::cout << "[ScalarFieldCriticalPoints] [CPU " << thread_id << ", GPU " << gpu_id
                   << "] Partition " << FORCE_PARTITION
                   << " Number of minimum points: "
                   << partitionCount->numMinimum << std::endl
-                  << "[ScalarFieldCriticalPoints] [CPU " << thread_id
+                  << "[ScalarFieldCriticalPoints] [CPU " << thread_id << ", GPU " << gpu_id
                   << "] Partition " << FORCE_PARTITION
                   << " Number of maximum points: "
                   << partitionCount->numMaximum << std::endl
-                  << "[ScalarFieldCriticalPoints] [CPU " << thread_id
+                  << "[ScalarFieldCriticalPoints] [CPU " << thread_id << ", GPU " << gpu_id
                   << "] Partition " << FORCE_PARTITION
                   << " Number of saddle points: "
                   << partitionCount->numSaddles << std::endl
-                  << "[ScalarFieldCriticalPoints] [CPU " << thread_id
+                  << "[ScalarFieldCriticalPoints] [CPU " << thread_id << ", GPU " << gpu_id
                   << "] Partition " << FORCE_PARTITION
                   << " Number of regular points: "
                   << partitionCount->numRegular << std::endl
-                  << "[ScalarFieldCriticalPoints] [CPU " << thread_id
+                  << "[ScalarFieldCriticalPoints] [CPU " << thread_id << ", GPU " << gpu_id
                   << "] Partition " << FORCE_PARTITION
                   << " Number of void points: "
                   << partitionCount->numVoid << std::endl
-                  << "[TIMER] Tabulate partition results [CPU "
+                  << "[TIMER] Tabulate partition results [CPU " << ", GPU " << gpu_id
                   << thread_id << "]: "
                   << compat_timer.getElapsedTime() << std::endl;
         compat_timer.reStart();
@@ -534,7 +537,10 @@ int main(int argc, char *argv[])
               << std::endl;
     compat_timer.reStart();
     // Creating the CUDA Context helps to stablize timings
-    (void)cudaFree(0);
+    for (int i = 0; i < args.SFCP_GPUs; i++) {
+        cudaSetDevice(i);
+        (void)cudaFree(0);
+    }
     std::cout << "[TIMER] Create CUDA Context: " << compat_timer.getElapsedTime()
               << std::endl;
     compat_timer.reStart();
@@ -558,7 +564,7 @@ int main(int argc, char *argv[])
     vtkDataArray *inputArray = GetInputArray(args.inputArrayName, inputDataSet, ScalarFieldIndex);
 
     // GALE
-    ttk::Gale gale(args.threadNumber, args.numThreadsPerCluster, args.SFCP_ColumnNum);
+    ttk::Gale gale(args.threadNumber, args.numThreadsPerCluster, args.SFCP_ColumnNum, args.SFCP_GPUs);
     // reorder=True is BUGGED; use FALSE (our dataset preprocessing should be compatible with this always)
     gale.initialize(inputDataSet, args.blockNumber, args.blockSize, false);
     const int nCells = static_cast<int>(gale.getNumberOfCells()),
@@ -574,15 +580,15 @@ int main(int argc, char *argv[])
 
     sfcp_classification_counter MeshClassifications;
     int clusterNum = gale.getNumberOfClusters(),
-        n_parallel = args.SFCP_threads,
-        pids[args.SFCP_threads];
+        n_parallel = args.SFCP_threads * args.SFCP_GPUs,
+        pids[n_parallel];
     // Set up global memory for threads to utilize
     global_gale = &gale;
     global_inputArray = inputArray;
     global_args = &args;
-    global_classifications = new sfcp_classification_counter[args.SFCP_threads]();
+    global_classifications = new sfcp_classification_counter[n_parallel]();
 
-    pthread_t threads[args.SFCP_threads];
+    pthread_t threads[n_parallel];
     ttk::Timer e2e_timer;
     // Maybe a per-thread within-thread timer to exclude memory allocation time?
     for (int i = 1; i < n_parallel+1; i++) {

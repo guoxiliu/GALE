@@ -81,12 +81,12 @@ namespace ttk {
         int testClsuterNum = 100;
         t.reStart();
         for (int i = 1; i < testClsuterNum; ++i)
-          gale->computeVertexNeighborWithExternals(i);
+          gale->computeVertexNeighborWithExternals(i,0);
         std::cout << "[TestTopoRelations] Time usage for computing vertex neighbors with externals: " << t.getElapsedTime() << " s.\n";
 
         t.reStart();
         for (int i = 1; i < testClsuterNum; ++i)
-          gale->computeVertexNeighborWithExternalsOptimized(i);
+          gale->computeVertexNeighborWithExternalsOptimized(i,0);
         std::cout << "[TestTopoRelations] Time usage for computing vertex neighbors with externals (optimized): " << t.getElapsedTime() << " s.\n";
 
         t.reStart();
@@ -118,12 +118,12 @@ namespace ttk {
           // auto originalNeighbors = gale->getLastVertexNeighborResults();
 
           // Run original kernel (with externals)
-          gale->computeVertexNeighborWithExternals(clusterId);
+          gale->computeVertexNeighborWithExternals(clusterId,0);
           auto originalNeighbors = gale->getLastVertexNeighborResults();
           auto originalVertexMap = gale->getLastVertexMap();
 
           // Run optimized kernel (with externals)
-          gale->computeVertexNeighborWithExternalsOptimized(clusterId);
+          gale->computeVertexNeighborWithExternalsOptimized(clusterId,0);
           auto optimizedNeighbors = gale->getLastVertexNeighborResults();
           auto optimizedVertexMap = gale->getLastVertexMap();
 

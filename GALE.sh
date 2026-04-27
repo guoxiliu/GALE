@@ -20,7 +20,7 @@ ncpus=$( lscpu | grep -e "^CPU(s):" | awk '{print $NF}' );
 full_subscribe=$((${ncpus}));
 echo "Execute on host ${HOSTNAME}";
 nvidia-smi;
-ngpus=0;
+ngpus=1;
 echo "NCPUS: ${ncpus}";
 echo "Full subscribe: ${full_subscribe}";
 
@@ -42,7 +42,7 @@ declare -A target_array=( [datasets/Bucket_1000b.vtu]=Result
                          );
 declare -A known_subscribe=( [datasets/Bucket_1000b.vtu]=0
                              [datasets/viscousFingering_1000b.vtu]=16
-                             [datasets/Engine_1000b.vtu]=0
+                             [datasets/Engine_1000b.vtu]=24 # 0 on TitanXP
                              [datasets/Foot_1000b.vtu]=9
                              [datasets/Fish_1000b.vtu]=7
                              [datasets/Asteroid_1000b.vtu]=3 # Too long to compute
@@ -52,10 +52,10 @@ declare -A known_subscribe=( [datasets/Bucket_1000b.vtu]=0
                             );
 skips=(
         # Too long to execute list
-        "datasets/Asteroid_1000b.vtu"
-        "datasets/Hole_1000b.vtu"
-        "datasets/Stent_1000b.vtu"
-        "datasets/ctBones_1000b.vtu"
+        #"datasets/Asteroid_1000b.vtu"
+        #"datasets/Hole_1000b.vtu"
+        #"datasets/Stent_1000b.vtu"
+        #"datasets/ctBones_1000b.vtu"
         # Not in final dataset list
         "datasets/Lobster_1000b.vtu"
         "datasets/Redsea_1000b.vtu"
@@ -84,7 +84,7 @@ for ds in ${datasets[@]}; do
     fi;
     # Array selected; proceed
     echo -e "\tUsing array: ${used_array}";
-    cmd="${binary} -i ${ds} -a ${used_array} -t ${full_subscribe} -p _index";
+    cmd="timeout 5m ${binary} -i ${ds} -a ${used_array} -t ${full_subscribe} -p _index";
     # Max threads reset PER dataset unless known
     max_threads="${known_subscribe[$ds]}";
     if [[ ${max_threads} -eq 0 ]]; then

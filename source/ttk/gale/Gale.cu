@@ -16,7 +16,7 @@ using namespace ttk;
  * `tnum` specifies the number of consumer threads
  * `tnumPerCluster` specifies the GPU threads per segment
 */
-Gale::Gale(int tnum, int tnumPerCluster, int SFCP_ColumnNum_) {
+Gale::Gale(int tnum, int tnumPerCluster, int SFCP_ColumnNum_, int gpus) {
     this->setDebugMsgPrefix("Gale");
     threadNumber_ = tnum;
     threadsPerCluster_ = tnumPerCluster;
@@ -27,6 +27,10 @@ Gale::Gale(int tnum, int tnumPerCluster, int SFCP_ColumnNum_) {
         baseClusters_[i] = std::vector<int>(threadNumber_, 0);
     }
     SFCP_ColumnNum = SFCP_ColumnNum_;
+    nGPUs = gpus;
+    if (nGPUs < 1) {
+        cudaGetDeviceCount(&nGPUs);
+    }
     #ifdef MEASURE_TIME
     startTracking_ = false;
     timers_ = std::vector<Timer>(threadNumber_);
@@ -95,13 +99,48 @@ Gale::~Gale() {
     // relation matrices on host and device memory get freed during the computation
 
     // device memory deallocation
-    if (dIndexArray_ != nullptr) cudaFree(dIndexArray_);
-    if (dConnectivity_ != nullptr) cudaFree(dConnectivity_);
-    if (dOffsets_ != nullptr) cudaFree(dOffsets_);
-    if (dVertexIntervals_ != nullptr) cudaFree(dVertexIntervals_);
-    if (dCellIntervals_ != nullptr) cudaFree(dCellIntervals_);
-    if (dExternalCells_ != nullptr) cudaFree(dExternalCells_);
-    if (dExternalCellOffsets_ != nullptr) cudaFree(dExternalCellOffsets_);
+    if (dIndexArray_ != nullptr) {
+        for (int i = 0; i < nGPUs; i++) {
+            cudaFree(dIndexArray_[i]);
+        }
+        delete[] dIndexArray_;
+    }
+    if (dConnectivity_ != nullptr) {
+        for (int i = 0; i < nGPUs; i++) {
+            cudaFree(dConnectivity_[i]);
+        }
+        delete[] dConnectivity_;
+    }
+    if (dOffsets_ != nullptr) {
+        for (int i = 0; i < nGPUs; i++) {
+            cudaFree(dOffsets_[i]);
+        }
+        delete[] dOffsets_;
+    }
+    if (dVertexIntervals_ != nullptr) {
+        for (int i = 0; i < nGPUs; i++) {
+            cudaFree(dVertexIntervals_[i]);
+        }
+        delete[] dVertexIntervals_;
+    }
+    if (dCellIntervals_ != nullptr) {
+        for (int i = 0; i < nGPUs; i++) {
+            cudaFree(dCellIntervals_[i]);
+        }
+        delete[] dCellIntervals_;
+    }
+    if (dExternalCells_ != nullptr) {
+        for (int i = 0; i < nGPUs; i++) {
+            cudaFree(dExternalCells_[i]);
+        }
+        delete[] dExternalCells_;
+    }
+    if (dExternalCellOffsets_ != nullptr) {
+        for (int i = 0; i < nGPUs; i++) {
+            cudaFree(dExternalCellOffsets_[i]);
+        }
+        delete[] dExternalCellOffsets_;
+    }
     if (dEdgeIntervals_ != nullptr) cudaFree(dEdgeIntervals_);
     if (dTriangleIntervals_ != nullptr) cudaFree(dTriangleIntervals_);
     if (dEdgeList_ != nullptr) cudaFree(dEdgeList_);
@@ -230,7 +269,7 @@ int Gale::buildInternalTriangleList(const SimplexId &clusterId, std::vector<std:
 }
 
 // Testing function for the new vertex neighbor kernel
-void Gale::computeVertexNeighborWithExternals(const SimplexId clusterId) {
+void Gale::computeVertexNeighborWithExternals(const SimplexId clusterId, const int GPU=0) {
     int localVertexNum = hVertexIntervals_[clusterId] - hVertexIntervals_[clusterId - 1];
     int vertexCount = localVertexNum + (hCellIntervals_[clusterId] - hCellIntervals_[clusterId - 1] + hExternalCellOffsets_[clusterId] - hExternalCellOffsets_[clusterId - 1]) * 3; // other vertices (upper bound)
     int hTotalVertexNum = localVertexNum;
@@ -242,6 +281,8 @@ void Gale::computeVertexNeighborWithExternals(const SimplexId clusterId) {
     int *hSizeArray = new int[vertexCount];
     int *hDataArray = new int[vertexCount * SFCP_ColumnNum];
     // std::cout << "localVertexNum: " << localVertexNum << ", vertexCount (over-estimated): " << vertexCount << std::endl;
+
+    cudaSetDevice(GPU);
 
     CHECK(cudaMalloc(&dVertexMap, vertexCount * sizeof(int)));
     CHECK(cudaMalloc(&dTotalVertexNum, sizeof(int)));
@@ -256,9 +297,9 @@ void Gale::computeVertexNeighborWithExternals(const SimplexId clusterId) {
         dDataArray, dSizeArray,
         dVertexMap, dTotalVertexNum,
         clusterId, clusterNumber_,
-        dConnectivity_, dOffsets_,
-        dVertexIntervals_, dCellIntervals_,
-        dExternalCells_, dExternalCellOffsets_,
+        dConnectivity_[GPU], dOffsets_[GPU],
+        dVertexIntervals_[GPU], dCellIntervals_[GPU],
+        dExternalCells_[GPU], dExternalCellOffsets_[GPU],
         cellDimension_, SFCP_ColumnNum);
 
     // Check for kernel errors
@@ -322,7 +363,7 @@ void Gale::computeVertexNeighborWithExternals(const SimplexId clusterId) {
 }
 
 // Testing function for the OPTIMIZED vertex neighbor kernel with externals
-void Gale::computeVertexNeighborWithExternalsOptimized(const SimplexId clusterId) {
+void Gale::computeVertexNeighborWithExternalsOptimized(const SimplexId clusterId, const int GPU=0) {
     int localVertexNum = hVertexIntervals_[clusterId] - hVertexIntervals_[clusterId - 1];
     int vertexCount = localVertexNum + (hCellIntervals_[clusterId] - hCellIntervals_[clusterId - 1] + hExternalCellOffsets_[clusterId] - hExternalCellOffsets_[clusterId - 1]) * 3;
     int hTotalVertexNum = 0;
@@ -331,6 +372,7 @@ void Gale::computeVertexNeighborWithExternalsOptimized(const SimplexId clusterId
     int hashTableSize = vertexCount * 5;
 
     // Allocate device memory
+    cudaSetDevice(GPU);
     int *dHashKeys, *dHashValues, *dTotalVertexNum;
     int *dSizeArray, *dDataArray;
     int *hSizeArray = new int[vertexCount];
@@ -353,9 +395,9 @@ void Gale::computeVertexNeighborWithExternalsOptimized(const SimplexId clusterId
         dDataArray, dSizeArray,
         dHashKeys, dHashValues, dTotalVertexNum,
         clusterId, clusterNumber_,
-        dConnectivity_, dOffsets_,
-        dVertexIntervals_, dCellIntervals_,
-        dExternalCells_, dExternalCellOffsets_,
+        dConnectivity_[GPU], dOffsets_[GPU],
+        dVertexIntervals_[GPU], dCellIntervals_[GPU],
+        dExternalCells_[GPU], dExternalCellOffsets_[GPU],
         cellDimension_, SFCP_ColumnNum,
         hashTableSize);
 
@@ -471,9 +513,9 @@ void Gale::testComputeVertexNeighbors(const SimplexId clusterId) {
     computeVertexNeighbors<<<numBlocks, blockSize>>>(
         dDataArray, dSizeArray,
         clusterId, clusterNumber_,
-        dConnectivity_, dOffsets_,
-        dVertexIntervals_, dCellIntervals_,
-        dExternalCells_, dExternalCellOffsets_,
+        dConnectivity_[0], dOffsets_[0],
+        dVertexIntervals_[0], dCellIntervals_[0],
+        dExternalCells_[0], dExternalCellOffsets_[0],
         cellDimension_, threadsPerCluster_,
         SFCP_ColumnNum);
 
@@ -581,9 +623,9 @@ int Gale::computeRelation(const RelationType relation,
                 dEdgeList_, dTriangleList_,
                 dBoundaryEdgeList, dBoundaryTriangles_,
                 clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0], dIndexArray_[0],
+                dVertexIntervals_[0], dEdgeIntervals_, dTriangleIntervals_,
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             bool *hBoundaryEdgeList = new bool[localEdgeNum];
@@ -629,9 +671,9 @@ int Gale::computeRelation(const RelationType relation,
             computeBoundaryVertices<<<numBlocks, blockSize_>>>(
                 dTriangleList, dBoundaryTriangles_, dBoundaryVertexList,
                 clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0], dIndexArray_[0],
+                dVertexIntervals_[0], dTriangleIntervals_, dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             bool *hBoundaryVertexList = new bool[localVertexNum];
@@ -679,9 +721,9 @@ int Gale::computeRelation(const RelationType relation,
                 dTriangleList_, dTriangleStarMatrix,
                 dTriangleStarSizes, dBoundaryTriangles_,
                 clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0],
+                dVertexIntervals_[0], dTriangleIntervals_, dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             // cannot copy directly to vector<bool>, since it uses one bit for a boolean instead of one byte
@@ -715,9 +757,9 @@ int Gale::computeRelation(const RelationType relation,
                 dEdgeList_, dTriangleList_,
                 relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0], dIndexArray_[0],
+                dVertexIntervals_[0], dEdgeIntervals_, dTriangleIntervals_,
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
@@ -762,9 +804,9 @@ int Gale::computeRelation(const RelationType relation,
             computeEdgeStars<<<numBlocks, blockSize_>>>(
                 dEdgeList_, relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0],
+                dVertexIntervals_[0], dEdgeIntervals_, dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localEdgeSum, cudaMemcpyDeviceToHost));
@@ -809,9 +851,9 @@ int Gale::computeRelation(const RelationType relation,
             computeTriangleStars<<<numBlocks, blockSize_>>>(
                 dTriangleList_, relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0],
+                dVertexIntervals_[0], dTriangleIntervals_, dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localTriangleSum, cudaMemcpyDeviceToHost));
@@ -856,9 +898,9 @@ int Gale::computeRelation(const RelationType relation,
             computeVertexEdges<<<numBlocks, blockSize_>>>(
                 dEdgeList_, relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0], dIndexArray_[0],
+                dVertexIntervals_[0], dEdgeIntervals_, dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
@@ -903,9 +945,9 @@ int Gale::computeRelation(const RelationType relation,
             computeVertexTriangles<<<numBlocks, blockSize_>>>(
                 dTriangleList_, relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0], dIndexArray_[0],
+                dVertexIntervals_[0], dTriangleIntervals_, dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localVertexSum, cudaMemcpyDeviceToHost));
@@ -950,9 +992,9 @@ int Gale::computeRelation(const RelationType relation,
             computeVertexStars<<<numBlocks, blockSize_>>>(
                 relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0],
+                dVertexIntervals_[0], dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             CHECK(cudaMemcpy(relationCompVecs_[0].hSizeArray, relationCompVecs_[0].dSizeArray, sizeof(int) * localVertexNum, cudaMemcpyDeviceToHost));
@@ -994,9 +1036,9 @@ int Gale::computeRelation(const RelationType relation,
             computeVertexNeighbors<<<numBlocks, blockSize_>>>(
                 relationCompVecs_[0].dDataArray, relationCompVecs_[0].dSizeArray,
                 clusterId, clusterNumber_,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0],
+                dVertexIntervals_[0], dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_,
                 SFCP_ColumnNum);
 
@@ -1098,9 +1140,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 dEdgeList_, dTriangleList_,
                 dBoundaryTriangles_, relationCompVecs_[producerId].dDataArray, 
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0], dIndexArray_[0],
+                dVertexIntervals_[0], dEdgeIntervals_, dTriangleIntervals_,
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             // #ifdef MEASURE_TIME
@@ -1144,9 +1186,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             computeMultiBoundaryVertices<<<dimBlock, blockSize_>>>(
                 dTriangleList_, dBoundaryTriangles_, relationCompVecs_[producerId].dDataArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0], dIndexArray_[0],
+                dVertexIntervals_[0], dTriangleIntervals_, dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             // #ifdef MEASURE_TIME
@@ -1191,9 +1233,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
                 dEdgeList_, dTriangleList_,
                 relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dEdgeIntervals_, dTriangleIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0], dIndexArray_[0],
+                dVertexIntervals_[0], dEdgeIntervals_, dTriangleIntervals_,
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             // #ifdef MEASURE_TIME
@@ -1239,9 +1281,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             computeMultiEdgeStars<<<dimBlock, blockSize_>>>(
                 dEdgeList_, relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0],
+                dVertexIntervals_[0], dEdgeIntervals_, dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             // #ifdef MEASURE_TIME
@@ -1287,9 +1329,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             computeMultiTriangleStars<<<dimBlock, blockSize_>>>(
                 dTriangleList_, relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_, 
+                dConnectivity_[0], dOffsets_[0],
+                dVertexIntervals_[0], dTriangleIntervals_, dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0], 
                 cellDimension_, threadsPerCluster_);
 
             // #ifdef MEASURE_TIME
@@ -1335,9 +1377,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             computeMultiVertexEdges<<<dimBlock, blockSize_>>>(
                 dEdgeList_, relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dEdgeIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0], dIndexArray_[0],
+                dVertexIntervals_[0], dEdgeIntervals_, dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             // #ifdef MEASURE_TIME
@@ -1383,9 +1425,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             computeMultiVertexTriangles<<<dimBlock, blockSize_>>>(
                 dTriangleList_, relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
-                dConnectivity_, dOffsets_, dIndexArray_,
-                dVertexIntervals_, dTriangleIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0], dIndexArray_[0],
+                dVertexIntervals_[0], dTriangleIntervals_, dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             // #ifdef MEASURE_TIME
@@ -1429,9 +1471,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             computeMultiVertexStars<<<dimBlock, blockSize_>>>(
                 relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0],
+                dVertexIntervals_[0], dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             // #ifdef MEASURE_TIME
@@ -1475,9 +1517,9 @@ int Gale::computeCombinedRelation(const std::vector<int> &threadIds,
             computeMultiVertexNeighbors<<<dimBlock, blockSize_>>>(
                 relationCompVecs_[producerId].dDataArray, relationCompVecs_[producerId].dSizeArray,
                 clusterNumber_, relationCompVecs_[producerId].dClusterIds, relationCompVecs_[producerId].dSimplexOffsets,
-                dConnectivity_, dOffsets_,
-                dVertexIntervals_, dCellIntervals_,
-                dExternalCells_, dExternalCellOffsets_,
+                dConnectivity_[0], dOffsets_[0],
+                dVertexIntervals_[0], dCellIntervals_[0],
+                dExternalCells_[0], dExternalCellOffsets_[0],
                 cellDimension_, threadsPerCluster_);
 
             // #ifdef MEASURE_TIME
@@ -2281,6 +2323,11 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
         }
     }
 
+    // Blocks that are touched by other functions ie computeCellIntervals(), reorderCells()
+    dCellIntervals_ = new int * [nGPUs];
+    dExternalCells_ = new int * [nGPUs];
+    dExternalCellOffsets_ = new int * [nGPUs];
+    dVertexIntervals_ = new int * [nGPUs];
     if (reorder) {
         // Known bug: While all external cells are properly mapped in at first, they don't properly propagate to subsequent kernels
         // LIKELY some issue with indexing/loops/global-to-local re-indexing, but not fully identified yet
@@ -2414,19 +2461,24 @@ void Gale::initialize(vtkDataSet *dataSet, int blockNum, int blockSize, bool reo
     // #endif
 
     // copy input mesh arrays to the GPU
-    CHECK(cudaMallocAsync(&dConnectivity_, sizeof(int) * (cellNumber_ * 4), 0));
-    CHECK(cudaMemcpyAsync(dConnectivity_, hConnectivity_, sizeof(int) * (cellNumber_ * 4), cudaMemcpyHostToDevice));
-    CHECK(cudaMallocAsync(&dOffsets_, sizeof(int) * (cellNumber_+1), 0));
-    CHECK(cudaMemcpyAsync(dOffsets_, hOffsets_, sizeof(int) * (cellNumber_+1), cudaMemcpyHostToDevice));
-    CHECK(cudaMallocAsync(&dIndexArray_, sizeof(int) * vertexNumber_, 0));
-    CHECK(cudaMemcpyAsync(dIndexArray_, hIndexArray_, sizeof(int) * vertexNumber_, cudaMemcpyHostToDevice));
+    dConnectivity_ = new int * [nGPUs];
+    dOffsets_ = new int * [nGPUs];
+    dIndexArray_ = new int * [nGPUs];
+    for (int i = 0; i < nGPUs; i++) {
+        cudaSetDevice(i);
+        CHECK(cudaMallocAsync(&dConnectivity_[i], sizeof(int) * (cellNumber_ * 4), 0));
+        CHECK(cudaMemcpyAsync(dConnectivity_[i], hConnectivity_, sizeof(int) * (cellNumber_ * 4), cudaMemcpyHostToDevice));
+        CHECK(cudaMallocAsync(&dOffsets_[i], sizeof(int) * (cellNumber_+1), 0));
+        CHECK(cudaMemcpyAsync(dOffsets_[i], hOffsets_, sizeof(int) * (cellNumber_+1), cudaMemcpyHostToDevice));
+        CHECK(cudaMallocAsync(&dIndexArray_[i], sizeof(int) * vertexNumber_, 0));
+        CHECK(cudaMemcpyAsync(dIndexArray_[i], hIndexArray_, sizeof(int) * vertexNumber_, cudaMemcpyHostToDevice));
 
-    // copy cell intervals and vertex intervals
-    CHECK(cudaMemcpyAsync(dCellIntervals_, hCellIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
-    CHECK(cudaMemcpyAsync(dExternalCellOffsets_, hExternalCellOffsets_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
-    CHECK(cudaMemcpyAsync(dExternalCells_, hExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], cudaMemcpyHostToDevice));
-    CHECK(cudaMemcpyAsync(dVertexIntervals_, hVertexIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice, 0));
-
+        // copy cell intervals and vertex intervals
+        CHECK(cudaMemcpyAsync(dCellIntervals_[i], hCellIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
+        CHECK(cudaMemcpyAsync(dExternalCellOffsets_[i], hExternalCellOffsets_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
+        CHECK(cudaMemcpyAsync(dExternalCells_[i], hExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], cudaMemcpyHostToDevice));
+        CHECK(cudaMemcpyAsync(dVertexIntervals_[i], hVertexIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice, 0));
+    }
     // #ifdef MEASURE_TIME
     // cudaEventRecord(stop, 0);
     // cudaEventSynchronize(stop);
@@ -2450,8 +2502,11 @@ void Gale::computeCellIntervals() {
         clusterVertices[hIndexArray_[vid]].push_back(vid);
     }
 
-    CHECK(cudaMallocAsync(&dCellIntervals_, sizeof(int) * clusterNumber_, 0));
-    CHECK(cudaMallocAsync(&dExternalCellOffsets_, sizeof(int) * clusterNumber_, 0));
+    for (int i = 0; i < nGPUs; i++) {
+        cudaSetDevice(i);
+        CHECK(cudaMallocAsync(&dCellIntervals_[i], sizeof(int) * clusterNumber_, 0));
+        CHECK(cudaMallocAsync(&dExternalCellOffsets_[i], sizeof(int) * clusterNumber_, 0));
+    }
 
     for (int cid = 0; cid < cellNumber_; ++cid) {
         int clusterId = hIndexArray_[hConnectivity_[hOffsets_[cid]]];
@@ -2472,19 +2527,23 @@ void Gale::computeCellIntervals() {
     // Convert the 2D vector to 1D flat vector
     hExternalCells_ = new int[hExternalCellOffsets_[clusterNumber_-1]];
     int *tmp = hExternalCells_;
-    CHECK(cudaMalloc((void **) &dExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1]));
     for (int i = 1; i < externalCells.size(); ++i) {
         std::copy(externalCells[i].begin(), externalCells[i].end(), tmp);
         tmp += externalCells[i].size();
     }
+    for (int i = 0; i < nGPUs; i++) {
+        cudaSetDevice(i);
+        CHECK(cudaMalloc((void **) &dExternalCells_[i], sizeof(int) * hExternalCellOffsets_[clusterNumber_-1]));
+    }
 }
-
 /**
  * Compute the vertex interval array.
 */
 void Gale::computeVertexIntervals() {
-
-    CHECK(cudaMallocAsync(&dVertexIntervals_, sizeof(int) * clusterNumber_, 0));
+    for (int i = 0; i < nGPUs; i++) {
+        cudaSetDevice(i);
+        CHECK(cudaMallocAsync(&dVertexIntervals_[i], sizeof(int) * clusterNumber_, 0));
+    }
 
     hVertexIntervals_ = (int *) calloc(clusterNumber_, sizeof(int));
     for (int vid = 0; vid < vertexNumber_; ++vid) {
@@ -2500,7 +2559,10 @@ void Gale::computeVertexIntervals() {
  * Reindex the vertices to make the GALE work with the input segment.
 */
 int Gale::reorderVertices(std::vector<SimplexId> &vertexMap) {
-    CHECK(cudaMallocAsync(&dVertexIntervals_, sizeof(int) * clusterNumber_, 0));
+    for (int i = 0; i < nGPUs; i++) {
+        cudaSetDevice(i);
+        CHECK(cudaMallocAsync(&dVertexIntervals_[i], sizeof(int) * clusterNumber_, 0));
+    }
     clusterVertices.resize(clusterNumber_);
     // vertexNumber_ == number of points
     for(SimplexId vid = 0; vid < vertexNumber_; ++vid) {
@@ -2518,7 +2580,10 @@ int Gale::reorderVertices(std::vector<SimplexId> &vertexMap) {
         }
         hVertexIntervals_[nid] = vertexCount;
     }
-    CHECK(cudaMemcpyAsync(dVertexIntervals_, hVertexIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice, 0));
+    for (int i = 0; i < nGPUs; i++) {
+        cudaSetDevice(i);
+        CHECK(cudaMemcpyAsync(dVertexIntervals_[i], hVertexIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice, 0));
+    }
 
     // rearange the vertex coordinate values
     if(doublePrecision_) {
@@ -2604,21 +2669,26 @@ int Gale::reorderCells(const std::vector<SimplexId> &vertexMap) {
     }
 
 
-    CHECK(cudaMallocAsync(&dCellIntervals_, sizeof(int) * clusterNumber_, 0));
-    CHECK(cudaMemcpyAsync(dCellIntervals_, hCellIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
-
-    CHECK(cudaMallocAsync(&dExternalCellOffsets_, sizeof(int) * clusterNumber_, 0));
-    CHECK(cudaMemcpyAsync(dExternalCellOffsets_, hExternalCellOffsets_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
+    for (int i = 0; i < nGPUs; i++) {
+        cudaSetDevice(i);
+        CHECK(cudaMallocAsync(&dCellIntervals_[i], sizeof(int) * clusterNumber_, 0));
+        CHECK(cudaMemcpyAsync(dCellIntervals_[i], hCellIntervals_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
+        CHECK(cudaMallocAsync(&dExternalCellOffsets_[i], sizeof(int) * clusterNumber_, 0));
+        CHECK(cudaMemcpyAsync(dExternalCellOffsets_[i], hExternalCellOffsets_, sizeof(int) * clusterNumber_, cudaMemcpyHostToDevice));
+    }
 
     // Convert the 2D vector to 1D flat vector
     hExternalCells_ = new int[hExternalCellOffsets_[clusterNumber_-1]];
     int *tmp = hExternalCells_;
-    CHECK(cudaMallocAsync((void **) &dExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], 0));
     for (int i = 1; i < externalCells.size(); ++i) {
         std::copy(externalCells[i].begin(), externalCells[i].end(), tmp);
         tmp += externalCells[i].size();
     }
-    CHECK(cudaMemcpyAsync(dExternalCells_, hExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], cudaMemcpyHostToDevice));
+    for (int i = 0; i < nGPUs; i++) {
+        cudaSetDevice(i);
+        CHECK(cudaMallocAsync((void **) &dExternalCells_[i], sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], 0));
+        CHECK(cudaMemcpyAsync(dExternalCells_[i], hExternalCells_, sizeof(int) * hExternalCellOffsets_[clusterNumber_-1], cudaMemcpyHostToDevice));
+    }
 
     // copy the new cell array back to original one
     memcpy(hConnectivity_, newCellArray, sizeof(int) * cellNumber_ * verticesPerCell);
@@ -2667,9 +2737,9 @@ int Gale::preconditionVertexNeighborsInternal() {
     computeVertexNeighbors<<<numBlocks, blockSize_>>>(
         dVVDataArray_, dVVIndexArray_,
         1, endCluster,
-        dConnectivity_, dOffsets_,
-        dVertexIntervals_, dCellIntervals_,
-        dExternalCells_, dExternalCellOffsets_,
+        dConnectivity_[0], dOffsets_[0],
+        dVertexIntervals_[0], dCellIntervals_[0],
+        dExternalCells_[0], dExternalCellOffsets_[0],
         cellDimension_, threadsPerCluster_,
         SFCP_ColumnNum);
 
